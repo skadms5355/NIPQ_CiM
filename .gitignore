@@ -3,7 +3,6 @@
 /checkpoints_debug/*
 /data
 /graph
-/report
 __pycache__/
 
 
