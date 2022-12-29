@@ -1,0 +1,29 @@
+# model : rtb18ban
+# dataset : cifar100
+# This is a argfile for training rtb18ban model using rtb18fp as teacher model.
+
+--dataset	cifar100
+--valid-size	0.1
+--mixup True
+--epochs	350
+--train-batch	256
+--test-batch    256
+--optimizer	adam
+--weight-decay	1e-5
+--lr		1e-3
+--warmup    5
+
+--arch		rtb18ban
+--abits		1
+--wbits		32
+
+--lr-method lr_cosineanneal
+--T0        345
+
+--transfer-mode	3
+--kd-alpha	0.99
+--kd-temperature	2
+--at-beta	200
+
+--teacher   PATH_TO_PREVIOUS_STAGE_OUTPUT 
+--pretrained PATH_TO_PREVIOUS_STAGE_OUTPUT

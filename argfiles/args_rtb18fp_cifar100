@@ -1,0 +1,30 @@
+# model : rtb18fp
+# dataset : cifar100
+# This is a argfile for training rtb18fp model using resnet18teacher as teacher model.
+
+--dataset	cifar100
+--valid-size	0.1
+--mixup True
+--epochs	350
+--train-batch	256
+--test-batch    256
+--optimizer	sgd
+--weight-decay	5e-4
+--lr		0.1
+--warmup    5
+
+--arch		rtb18fp
+--abits		32
+--wbits		32
+
+--lr-method lr_cosineanneal
+--T0        345
+#--gamma		0.1
+#--schedule	150 250 320
+
+--transfer-mode	3
+--kd-alpha	0.99
+--kd-temperature	2
+--at-beta	200
+
+--teacher PATH_TO_PREVIOUS_STAGE_OUTPUT 

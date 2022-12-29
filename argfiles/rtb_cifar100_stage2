@@ -1,0 +1,22 @@
+# model : rtb
+# dataset : cifar100
+# This is a argfile for the stage-2 training.
+# python main.py --argfile ./argfiles/rtb_cifar100_stage2
+
+--dataset	cifar100
+--valid-size	0.1
+--mixup
+--epochs	350
+--train-batch	128
+--optimizer	adam
+--weight-decay	0
+--lr		0.0002
+
+--arch		rtb
+--depth		18
+--abits		1
+--wbits		1
+
+--lr-method lr_step
+--gamma		0.1
+--schedule	150 250 320

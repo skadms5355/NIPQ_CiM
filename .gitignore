@@ -1,0 +1,19 @@
+## Ignore Files
+/checkpoints/*
+/checkpoints_debug/*
+/data
+/graph
+/report
+__pycache__/
+
+
+/report
+/runs/
+/tags
+/argfiles/*.txt
+*.swp
+*.bak
+
+## Ignore Exclude these files.
+!/checkpoints/short_erase.sh
+!/checkpoints/short_erase.py

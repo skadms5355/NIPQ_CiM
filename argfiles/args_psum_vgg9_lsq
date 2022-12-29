@@ -1,0 +1,37 @@
+# model : psum_vgg9
+# dataset : cifar10
+# This is a argfile for training vgg9 model.
+
+--dataset       cifar10
+--augment	    y  
+--log_file      n
+
+--epoch         1
+--train-batch   256
+--test-batch    200
+
+--arch          psum_vgg9
+
+--evaluate      y
+--gpu-id	    0
+--amp           y
+
+--wbits         4
+--abits         4
+--pretrained    ./checkpoints/cifar10/lsq_vgg9/a:4_w:4/2022-Apr-01-18-57-49/model_best.pth.tar
+
+--arraySize     256
+--cbits         1
+--mapping_mode  none
+--abit-serial   n
+--wbit-serial   n
+
+--psum_comp     n
+--pbits         32
+--pclipmode     Layer
+--pclip         max
+--psigma        3
+
+# for class_split
+--class-split   y
+--per_class     50

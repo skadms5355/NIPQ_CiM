@@ -1,0 +1,38 @@
+# model : rtb18ban
+# dataset : imagenet
+# This is a argfile for training rtb18ban model using rtb18fp as teacher model.
+
+--dataset	imagenet
+--valid-size	0
+--epochs	75
+--train-batch	256
+--test-batch    256
+--optimizer	adam
+--weight-decay	1e-5
+--lr		0.001
+--warmup    5
+
+--arch		rtb18ban
+--abits		1
+--wbits		32
+--padding-mode	zeros
+
+--lr-method lr_step
+--gamma 0.1
+--schedule  40 60 70
+
+--workers	8
+--dali  True
+--dali-cpu  True
+--distributed   True
+--amp   True
+
+--transfer-mode	3
+--kd-alpha	0.5
+--kd-temperature	2
+--at-beta	200
+
+--teacher PATH_TO_PREVIOUS_STAGE_OUTPUT
+--pretrained PATH_TO_PREVIOUS_STAGE_OUTPUT
+
+--interpolation triangular

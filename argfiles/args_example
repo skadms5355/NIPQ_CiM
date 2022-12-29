@@ -1,0 +1,22 @@
+# This is a comment section.
+# Both supports = and space syntaxing while parsing.
+# Only lines with # in front counts as comment. Otherwise can invoke error.
+
+--dataset       cifar10
+--valid-size    0.2
+--epochs        40
+--train-batch   512
+--test-batch    400
+--optimizer     sgd
+--lr            0.1
+--drop          0
+--schedule      150 225
+--gamma         0.1
+--momentum      0.9
+--weight-decay  1e-4
+
+--arch          tinyvgg7
+--depth         20
+--block-name    BasicBlock
+--abits         32
+--wbits         32

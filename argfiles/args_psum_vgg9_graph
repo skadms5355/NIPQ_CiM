@@ -1,0 +1,20 @@
+# model : psum_vgg9
+# dataset : cifar10
+# This is a argfile for training vgg9 model.
+
+--dataset       cifar10
+--arch          psum_vgg9
+--evaluate      
+--gpu-id	    0
+--wbits         4
+--abits         4
+
+--arraySize     256
+--mapping_mode  two_com
+--cell          multi
+--search-img    0.25
+--class-split
+--pbits         32
+
+--graph         hist
+--hist_mode     Layer

@@ -1,0 +1,35 @@
+# model : vgg9
+# dataset : imagenet
+# This is a argfile for training vgg9 model.
+
+--dataset       imagenet
+--workers       8
+-loc            /home/nameunkang/Project/QNN_CIM
+
+--epochs        110
+--train-batch   2048
+--test-batch    256
+--valid-size    0
+
+--optimizer     sgd
+--init-method	kaiming
+--init-fan      fan_out
+
+--schedule      30 60 85 95
+--gamma         0.1
+
+--arch          lsq_resnet18
+# --gpu-id	    0
+--amp           y
+
+--wbits         4
+--abits         4
+
+--lr            0.1
+--weight-decay  1e-4
+--momentum      0.9
+--dropout	    0.0
+
+--dali          y
+--dali-cpu      y
+--distributed   y

@@ -1,0 +1,33 @@
+--dataset       imagenet
+--valid-size    0
+--epochs        100
+--train-batch   512
+--test-batch    256
+--optimizer     adam
+--lr            0.001
+--momentum      0.9
+
+--weight-decay  0
+--weight-clip	1
+--weight-scale  True
+
+--workers	16
+
+--arch          xnor_alexnet
+--abits         1
+--wbits         1
+--binary-mode   signed
+--ste           hardtanh
+
+--init-method   xavier
+--init-dist     normal
+--init-fan      fan_both
+
+--lr-method     lr_step
+--schedule      25 50 70 90
+--gamma         0.1
+
+--dali  True
+--dali-cpu  True
+--distributed   True
+--amp   True

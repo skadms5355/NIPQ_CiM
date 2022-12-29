@@ -1,0 +1,44 @@
+# model : vgg9
+# dataset : cifar10
+# This is a argfile for training vgg9 model.
+
+--dataset       cifar10
+--augment	    y
+
+
+--augment	    y  
+
+--epochs        120
+--train-batch   256
+--test-batch    200
+
+--optimizer     adam
+--lr-method     lr_step
+--schedule      80 100
+--gamma         0.1
+
+--init-method	xavier
+--init-dist	normal
+--init-fan	fan_both
+
+--arch          quant_vgg9
+--gpu-id	    0
+--amp           y
+
+# --wbits         4
+# --abits         4
+# --lr            0.001
+# --weight-decay  5e-5
+# --dropout	    0.0
+
+--wbits         8
+--abits         8
+--lr            0.001
+--weight-decay  5e-5
+--dropout	    0.1
+
+# --wbits         32
+# --abits         32
+# --lr            0.001
+# --weight-decay  5e-6
+# --dropout	    0.1

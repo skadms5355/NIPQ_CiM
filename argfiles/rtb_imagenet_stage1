@@ -1,0 +1,21 @@
+# model : rtb
+# dataset : imagenet
+# This is a argfile for the stage-1 training.
+# python main.py --argfile ./argfiles/rtb_imagenet_stage1
+
+--dataset	imagenet
+--epochs	75
+--train-batch	256
+--optimizer	adam
+--weight-decay	1e-5
+--lr		0.001
+--warmup    5
+
+--arch		rtb
+--depth		18
+--abits		1
+--wbits		32
+
+--lr-method lr_step
+--gamma		0.1
+--schedule	40 60 70

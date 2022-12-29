@@ -1,0 +1,22 @@
+# model : resnet18teacher
+# dataset : cifar100
+# This is a argfile for training resnet18teacher model.
+
+--dataset	cifar100
+--valid-size	0.1
+--mixup True
+--epochs	350
+--train-batch	128
+--test-batch    128
+--optimizer	sgd
+--weight-decay	1e-4
+--lr		0.1
+--warmup    5
+
+--arch		resnet18teacher
+--abits		32
+--wbits		32
+
+--lr-method lr_step
+--gamma		0.1
+--schedule	150 250 320

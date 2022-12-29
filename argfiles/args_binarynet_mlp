@@ -1,0 +1,33 @@
+--dataset       mnist
+# roughly 10K samples used for validation set.
+--valid-size    0.1666
+
+--epochs        200
+--train-batch   100
+# --train-batch   256
+--test-batch    100
+
+# original adamax used instead of shift-based-adamax
+--optimizer     adamax 
+--weight-decay	0
+
+--init-method	uniform
+--init-dist	uniform
+--init-fan	fan_in
+
+# Step LR schedule is used instead of exponential schedule.
+--lr-method	lr_step
+--schedule     10 20 30 40 50 60 70 80 90 100 110 120 130 140 150 160 170 180 190 200 
+--gamma		0.5
+--lr            0.02
+--glr		True
+
+--arch          binarynet_mlp
+--binary-mode   unsigned
+--ste           hardtanh
+--abits         1
+--wbits         1
+--weight-clip   1
+--weight-scale  False
+
+#--manualSeed    5798

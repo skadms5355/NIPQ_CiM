@@ -1,0 +1,26 @@
+# model : resnet18teacher_biased
+# dataset : imagenet
+# This is a argfile for training resnet18teacher_biased model.
+
+--dataset	imagenet
+--valid-size	0
+--epochs	100
+--train-batch	512
+--optimizer	sgd
+--weight-decay	1e-4
+--lr		0.1
+--warmup    5
+
+--arch		resnet18teacher_biased
+--abits		32
+--wbits		32
+--padding-mode	zeros
+
+--lr-method lr_cosineanneal
+--T0	95
+
+--workers	16
+--dali
+--dali-cpu
+--distributed
+--amp
