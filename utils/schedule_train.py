@@ -71,13 +71,13 @@ def set_scheduler(optimizer, args):
     elif args.lr_method == 'lr_exp':
         after_scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, args.gamma)
     elif args.lr_method == 'lr_cosineanneal':
-        after_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, args.T0, args.T_mult)
+        after_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, args.T0, args.T_mult, eta_min=args.eta_min)
     else :
         assert False, 'learning rate decay method should be one of step, linear, exp, cosineanneal'
 
     # Warmup scheduler
     if args.warmup > 0 and args.rank == 0:
         print('==> Using warmup scheduler..')
-    scheduler = warmup(optimizer, multiplier=args.multiplier, total_epoch=args.warmup, after_scheduler=after_scheduler)
+    scheduler = warmup(optimizer, multiplier=args.multiplier, warmup_start_multiplier=args.warmup_start_multiplier, total_epoch=args.warmup, after_scheduler=after_scheduler)
 
     return scheduler, after_scheduler

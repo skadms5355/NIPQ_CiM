@@ -139,49 +139,6 @@ class LSQReturnScale(nn.Module):
             # print('weight s_scale:', s_scale)
             return x, s_scale
 
-class QConvWS(nn.Conv2d):
-    def __init__(self, in_channels, out_channels, wbits=32, kernel_size=3, stride=1, padding=0, groups=1, bias=True):
-        super(QConvWS, self).__init__(in_channels, out_channels, kernel_size,
-                                       stride=stride, padding=padding, groups=groups, bias=bias)
-        self.wbits = wbits
-        self.padding = padding
-        self.stride = stride
-        #self.boundary = 1.0
-        #self.weight_clip_scale = nn.Parameter(torch.Tensor([self.boundary]))
-        #self.quant_group = out_channels
-        #self.weight_clip_scale = nn.Parameter(torch.zeros(self.quant_group, 1, 1, 1))
-        #self.weight_clip_scale.data.fill_(self.boundary)
-        self.quan_w_fn = LSQ(bit=self.wbits, half_range=False, per_channel=True, quant_group=out_channels)
-        #self.quan_w_fn.init_from(self.weight)
-
-    def forward(self, input):
-        weight = self.weight
-        weight_mean = weight.mean(dim=1, keepdim=True).mean(dim=2, keepdim=True).mean(dim=3, keepdim=True)
-        weight = weight - weight_mean
-        std = weight.view(weight.size(0), -1).std(dim=1).view(-1, 1, 1, 1) + 1e-6
-        weight = weight / std.expand_as(weight)
-
-        output =  F.conv2d(input, self.quan_w_fn(weight), bias=self.bias,
-                stride=self.stride, padding=self.padding, dilation=self.dilation, groups=self.groups)
-        
-        return output
-
-    def extra_repr(self):
-        """Provides layer information, including wbits, when print(model) is called."""
-        s = ('{in_channels}, {out_channels}, kernel_size={kernel_size}'
-             ', stride={stride}')
-        if self.padding != 0:
-            s += ', padding={padding}'
-        if self.dilation != (1,) * len(self.dilation):
-            s += ', dilation={dilation}'
-        if self.groups != 1:
-            s += ', groups={groups}'
-        if self.bias is None:
-            s += ', bias=False'
-        s += ', wbits={wbits}'
-        return s.format(**self.__dict__)
-
-
 class QConv(nn.Conv2d):
     def __init__(self, in_channels, out_channels, wbits=32, kernel_size=3, stride=1, padding=0, groups=1, symmetric=False, bias=True):
         super(QConv, self).__init__(in_channels, out_channels, kernel_size,

@@ -4,7 +4,7 @@
 import torch
 import torch.nn as nn
 from .quantized_lsq_modules import *
-from .quantized_modules import *
+from .quantized_basic_modules import *
 
 __all__ = ['lsq_alexnet']
 

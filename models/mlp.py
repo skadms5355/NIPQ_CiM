@@ -1,7 +1,7 @@
 import torch 
 import torch.nn as nn
 from .quantized_lsq_modules import *
-from .quantized_modules import *
+from .quantized_basic_modules import *
 from .binarized_modules import *
 
 __all__ = ['lsq_mlp', 'binarynet_512mlp', 'quant_mlp']

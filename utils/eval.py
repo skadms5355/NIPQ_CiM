@@ -73,6 +73,7 @@ def train(train_loader, model, teacher, criterion, optimizer, scheduler, scaler,
 
     if args.transfer_mode is not 0:
         teacher.eval()
+        teacher.cuda()
 
     if args.transfer_mode >= 2:
         teacher.module.transfer = True
@@ -159,6 +160,9 @@ def train(train_loader, model, teacher, criterion, optimizer, scheduler, scaler,
                 else:
                     loss_kd = 0
                     loss_at = 0
+                
+                # penalty loss 
+                # loss_pen = F.huber_loss()
 
                 loss = loss_ce + loss_kd + loss_at
         else:
@@ -240,7 +244,7 @@ def train(train_loader, model, teacher, criterion, optimizer, scheduler, scaler,
             writer.remove_hooks()
             writer.log_grads(model, epoch)
 
-        scheduler.step(epoch + (batch_idx+1) / len_trainloader)
+        # scheduler.step(epoch + (batch_idx+1) / len_trainloader) # is it ok if it disappear?
 
         torch.cuda.synchronize()
         # measure elapsed time
@@ -250,16 +254,15 @@ def train(train_loader, model, teacher, criterion, optimizer, scheduler, scaler,
         # plot progress
         if args.rank == 0:
             # bar.suffix = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | Loss_ce: {loss_ce:.4f} | Loss_kd: {loss_kd:.4f} | Loss_at: {loss_at:.4f} | top1: {top1: .4f} | top5: {top5: .4f}'.format(
-            bar.suffix = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f}'.format(
+            bar.suffix = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | Loss_ce: {loss:.4f} | Loss_kd: {loss_kd:.4f} | top1: {top1: .4f} | top5: {top5: .4f}'.format(
                 batch=batch_idx + 1,
                 size=len_trainloader,
                 data=data_time.val,
                 bt=batch_time.val,
                 total=bar.elapsed_td,
-                eta=bar.eta_td,
                 loss=losses_ce.avg,
                 # loss_ce=losses_ce.avg,
-                # loss_kd=losses_kd.avg,
+                loss_kd=losses_kd.avg,
                 # loss_at=losses_at.avg,
                 top1=top1.avg,
                 top5=top5.avg,
@@ -338,13 +341,12 @@ def test(val_loader, model, criterion, epoch, args):
 
             # plot progress
             if args.rank == 0:
-                bar.suffix = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f}'.format(
+                bar.suffix = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f}'.format(
                     batch=batch_idx + 1,
                     size=len_valloader,
                     data=data_time.avg,
                     bt=batch_time.avg,
                     total=bar.elapsed_td,
-                    eta=bar.eta_td,
                     loss=losses.avg,
                     top1=top1.avg,
                     top5=top5.avg,
@@ -404,13 +406,12 @@ def log_test(meas_loader, model, args):
 
             # plot progress
             if args.rank == 0:
-                bar.suffix = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:}'.format(
+                bar.suffix = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} |'.format(
                     batch=batch_idx + 1,
                     size=len_measloader,
                     data=data_time.avg,
                     bt=batch_time.avg,
                     total=bar.elapsed_td,
-                    eta=bar.eta_td
                 )
                 bar.next()
 

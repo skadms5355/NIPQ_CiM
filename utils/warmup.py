@@ -18,10 +18,14 @@ class warmup(_LRScheduler):
 
     """
 
-    def __init__(self, optimizer, multiplier, total_epoch, after_scheduler=None):
+    def __init__(self, optimizer, multiplier, total_epoch, warmup_start_multiplier=0.0, after_scheduler=None):
         self.multiplier = multiplier
         if self.multiplier < 1.:
             raise ValueError('multiplier should be greater than or equal to 1.')
+        if not (0.0 <= warmup_start_multiplier <= 1.0):
+            raise ValueError(
+                "Warmup start multiplier must be within [0.0, 1.0].")
+        self.warmup_start_multiplier = warmup_start_multiplier
         self.total_epoch = total_epoch
         self.after_scheduler = after_scheduler
         self.finished = False
@@ -34,14 +38,15 @@ class warmup(_LRScheduler):
                     self.after_scheduler.base_lrs = [base_lr * self.multiplier for base_lr in self.base_lrs]
                     self.finished = True
                 return self.after_scheduler.get_last_lr()
-                return temp
             return [base_lr * self.multiplier for base_lr in self.base_lrs]
 
         if self.multiplier == 1.0:
             # return [base_lr * (float(self.last_epoch + 1) / self.total_epoch) for base_lr in self.base_lrs]
-            return [base_lr * (float(self.last_epoch) / self.total_epoch) for base_lr in self.base_lrs]
+            lr_multiplier = self.warmup_start_multiplier + (1.0 - self.warmup_start_multiplier) * (float(self.last_epoch) / self.total_epoch)
+            assert lr_multiplier >= 0.0
+            return [base_lr * lr_multiplier for base_lr in self.base_lrs]
         else:
-            return [base_lr * self.multiplier* (float(self.last_epoch + 1) / self.total_epoch) for base_lr in self.base_lrs]
+            return [base_lr * self.multiplier * (float(self.last_epoch + 1) / self.total_epoch) for base_lr in self.base_lrs]
 
     def get_last_lr(self):
         if self.last_epoch >= self.total_epoch:

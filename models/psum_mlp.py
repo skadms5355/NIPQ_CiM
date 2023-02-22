@@ -1,7 +1,7 @@
 import torch 
 import torch.nn as nn
 from .quantized_lsq_modules import *
-from .quantized_modules import *
+from .quantized_basic_modules import *
 from .psum_modules import *
 
 __all__ = ['psum_mlp']

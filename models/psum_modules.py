@@ -13,7 +13,7 @@ from utils.cell_graph import cell_graph
 from utils.noise_cell import Noise_Cell
 import utils.padding as Pad
 from .quantized_lsq_modules import *
-from .quantized_modules import *
+from .quantized_basic_modules import *
 from .bitserial_modules import *
 from .split_modules import *
 # custom kernel
@@ -626,7 +626,11 @@ class PsumQConv(SplitConv):
         if self.bitserial_log:
             return self._bitserial_log_forward(input)
         else:
-            return self._bitserial_comp_forward(input)
+            if not self.wbit_serial and not self.is_noise and self.wbits==32:
+                return F.conv2d(input, self.weight, bias=self.bias,
+                        stride=self.stride, padding=self.padding, dilation=self.dilation, groups=self.groups)
+            else:
+                return self._bitserial_comp_forward(input)
 
     def extra_repr(self):
         """Provides layer information, including wbits, when print(model) is called."""
@@ -1184,7 +1188,10 @@ class PsumQLinear(SplitLinear):
         if self.bitserial_log:
             return self._bitserial_log_forward(input)
         else:
-            return self._bitserial_comp_forward(input)
+            if not self.wbit_serial and not self.is_noise and self.wbits==32:
+                return F.linear(input, self.weight, bias=self.bias)
+            else:
+                return self._bitserial_comp_forward(input)
 
     def extra_repr(self):
         """Provides layer information, including wbits, when print(model) is called."""
