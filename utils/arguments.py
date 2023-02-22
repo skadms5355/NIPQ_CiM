@@ -93,9 +93,9 @@ def set_arguments():
                             help='Use automatic mixed precision training.')
 
     # Training options
-    train_group.add_argument('-tm', '--train_mode', default='normal', type=str,
-                             choices=['normal', 'quant', 'qnoise', 'nipq'],
-                             help='training mode to be used. (default: normal (basic))')
+    train_group.add_argument('-tm', '--train_mode', default='baseline', type=str,
+                             choices=['baseline', 'quant', 'qnoise', 'nipq'],
+                             help='training mode to be used. (default: baseline (basic))')
     train_group.add_argument('--epochs', default=90, type=int, metavar='N',
                              help='Number of total epochs to run')
     train_group.add_argument('--ft_epoch', default=0, type=int, metavar='N',

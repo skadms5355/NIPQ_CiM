@@ -151,7 +151,7 @@ class Q_Conv2d(nn.Conv2d):
         # import pdb; pdb.set_trace()
         if self.act_func is not None:
             x = self.act_func(x)
-            
+        
         return F.conv2d(x, self._weight_quant(), self.bias,
                         self.stride, self.padding, self.dilation, self.groups)
     

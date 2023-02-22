@@ -95,8 +95,13 @@ def main():
         if args.evaluate:
             prefix = os.path.join(prefix, "eval")
         
-        if args.arraySize > 0: # inference with psum comp
-            prefix = os.path.join(prefix, args.mapping_mode, "{}_c:{}".format(str(args.arraySize), args.cbits))
+        if args.mapping_mode != 'none':
+            if args.arraySize > 0 and args.psum_comp: # inference with psum comp
+                prefix = os.path.join(prefix, args.mapping_mode, "{}_c:{}".format(str(args.arraySize), args.cbits))
+            else:
+                assert False, "arraysize should be positive integer and psum_comp is true, but got {}, {}".format(args.arraySize, args.psum_comp)
+        else:
+            pass
 
         if args.train_mode == 'nipq':
             prefix = os.path.join(prefix, "{}_fix:{}".format(args.nipq_noise, args.fixed_bit))
@@ -392,6 +397,10 @@ def main_worker(gpu, ngpus_per_node, args):
     log_time = time.time()
 
     if args.evaluate:
+        
+        if args.train_mode == 'nipq':
+            from models.nipq_quantization_module import QuantOps as Q
+            Q.initialize(model, act=True, weight=True, noise=False, fixed_bit=args.fixed_bit)
 
         if args.rank == 0:
             print('\nEvaluation only')
