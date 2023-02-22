@@ -1,0 +1,7 @@
+conv_sweight_cuda.cpp
+conv_sweight_cuda_kernel.cu
+setup.py
+conv_sweight.egg-info/PKG-INFO
+conv_sweight.egg-info/SOURCES.txt
+conv_sweight.egg-info/dependency_links.txt
+conv_sweight.egg-info/top_level.txt

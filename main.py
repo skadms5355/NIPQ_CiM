@@ -39,6 +39,7 @@ assert torch.cuda.is_available(), "check if cuda is avaliable"
 torch.autograd.set_detect_anomaly(True)
 
 def PickUnusedPort():
+    
     '''Picks unused port in the current node'''
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.bind(('localhost', 0))
@@ -114,7 +115,12 @@ def main():
                 else:
                     prefix = os.path.join("checkpoints", args.dataset, args.arch, args.mapping_mode, "{}_c:{}".format(str(args.arraySize), args.cbits), "a:{}_w:{}".format(args.abits,args.wbits))
             else:
-                prefix = os.path.join("checkpoints", args.dataset, args.arch, "a:{}_w:{}".format(args.abits,args.wbits))
+                if not args.fix_bit:
+                    prefix = os.path.join("checkpoints", args.dataset, args.arch, "mpq_noise")
+                else:
+                    prefix = os.path.join("checkpoints", args.dataset, args.arch, "fpq_noise_{}".format(args.fix_bit))
+
+
         
         if args.local is None:
             prefix = prefix
@@ -220,6 +226,7 @@ def main_worker(gpu, ngpus_per_node, args):
     # initialize weights
     modules_to_init = ['Conv2d', 'BinConv', 'Linear', 'BinLinear', \
             'QConv', 'QLinear', 'QuantConv', 'QuantLinear', \
+            'Q_Conv2d', 'Q_Linear', \
             'PsumQConv', 'PsumQLinear']
     bn_modules_to_init = ['BatchNorm1d', 'BatchNorm2d']
     for m in model.modules():
@@ -234,7 +241,7 @@ def main_worker(gpu, ngpus_per_node, args):
 
     # define loss function (criterion) and optimizer
     criterion = torch.nn.CrossEntropyLoss()
- 
+
     # We want to make sure that we apply weight decay only to weights.
     all_parameters = model.parameters()
     weight_parameters = []
@@ -355,25 +362,14 @@ def main_worker(gpu, ngpus_per_node, args):
         'Learning Rate', 'Train Loss', 'Valid Loss', 'Test Loss', 'Train Top1',
         'Train Top5', 'Valid Top1', 'Valid Top5', 'Test Top1', 'Test Top5'])
 
+    graph_path = None
     if args.rank % ngpus_per_node == 0:
         # Resume and initializing logger
         if args.evaluate:
-            report_name = 'ArraySize_{}_pclip_{}'.format(args.arraySize, args.pclip)
-            if args.psum_comp:
-                report_path = os.path.join(str(pathlib.Path().resolve()), ((args.checkpoint.replace('checkpoints', 'report')).replace('eval/', '')).replace('/log_bitserial_info', ''))
-                graph_path = os.path.join(str(pathlib.Path().resolve()), 'graph', args.dataset, f'Psum_{args.arch}', args.mapping_mode, args.psum_mode, 'class_{}'.format(args.per_class))
-                if not os.path.exists(report_path):
-                    os.makedirs(report_path)
-                report_file = os.path.join(report_path, report_name+'.pkl')
-            else:   
-                report_path = os.path.join('report', args.dataset, 'Accuracy')
-                if not os.path.exists(report_path):
-                    os.makedirs(report_path)
-                report_file = os.path.join(report_path, 'ArraySize_{}_wsym_{}_report.pkl'.format(args.arraySize, args.wsymmetric))
-        else:
-            graph_path = None
-    else:
-        graph_path = None
+            report_path = os.path.join(str(pathlib.Path().resolve()), ((args.checkpoint.replace('checkpoints', 'report')).replace('eval/', '')).replace('/log_bitserial_info', ''))
+            graph_path = os.path.join(str(pathlib.Path().resolve()), 'graph', args.dataset, f'Psum_{args.arch}', args.mapping_mode, args.psum_mode, 'class_{}'.format(args.per_class))
+            os.makedirs(report_path, exist_ok=True)
+            report_file = os.path.join(report_path, 'model_report.pkl')
 
 
     start_time=time.time()
@@ -384,7 +380,7 @@ def main_worker(gpu, ngpus_per_node, args):
     if args.psum_comp:
 
         set_BitSerial_log(model, checkpoint=args.checkpoint, log_file=args.log_file,\
-            pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma)
+            pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma, graph_path=graph_path)
 
         if args.log_file:
             if args.class_split:
@@ -450,7 +446,7 @@ def main_worker(gpu, ngpus_per_node, args):
             "Total Time":       end-start_time
             }, ignore_index=True)
         df.to_pickle(report_file)
-        df.to_csv(report_path+'/'+report_name+'.txt', sep = '\t', index = False)
+        df.to_csv(report_path+'/accuracy_report.txt', sep = '\t', index = False)
 
         return
 
@@ -477,6 +473,7 @@ def main_worker(gpu, ngpus_per_node, args):
     start_time=time.time()
     for epoch in range(start_epoch, args.epochs):
         # np.random.seed(args.manualSeed+epoch)
+
         if not args.dali and args.distributed:
             train_sampler.set_epoch(epoch)
 

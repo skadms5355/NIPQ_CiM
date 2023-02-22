@@ -3,7 +3,7 @@
 This module contains custom network modules for convolution split for computing-in-memory.
 """
 import itertools
-from .quantized_modules import *
+from .quantized_basic_modules import *
 import math
 import conv_sweight_cuda
 

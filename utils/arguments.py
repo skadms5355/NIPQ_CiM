@@ -51,7 +51,7 @@ def set_arguments():
 
     # Datasets
     dataset_group.add_argument('--dataset', default='cifar10', type=str,
-                               choices=['mnist', 'cifar10', 'cifar100', 'imagenet', 'vww'],
+                               choices=['mnist', 'cifar10', 'cifar100', 'imagenet'],
                                help='Dataset to be used for training.')
     dataset_group.add_argument('-d', '--data', default=None, type=str, help='path to dataset')
     dataset_group.add_argument('--valid-size', default=0.1, type=float,
@@ -93,8 +93,13 @@ def set_arguments():
                             help='Use automatic mixed precision training.')
 
     # Training options
+    train_group.add_argument('-tm', '--train_mode', default='normal', type=str,
+                             choices=['normal', 'quant', 'qnoise', 'nipq'],
+                             help='training mode to be used. (default: normal (basic))')
     train_group.add_argument('--epochs', default=90, type=int, metavar='N',
                              help='Number of total epochs to run')
+    train_group.add_argument('--ft_epoch', default=0, type=int, metavar='N',
+                             help='quantization tuning epoch in nipq mode')
     train_group.add_argument('--start-epoch', default=0, type=int, metavar='N',
                              help='Manual epoch number (useful on restarts)')
     train_group.add_argument('--train-batch', default=256, type=int, metavar='N',
@@ -133,11 +138,15 @@ def set_arguments():
                                  help='Number of steps for the first restart in SGDR')
     scheduler_group.add_argument('--T-mult', default=1, type=int,
                                  help='A factor increases T_{i} after restart in SGDR')
+    scheduler_group.add_argument('--eta_min', default=0.0, type=float,
+                                 help='minimum lr of cosine annealing')                            
     scheduler_group.add_argument('--lr', '--learning-rate', default=0.1, type=float,
                                  metavar='LR', help='Initial learning rate')
     scheduler_group.add_argument('--glr', default='False', type=str2bool,
                                  help='glr learning rate scaling for bin conv & linear')
     scheduler_group.add_argument('--warmup', default=0, type=int,
+                                 help='Epoch number for warmup scheduler')
+    scheduler_group.add_argument('--warmup_start_multiplier', default=0.0, type=float,
                                  help='Epoch number for warmup scheduler')
     scheduler_group.add_argument('--multiplier', default=1.0, type=float,
                                  help='(multiplier) * (base lr) = (target lr) after warmup epochs')
@@ -176,7 +185,9 @@ def set_arguments():
                             help='Weight scaling option. False to not use weight scale factor')
     arch_group.add_argument('--padding_mode', default='zeros', type=str,
                             help='zeros: zero-padding, ones: one-padding, alter: alternately padding with +1/-1. \
-                            If None, one-padding for signed binary mode and zero-padding for others.')
+                            If None, one-padding for signed binary mode and zero-padding for others.')                   
+    arch_group.add_argument('--fixed_bit', default=-1, type=int,
+                            help='When fix_bit is none mix-precision is trained (default: None) in NIPQ mode')
     #Psum 
     psum_group.add_argument('-p', '--psum_comp', default='False', type=str2bool,
                         help='Psum computation model')
@@ -216,6 +227,9 @@ def set_arguments():
     # noise
     noise_group.add_argument('-n', '--is_noise', default='False', type=str2bool,
                             help='Noise effect consideration')
+    noise_group.add_argument('--nipq_noise', default='qnoise', type=str, 
+                            choices=['qnoise', 'hwnoise'],
+                            help='Type of injection noise (default: quant noise)')                       
     noise_group.add_argument('--noise_param', type=float, default=0.01,
                             help='cell noise variation (range: 0.01 ~ 0.05) during inference.')
     noise_group.add_argument('--ratio', type=int, default=100,

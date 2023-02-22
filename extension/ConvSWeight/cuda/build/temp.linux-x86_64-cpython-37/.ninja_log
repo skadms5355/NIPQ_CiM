@@ -1,0 +1,5 @@
+# ninja log v5
+19	15241	1669796665431089478	/mnt/nfs/nameunkang/Project/QNN_CIM/extension/ConvSWeight/cuda/build/temp.linux-x86_64-cpython-37/conv_sweight_cuda.o	3f6290b658380ba9
+11	16760	1669799134049164684	/mnt/nfs/nameunkang/Project/QNN_CIM/extension/ConvSWeight/cuda/build/temp.linux-x86_64-cpython-37/conv_sweight_cuda.o	56ad8e30cd08891c
+28	16433	1669812312502661688	/mnt/nfs/nameunkang/Project/QNN_CIM/extension/ConvSWeight/cuda/build/temp.linux-x86_64-cpython-37/conv_sweight_cuda.o	17a23785c329fd1c
+28	42179	1669812338069309955	/mnt/nfs/nameunkang/Project/QNN_CIM/extension/ConvSWeight/cuda/build/temp.linux-x86_64-cpython-37/conv_sweight_cuda_kernel.o	2b3daabc7a7a3797
