@@ -455,7 +455,8 @@ def main_worker(gpu, ngpus_per_node, args):
             "Total Time":       end-start_time
             }, ignore_index=True)
         df.to_pickle(report_file)
-        df.to_csv(report_path+'/accuracy_report.txt', sep = '\t', index = False)
+        df.to_csv(report_path+'/accuracy_report.txt', sep = '\t', index = False) # last result remain
+        df.to_csv(args.checkpoint+'/log.txt', sep = '\t', index = False) # results log (time)
 
         return
 
