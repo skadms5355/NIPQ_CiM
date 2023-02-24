@@ -10,7 +10,7 @@ import torch.nn as nn
 from torch.nn.parameter import Parameter 
 import pandas as pd
 from utils.cell_graph import cell_graph
-from utils.noise_cell import Noise_Cell
+from .noise_cell import Noise_Cell
 import utils.padding as Pad
 from .quantized_lsq_modules import *
 from .quantized_basic_modules import *
