@@ -93,8 +93,8 @@ def set_arguments():
                             help='Use automatic mixed precision training.')
 
     # Training options
-    train_group.add_argument('-tm', '--train_mode', default='baseline', type=str,
-                             choices=['baseline', 'quant', 'qnoise', 'nipq'],
+    train_group.add_argument('-tm', '--model_mode', default='baseline', type=str,
+                             choices=['baseline', 'quant', 'hn_quant', 'nipq'],
                              help='training mode to be used. (default: baseline (basic))')
     train_group.add_argument('--epochs', default=90, type=int, metavar='N',
                              help='Number of total epochs to run')
@@ -214,10 +214,10 @@ def set_arguments():
     psum_group.add_argument('--pbits', type=float, default=32,
                             help='Bit resolution of partial sums. 32 is for full-precision.')
     psum_group.add_argument('--pclipmode', default='Layer', type=str,
-                             choices=['Layer','Network'],
+                             choices=['Layer', 'Network'],
                              help='Layer-wise or Network-wise for psum quantization (default: layer-wise)')
     psum_group.add_argument('--pclip', default='sigma', type=str,
-                             choices=['sigma','max'],
+                             choices=['sigma', 'max'],
                              help='Clipping range of psum quantization (default: sigma)')
     psum_group.add_argument('--psigma', type=int, default=3,
                             help='Sigma point of clipping range')                         
@@ -230,17 +230,18 @@ def set_arguments():
     noise_group.add_argument('--nipq_noise', default='qnoise', type=str, 
                             choices=['qnoise', 'hwnoise'],
                             help='Type of injection noise (default: quant noise)')                       
-    noise_group.add_argument('--noise_param', type=float, default=0.01,
-                            help='cell noise variation (range: 0.01 ~ 0.05) during inference.')
+    noise_group.add_argument('--co_noise', type=float, default=0.01,
+                            help='coefficient of cell noise variation (range: 0.01 ~ 0.05) during inference.')
     noise_group.add_argument('--ratio', type=int, default=100,
                             help='Ratio of Gmax/Gmin (default: 100)')   
-    noise_group.add_argument('--noise_type', default='dynamic', type=str, 
-                            choices=['static', 'dynamic'],
+    noise_group.add_argument('--noise_type', default='prop', type=str, 
+                            choices=['static', 'grad', 'prop'],
                             help='Std type of conductance noise (default: static std)')   
     noise_group.add_argument('-nt', '--noise_train', default='False', type=str2bool, 
                             help='Use noise trained weight values')    
-    noise_group.add_argument('--trained_noise', type=float, default=0.01,
-                            help='cell noise variation used during training (range: 0.01 ~ 0.05).')               
+    noise_group.add_argument('--res_val', type=str, default='rel',
+                            choices=['rel', 'abs'],
+                            help='representation methods of resistance (default: relative(rel))).')               
 
     # Transfer Learning
     transfer_group.add_argument('--transfer-mode', default=0, type=int, choices=[0,1,2,3],

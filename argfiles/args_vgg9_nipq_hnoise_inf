@@ -1,0 +1,35 @@
+# model : vgg9
+# dataset : cifar10
+# This is a argfile for training vgg9 model.
+
+--dataset       cifar10
+--augment	    y  
+--log_file      n
+
+--epoch         1
+--train-batch   256
+--test-batch    200
+
+--arch          nipq_vgg9
+
+--evaluate      y
+--gpu-id	    0
+
+--model_mode    nipq
+--fixed_bit       4
+
+# --pretrained    ./checkpoints/cifar10/lsq_vgg9/a:4_w:4/2022-Apr-01-18-57-49/model_best.pth.tar
+# --pretrained    ./checkpoints/cifar10/a:32_w:32/2022-Apr-01-16-22-01/model_best.pth.tar
+--pretrained    ./checkpoints/cifar10/nipq/nipq_vgg9/qnoise_fix:4/2023-Feb-22-14-31-20/model_best.pth.tar
+
+--psum_comp     n
+
+--cbits         4
+--mapping_mode  2T2R
+
+# noise option
+--is_noise      y
+--nipq_noise    hwnoise
+--co_noise      0.01
+--noise_type    prop
+--res_val       rel

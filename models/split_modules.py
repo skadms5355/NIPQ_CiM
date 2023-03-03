@@ -47,17 +47,17 @@ class SplitConv(nn.Conv2d):
         if self.split_groups == groups:
             return
         assert self.split_groups != 1, 'reset group is not supported when groups is not 1'
-        self.out_channels = int(self.out_channels / self.split_groups * split_groups)
-        if self.fan_in % split_groups != 0:
+        self.out_channels = int(self.out_channels / self.split_groups * groups)
+        if self.fan_in % groups != 0:
             raise ValueError('fan_in must be divisible by groups')
-        self.group_fan_in = int(self.fan_in * self.split_groups / split_groups)
-        self.group_in_channels = int(np.ceil(self.in_channels * self.split_groups / split_groups))
+        self.group_fan_in = int(self.fan_in * self.split_groups / groups)
+        self.group_in_channels = int(np.ceil(self.in_channels * self.split_groups / groups))
         residual = self.group_fan_in % self.kSpatial
         if residual != 0:
             if self.kSpatial % residual != 0:
                 self.group_in_channels += 1
         # add one more channels for the group if spatial is not divisible by the residual
-        self.group_out_channels = int(self.out_channels * self.split_groups / split_groups)
+        self.group_out_channels = int(self.out_channels * self.split_groups / groups)
 
         # sweight
         self.sweight.resize_(self.out_channels*groups, self.in_channels, self.kernel_size[0], self.kernel_size[1])

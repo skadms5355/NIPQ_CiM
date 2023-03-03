@@ -9,6 +9,7 @@ import torch.nn.functional as F
 from torch.nn.parameter import Parameter
 import numpy as np 
 from collections import OrderedDict
+from .noise_cell import Noise_cell
 
 # Uniform random Noise (rand_like)
 class qnoise_make(torch.autograd.Function):
@@ -33,7 +34,7 @@ class qnoise_make(torch.autograd.Function):
         return grad_output
 
 class Quantizer(nn.Module):
-    def __init__(self, sym, noise, offset=0., is_stochastic=True, is_discretize=True):
+    def __init__(self, sym, noise, hnoise=False, offset=0., is_stochastic=True, is_discretize=True):
         super(Quantizer, self).__init__()
         self.bit = Parameter(torch.Tensor(1).zero_())
         self.alpha = Parameter(torch.Tensor(1).fill_(1))
@@ -41,9 +42,11 @@ class Quantizer(nn.Module):
         self.sym = sym
         self.offset = offset
         self.noise = noise
+        self.hnoise = hnoise
         self.is_stochastic = is_stochastic
         self.is_discretize = is_discretize
         self.register_buffer('init_state', torch.zeros(1))
+
 
     def lsq_forward(self, data, bit, alpha, sym):
         if sym:
@@ -62,11 +65,24 @@ class Quantizer(nn.Module):
         Qp = 2 ** (bit.detach() - 1) - 1 if self.sym else 2 ** bit.detach() - 1
         self.alpha.data[0] = (x.detach().abs().mean() * 2 / (Qp ** 0.5))
     
+    def hnoise_init(self, cbits, mapping_mode, co_noise=0.01, noise_type='prop', res_val='rel', max_epoch=-1):
+        bit = 2 + torch.sigmoid(self.bit)*12
+        self.noise_cell = Noise_cell(bit.round().squeeze(), cbits, mapping_mode, co_noise, noise_type=noise_type, \
+                                    res_val=res_val, w_format='weight', max_epoch=max_epoch)
+    
+    def get_alpha(self):
+        return self.alpha
+
+    def get_bit(self):
+        bit = 2 + torch.sigmoid(self.bit)*12
+        return bit.round_().squeeze()
+
     def forward(self, x, is_training=True):
         # parameter define
         sym = self.sym
         offset = self.offset
         noise = self.noise 
+        hnoise = self.hnoise
         is_stochastic = self.is_stochastic
         is_discretize = self.is_discretize
         
@@ -89,8 +105,15 @@ class Quantizer(nn.Module):
 
         if is_training and noise:
             x = (x + offset) / alpha + qnoise_make.apply(x)
-            return torch.clamp(x, Qn, Qp) * alpha - offset
+            x = torch.clamp(x, Qn, Qp) 
+            if hnoise:
+                import pdb; pdb.set_trace()
+                x = self.noise_cell(x, float_comp=True)
+
+            return x * alpha - offset
         else:
+            if hnoise:
+                lsq = self.noise_cell((lsq / alpha).round()) * alpha
             return lsq - offset
 
 
@@ -209,8 +232,15 @@ def initialize(model, act=False, weight=False, noise=True, is_stochastic=True, i
                 module.quant_func.bit.data.fill_(bit)
                 module.quant_func.bit.requires_grad = False
             
-            # if noise:
-            #     module.quant_func.alpha.data[0] = module.weight.data.max()
+def hnoise_initilaize(model, weight=False, hnoise=True, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', max_epoch=-1):
+    for name, module in model.named_modules():
+        if isinstance(module, (Q_Conv2d, Q_Linear)) and weight and hnoise:
+            module.quant_func.hnoise = True
+
+            if noise_type == 'grad':
+                assert max_epoch != -1, "Enter max_epoch in hnoise_initialize function"
+            if hnoise:
+                module.quant_func.hnoise_init(cbits=cbits, mapping_mode=mapping_mode, co_noise=co_noise, noise_type=noise_type, res_val=res_val, max_epoch=max_epoch)
 
 def sample_activation_size(model, x):
     # forward hook for bops calculation (output h & w)
@@ -322,6 +352,7 @@ def bit_cal(model):
 
 class QuantOps(object):
     initialize = initialize
+    hnoise_initilaize = hnoise_initilaize
     sample_activation_size = sample_activation_size
     ReLU = Q_ReLU
     Sym = Q_Sym
@@ -329,3 +360,7 @@ class QuantOps(object):
     Linear = Q_Linear
     HSwish = Q_HSwish
     
+class QuantActs(object):
+    ReLU = Q_ReLU
+    Sym = Q_Sym
+    HSwish = Q_HSwish

@@ -380,7 +380,7 @@ def main_worker(gpu, ngpus_per_node, args):
     if args.psum_comp:
 
         set_BitSerial_log(model, checkpoint=args.checkpoint, log_file=args.log_file,\
-            pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma, graph_path=graph_path)
+            pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma)
 
         if args.log_file:
             if args.class_split:

@@ -90,26 +90,31 @@ def main():
         print(f"Binding to processes using : {args.dist_url}")
 
     if args.checkpoint is None:
-        prefix = os.path.join("checkpoints", args.dataset, args.train_mode, args.arch)
+        prefix = os.path.join("checkpoints", args.dataset, args.model_mode, args.arch)
 
         if args.evaluate:
             prefix = os.path.join(prefix, "eval")
         
-        if args.mapping_mode != 'none':
-            if args.arraySize > 0 and args.psum_comp: # inference with psum comp
-                prefix = os.path.join(prefix, args.mapping_mode, "{}_c:{}".format(str(args.arraySize), args.cbits))
-            else:
-                assert False, "arraysize should be positive integer and psum_comp is true, but got {}, {}".format(args.arraySize, args.psum_comp)
-        else:
-            pass
 
-        if args.train_mode == 'nipq':
+        if args.model_mode == 'nipq':
             prefix = os.path.join(prefix, "{}_fix:{}".format(args.nipq_noise, args.fixed_bit))
-        elif args.train_mode == 'noise':
+        elif args.model_mode == 'hn_quant':
             prefix = os.path.join(prefix, "a:{}_w:{}".format(args.abits, args.wbits), "trained_noise_{}_ratio_{}".format(args.trained_noise, args.ratio))
         else:
             prefix = os.path.join(prefix, "a:{}_w:{}".format(args.abits,args.wbits))
         
+        if args.mapping_mode != 'none':
+
+            if args.arraySize > 0 and args.psum_comp: # inference with psum comp
+                prefix = os.path.join(prefix, args.mapping_mode, "{}_c:{}".format(str(args.arraySize), args.cbits))
+            else:
+                prefix = os.path.join(prefix, args.mapping_mode, "no_psum_c:{}".format(args.cbits))
+
+            if args.is_noise:
+                prefix = os.path.join(prefix, '{}_type_{}').format(args.noise_type, args.co_noise)
+        else:
+            pass
+
         if args.local is None:
             prefix = prefix
         else:
@@ -284,6 +289,7 @@ def main_worker(gpu, ngpus_per_node, args):
         for name, param in load_dict.items():
             if name in model_keys:
                 model_dict[name] = param
+
         # mismatch = 0 
         # update = 0
         # for name, param in load_dict.items():
@@ -304,14 +310,7 @@ def main_worker(gpu, ngpus_per_node, args):
         #             model_dict[name] = param
 
         model.load_state_dict(model_dict)
-
-        if not args.class_split:
-            if valid_loader is not None:
-                loss['valid'], top1['valid'], top5['valid'] = eval.test(valid_loader, model, criterion, 0, args)
-                if args.rank == 0:
-                    print(f"Valid loss: {loss['valid']:<10.6f} Valid top1: {top1['valid']:<7.4f} Valid top5: {top5['valid']:<7.4f}")
-
-        if test_loader is not None:
+        if not args.psum_comp and test_loader is not None:
             loss['test'], top1['test'], top5['test'] = eval.test(test_loader, model, criterion, 0, args)
             if args.rank == 0:
                 print(f"Test loss: {loss['test']:<10.6f} Test top1: {top1['test']:<7.4f} Test top5: {top5['test']:<7.4f}")
@@ -371,37 +370,54 @@ def main_worker(gpu, ngpus_per_node, args):
     if args.rank % ngpus_per_node == 0:
         # Resume and initializing logger
         if args.evaluate:
-            report_path = os.path.join(str(pathlib.Path().resolve()), ((args.checkpoint.replace('checkpoints', 'report')).replace('eval/', '')).replace('/log_bitserial_info', ''))
+            report_path = os.path.join(str(pathlib.Path().resolve()), ((args.checkpoint.replace('checkpoints', 'report')).replace('eval/', '')).replace('/log_bitserial_info', '').replace(f'type_{args.co_noise}', 'type'))
             graph_path = os.path.join(str(pathlib.Path().resolve()), 'graph', args.dataset, f'Psum_{args.arch}', args.mapping_mode, args.psum_mode, 'class_{}'.format(args.per_class))
             report_path = '/'.join(report_path.split('/')[:-1]) # time folder remove 
             os.makedirs(report_path, exist_ok=True)
             report_file = os.path.join(report_path, 'model_report.pkl')
 
-    # TO DO: when reram noise is injected trained weight in nipq mode
-    if args.is_noise and args.train_mode == 'qnoise':
-        set_Noise_injection(model, noise_param=args.noise_param, ratio=args.ratio)
 
     start_time=time.time()
-    if args.psum_comp:
-
-        set_BitSerial_log(model, checkpoint=args.checkpoint, log_file=args.log_file,\
-            pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma, graph_path=graph_path)
-
-        if args.log_file:
-            if args.class_split:
-                eval.log_test(valid_loader, model, args)
-            else:
-                eval.log_test(train_loader, model, args)
-
-            unset_BitSerial_log(model)
-            
-    log_time = time.time()
 
     if args.evaluate:
+        if args.psum_comp:
+            if args.model_mode == 'nipq':
+                from models.nipq_hnoise_psum_module import PsumQuantOps as PQ
+                PQ.psum_initialize(model, act=True, weight=True, fixed_bit=args.fixed_bit, cbits=args.cbits, arraySize=args.arraySize, mapping_mode=args.mapping_mode, \
+                                    psum_mode=args.psum_mode, wbit_serial=args.wbit_serial, pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma, \
+                                    checkpoint=args.checkpoint, log_file=args.log_file)
+                if args.is_noise and args.nipq_noise == 'hwnoise':
+                    PQ.hnoise_initilaize(model, weight=True, hnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
+                                        noise_type=args.noise_type, res_val=args.res_val)
+            elif (args.model_mode == 'quant') or (args.model_mode == 'hn_quant'):
+                set_BitSerial_log(model, checkpoint=args.checkpoint, log_file=args.log_file,\
+                    pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma, graph_path=graph_path)
+                if args.is_noise:
+                    set_Noise_injection(model, co_noise=args.co_noise, ratio=args.ratio)
+            else:
+                assert False, "This mode is not supported psum computation"
+
+            if args.log_file:
+                if args.class_split:
+                    eval.log_test(valid_loader, model, args)
+                else:
+                    eval.log_test(train_loader, model, args)
+
+            if args.model_mode == 'nipq':
+                PQ.unset_bitserial_log(model)
+            elif (args.model_mode == 'quant') or (args.model_mode == 'hn_quant'):
+                unset_BitSerial_log(model)
+                
+        else:
         
-        if args.train_mode == 'nipq':
-            from models.nipq_quantization_module import QuantOps as Q
-            Q.initialize(model, act=True, weight=True, noise=False, fixed_bit=args.fixed_bit)
+            if args.model_mode == 'nipq':
+                from models.nipq_quantization_module import QuantOps as Q
+                Q.initialize(model, act=True, weight=True, noise=False, fixed_bit=args.fixed_bit)
+
+                if args.is_noise and args.nipq_noise == 'hwnoise':
+                    Q.hnoise_initilaize(model, weight=True, hnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
+                                        noise_type=args.noise_type, res_val=args.res_val)
+        log_time = time.time()
 
         if args.rank == 0:
             print('\nEvaluation only')
@@ -425,7 +441,7 @@ def main_worker(gpu, ngpus_per_node, args):
 
         if args.rank == 0:
             end=time.time()
-            print('\nPsum Parameter Search Total time : {total_time}s'.format(
+            print('\nEvaluation Total time : {total_time}s'.format(
                         total_time=end-start_time))
 
             # log evaluation result
@@ -441,15 +457,16 @@ def main_worker(gpu, ngpus_per_node, args):
             "dataset":          args.dataset,
             "Network":          args.arch,
             "Mapping_mode":     args.mapping_mode,
-            "arraySize":        args.arraySize,
-            'cell bits':        args.cbits,
-            "per_class":        args.per_class,
-            "pbits":            args.pbits,
-            "psum_mode":        args.psum_mode,
-            "pclipmode":        args.pclipmode,
-            "pclip":            args.pclip,
-            "noise":            args.is_noise,
-            "noise_paramiation":  args.noise_param,
+            "arraySize":        args.arraySize if args.psum_comp else "No_psum",
+            'cell bits':        args.cbits if args.psum_comp else "No_psum",
+            "per_class":        args.per_class if args.psum_comp else "No_psum",
+            "pbits":            args.pbits if args.psum_comp else "No_psum",
+            "psum_mode":        args.psum_mode if args.psum_comp else "No_psum",
+            "pclipmode":        args.pclipmode if args.psum_comp else "No_psum", 
+            "pclip":            args.pclip if args.psum_comp else "No_psum",
+            "coefficient_noise":  args.co_noise if args.is_noise else "No_noise",
+            "res_val":          args.res_val if args.is_noise else "No_noise",
+            "Valid Top1":       top1['valid'],
             "Test Top1":        top1['test'],
             "Test Top5":        top5['test'],
             "Log time":         log_time-start_time,
@@ -481,9 +498,13 @@ def main_worker(gpu, ngpus_per_node, args):
             valid_loader.reset()
 
     # initialize in the nipq mode with fixed_bit
-    if args.train_mode == 'nipq':
+    if args.model_mode == 'nipq':
         from models.nipq_quantization_module import QuantOps as Q
         Q.initialize(model, act=True, weight=True, fixed_bit=args.fixed_bit)
+
+        if args.is_noise and args.nipq_noise == 'hwnoise':
+            Q.hnoise_initilaize(model, weight=True, hnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
+                                noise_type=args.noise_type, res_val=args.res_val, max_epoch=(args.epochs - args.ft_epoch))
 
         # TO DO: When adding yolov2 (object detection)
         img = torch.Tensor(1, 3, 224, 224) if args.dataset =='imagenet' else torch.Tensor(1, 3, 32, 32)  # only two option imagenet 
@@ -500,7 +521,7 @@ def main_worker(gpu, ngpus_per_node, args):
 
         if epoch == (args.epochs - args.ft_epoch):
             # BN tuning options
-            if args.train_mode == 'nipq':
+            if args.model_mode == 'nipq':
                 Q.initialize(model, act=True, weight=True, noise=False)
 
                 for name, module in model.named_modules():

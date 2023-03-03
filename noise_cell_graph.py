@@ -9,7 +9,7 @@ import numpy as np
 # from .models.psum_modules import *
 # from .models.quantized_modules import *
 # from .noise_cell import Noise_Cell
-from utils.noise_cell import Noise_Cell
+from models.noise_cell import Noise_cell
 
 # pytest
 def test_noise_cell(wbits, cbits, mapping_mode, noise_param, state, size):

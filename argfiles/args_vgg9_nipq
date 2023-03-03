@@ -23,7 +23,7 @@
 --arch          nipq_vgg9
 --gpu-id	    0
 
---train_mode    nipq
+--model_mode    nipq
 --fixed_bit       4
 --lr            0.004
 --weight-decay  1e-5
