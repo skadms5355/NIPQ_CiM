@@ -227,9 +227,13 @@ def set_arguments():
     # noise
     noise_group.add_argument('-n', '--is_noise', default='False', type=str2bool,
                             help='Noise effect consideration')
+    noise_group.add_argument('--tn_file', default=None, type=str,
+                            help='file name of trained weight')
     noise_group.add_argument('--nipq_noise', default='qnoise', type=str, 
-                            choices=['qnoise', 'hwnoise'],
-                            help='Type of injection noise (default: quant noise)')                       
+                            choices=['qnoise', 'hwnoise', 'qhwnoise'],
+                            help='Type of injection noise (default: quant noise) \
+                                qnoise: quantization noise (training-inf), hwnoise: quantizatio noise training - hnoise inf \
+                                qhwnoise: hnoise + quantizatio noise (training) - hnoise(inf)')                       
     noise_group.add_argument('--co_noise', type=float, default=0.01,
                             help='coefficient of cell noise variation (range: 0.01 ~ 0.05) during inference.')
     noise_group.add_argument('--ratio', type=int, default=100,

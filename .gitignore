@@ -12,6 +12,7 @@ __pycache__/
 /argfiles/*.txt
 *.swp
 *.bak
+*.png
 
 ## Ignore Exclude these files.
 !/checkpoints/short_erase.sh

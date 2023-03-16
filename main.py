@@ -85,43 +85,34 @@ def main():
 
 
     if args.checkpoint is None:
+        prefix = os.path.join("checkpoints", args.dataset, args.model_mode, args.arch)
+
         if args.evaluate:
-            if args.arraySize > 0:
-                if args.is_noise:
-                    if args.noise_train:
-                        if args.wsymmetric:
-                            prefix = os.path.join("checkpoints", args.dataset, "eval", args.arch, args.mapping_mode, "{}_c:{}".format(str(args.arraySize), args.cbits),"a:{}_w:{}".format(args.abits,args.wbits), "class_split_per_{}".format(args.per_class), 'noise_std_{}'.format(args.noise_type), "noise_{}_ratio_{}_train_{}".format(args.noise_param, args.ratio, args.trained_noise), "weight_sym")
-                        else: 
-                            prefix = os.path.join("checkpoints", args.dataset, "eval", args.arch, args.mapping_mode, "{}_c:{}".format(str(args.arraySize), args.cbits),"a:{}_w:{}".format(args.abits,args.wbits), "class_split_per_{}".format(args.per_class), 'noise_std_{}'.format(args.noise_type), "noise_{}_ratio_{}_train_{}".format(args.noise_param, args.ratio, args.trained_noise))
-                    else:
-                        if args.wsymmetric:
-                            prefix = os.path.join("checkpoints", args.dataset, "eval", args.arch, args.mapping_mode, "{}_c:{}".format(str(args.arraySize), args.cbits),"a:{}_w:{}".format(args.abits,args.wbits), "class_split_per_{}".format(args.per_class), 'noise_std_{}'.format(args.noise_type), "noise_{}_ratio_{}".format(args.noise_param, args.ratio), "weight_sym")
-                        else: 
-                            prefix = os.path.join("checkpoints", args.dataset, "eval", args.arch, args.mapping_mode, "{}_c:{}".format(str(args.arraySize), args.cbits),"a:{}_w:{}".format(args.abits,args.wbits), "class_split_per_{}".format(args.per_class), 'noise_std_{}'.format(args.noise_type), "noise_{}_ratio_{}".format(args.noise_param, args.ratio))
-                else:
-                    if args.mapping_mode == "2T2R":
-                        if args.wsymmetric:
-                            prefix = os.path.join("checkpoints", args.dataset, "eval", args.arch, args.mapping_mode, "{}_c:{}".format(str(args.arraySize), args.cbits),"a:{}_w:{}".format(args.abits,args.wbits), "class_split_per_{}".format(args.per_class), "weight_sym")
-                        else: 
-                            prefix = os.path.join("checkpoints", args.dataset, "eval", args.arch, args.mapping_mode, "{}_c:{}".format(str(args.arraySize), args.cbits),"a:{}_w:{}".format(args.abits,args.wbits), "class_split_per_{}".format(args.per_class))
-                    else:
-                        prefix = os.path.join("checkpoints", args.dataset, "eval", args.arch, args.mapping_mode, "{}_c:{}".format(str(args.arraySize), args.cbits),"a:{}_w:{}".format(args.abits,args.wbits), "class_split_per_{}".format(args.per_class))
-            else:
-                prefix = os.path.join("checkpoints", args.dataset, "eval", args.arch, "a:{}_w:{}".format(args.abits,args.wbits), "search_img:{}".format(args.search_img))
-        else:
-            if args.arraySize > 0:
-                if args.is_noise:
-                    prefix = os.path.join("checkpoints", args.dataset, args.arch, args.mapping_mode, "{}_c:{}".format(str(args.arraySize), args.cbits), "a:{}_w:{}".format(args.abits,args.wbits), "trained_noise_{}_ratio_{}".format(args.trained_noise, args.ratio))
-                else:
-                    prefix = os.path.join("checkpoints", args.dataset, args.arch, args.mapping_mode, "{}_c:{}".format(str(args.arraySize), args.cbits), "a:{}_w:{}".format(args.abits,args.wbits))
-            else:
-                if not args.fix_bit:
-                    prefix = os.path.join("checkpoints", args.dataset, args.arch, "mpq_noise")
-                else:
-                    prefix = os.path.join("checkpoints", args.dataset, args.arch, "fpq_noise_{}".format(args.fix_bit))
-
-
+            prefix = os.path.join(prefix, "eval")
         
+
+        if args.model_mode == 'nipq':
+            prefix = os.path.join(prefix, "{}_fix:{}".format(args.nipq_noise, args.fixed_bit))
+        elif args.model_mode == 'hn_quant':
+            prefix = os.path.join(prefix, "a:{}_w:{}".format(args.abits, args.wbits), "trained_noise_{}_ratio_{}".format(args.trained_noise, args.ratio))
+        else:
+            prefix = os.path.join(prefix, "a:{}_w:{}".format(args.abits,args.wbits))
+        
+        if args.mapping_mode != 'none':
+
+            if args.arraySize > 0 and args.psum_comp: # inference with psum comp
+                prefix = os.path.join(prefix, args.mapping_mode, "{}_c:{}".format(str(args.arraySize), args.cbits))
+            else:
+                prefix = os.path.join(prefix, args.mapping_mode, "no_psum_c:{}".format(args.cbits))
+
+            if args.is_noise:
+                if args.tn_file is not None:
+                    prefix = os.path.join(prefix, '{}_{}_type_{}').format(args.tn_file, args.noise_type, args.co_noise)
+                else:
+                    prefix = os.path.join(prefix, '{}_type_{}').format(args.noise_type, args.co_noise)
+        else:
+            pass
+
         if args.local is None:
             prefix = prefix
         else:
@@ -375,7 +366,8 @@ def main_worker(gpu, ngpus_per_node, args):
     start_time=time.time()
     log_time = start_time
     if args.is_noise:
-        set_Noise_injection(model, noise_param=args.noise_param, ratio=args.ratio)
+        set_Noise_injection(model, weight=True, hnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
+                                        noise_type=args.noise_type, res_val=args.res_val, w_format="weight")
     
     if args.psum_comp:
 
@@ -439,7 +431,7 @@ def main_worker(gpu, ngpus_per_node, args):
             "pclipmode":        args.pclipmode,
             "pclip":            args.pclip,
             "noise":            args.is_noise,
-            "noise_paramiation":  args.noise_param,
+            "coefficient noise":  args.co_noise,
             "Test Top1":        top1['test'],
             "Test Top5":        top5['test'],
             "Log time":         log_time-start_time,

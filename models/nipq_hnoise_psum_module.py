@@ -210,23 +210,23 @@ class Psum_QConv2d(SplitConv):
                     wabitplane_hist = f'{self.checkpoint}/hist/layer{self.layer_idx}_w:{wbit}_a:{abit}_hist.pkl'
                     wa_hist_dict = {}
                     a_mag = 2**(abit)
-                    import pdb; pdb.set_trace()
-                    out_tmp = self._split_forward((input_s/a_mag).round(), weight_s, padded=True, ignore_bias=True,
+                    out_tmp = self._split_forward(input_s, weight_s, padded=True, ignore_bias=True,
                                                     weight_is_split=True, infer_only=True) 
 
+                    out_array = out_tmp.round() / a_mag # noise bound set to round function
                     ## NOTE
                     df.loc[bitplane_idx] = [wbit, abit,
-                                                    float(out_tmp.mean()), 
-                                                    float(out_tmp.std()), 
-                                                    float(out_tmp.min()), 
-                                                    float(out_tmp.max())] 
+                                                    float(out_array.mean()), 
+                                                    float(out_array.std()), 
+                                                    float(out_array.min()), 
+                                                    float(out_array.max())] 
 
-                    out_min = out_tmp.min()
-                    out_max = out_tmp.max()
+                    out_min = out_array.min()
+                    out_max = out_array.max()
 
                     # update hist
                     for val in range(int(out_min), int(out_max)+1):
-                        count = out_tmp.eq(val).sum().item()
+                        count = out_array.eq(val).sum().item()
                         # get wa_hist
                         wa_hist_dict[val] = count
                         # get w_hist
@@ -251,8 +251,7 @@ class Psum_QConv2d(SplitConv):
                         df_hist.to_pickle(wabitplane_hist)
 
                     # split output merge
-                    output_chunk = (out_tmp*a_mag).chunk(self.split_groups, dim=1)
-                    import pdb; pdb.set_trace()
+                    output_chunk = out_tmp.chunk(self.split_groups, dim=1)
                     for g in range(0, self.split_groups):
                         if g==0:
                             out_tmp = output_chunk[g]
@@ -265,7 +264,7 @@ class Psum_QConv2d(SplitConv):
                 df_hist = pd.DataFrame(list(a_hist_dict.items()), columns = ['val', 'count'])
                 # wbitplane hist
                 if os.path.isfile(abitplane_hist):
-                    print(f'[{self.layer_idx}]Update abitplane_hist for a:{abit} ({abitplane_hist})')
+                    print(f'[{self.layer_idx}] Update abitplane_hist for a:{abit} ({abitplane_hist})')
                     df_abitplane_hist = pd.read_pickle(abitplane_hist) 
                     df_merge = pd.merge(df_abitplane_hist, df_hist, how="outer", on="val")
                     df_merge = df_merge.replace(np.nan, 0)
@@ -273,7 +272,7 @@ class Psum_QConv2d(SplitConv):
                     df_merge = df_merge[['val', 'count']]
                     df_merge.to_pickle(abitplane_hist)
                 else:
-                    print(f'[{self.layer_idx}]Create abitplane_hist for a:{abit} ({abitplane_hist})')
+                    print(f'[{self.layer_idx}] Create abitplane_hist for a:{abit} ({abitplane_hist})')
                     df_hist.to_pickle(abitplane_hist)
 
                 # update layer hist
@@ -312,7 +311,7 @@ class Psum_QConv2d(SplitConv):
             df_hist.to_pickle(layer_hist)
         # network hist
         if os.path.isfile(network_hist):
-            print(f'[{self.layer_idx}]Update network_hist ({network_hist})')
+            print(f'[{self.layer_idx}] Update network_hist ({network_hist})')
             df_network_hist = pd.read_pickle(network_hist) 
             df_merge = pd.merge(df_network_hist, df_hist, how="outer", on="val")
             df_merge = df_merge.replace(np.nan, 0)
@@ -433,7 +432,6 @@ class Psum_QConv2d(SplitConv):
                 output = output * psum_scale
         else:
             # no serial computation with psum computation
-            import pdb; pdb.set_trace()
             self.pbits = 32
             output = self._split_forward(input, qweight, padded=True, ignore_bias=True, merge_group=True)
 
@@ -604,22 +602,23 @@ class Psum_QLinear(SplitLinear):
                 wabitplane_hist = f'{self.checkpoint}/hist/layer{self.layer_idx}_w:{wbit}_a:{abit}_hist.pkl'
                 wa_hist_dict = {}
                 a_mag = 2**(abit)
-                import pdb; pdb.set_trace()
-                out_tmp = self._split_forward((input_s/a_mag).round(), weight_s, ignore_bias=True, infer_only=True)
-                                
+                out_tmp = self._split_forward(input_s, weight_s, ignore_bias=True, infer_only=True)
+
+                out_array = out_tmp.round() / a_mag # noise bound set to round function
+
                 ## NOTE
                 df.loc[bitplane_idx] = [wbit, abit,
-                                                float(out_tmp.mean()), 
-                                                float(out_tmp.std()), 
-                                                float(out_tmp.min()), 
-                                                float(out_tmp.max())] 
+                                                float(out_array.mean()), 
+                                                float(out_array.std()), 
+                                                float(out_array.min()), 
+                                                float(out_array.max())] 
 
-                out_min = out_tmp.min()
-                out_max = out_tmp.max()
+                out_min = out_array.min()
+                out_max = out_array.max()
 
                 # update hist
                 for val in range(int(out_min), int(out_max)+1):
-                    count = out_tmp.eq(val).sum().item()
+                    count = out_array.eq(val).sum().item()
                     # get wa_hist
                     wa_hist_dict[val] = count
                     # get w_hist
@@ -632,7 +631,7 @@ class Psum_QLinear(SplitLinear):
                 df_hist = pd.DataFrame(list(wa_hist_dict.items()), columns = ['val', 'count'])
                 # wabitplane hist
                 if os.path.isfile(wabitplane_hist):
-                    print(f'[{self.layer_idx}]Update wabitplane_hist for w:{wbit}/a:{abit} ({wabitplane_hist})')
+                    print(f'[{self.layer_idx}] Update wabitplane_hist for w:{wbit}/a:{abit} ({wabitplane_hist})')
                     df_wabitplane_hist = pd.read_pickle(wabitplane_hist) 
                     df_merge = pd.merge(df_wabitplane_hist, df_hist, how="outer", on="val")
                     df_merge = df_merge.replace(np.nan, 0)
@@ -640,12 +639,11 @@ class Psum_QLinear(SplitLinear):
                     df_merge = df_merge[['val', 'count']]
                     df_merge.to_pickle(wabitplane_hist)
                 else:
-                    print(f'[{self.layer_idx}]Create wabitplane_hist for w:{wbit}/a:{abit} ({wabitplane_hist})')
+                    print(f'[{self.layer_idx}] Create wabitplane_hist for w:{wbit}/a:{abit} ({wabitplane_hist})')
                     df_hist.to_pickle(wabitplane_hist)
 
                 # split output merge
                 output_chunk = (out_tmp*a_mag).chunk(self.split_groups, dim=1)
-                import pdb; pdb.set_trace()
                 for g in range(0, self.split_groups):
                     if g==0:
                         out_tmp = output_chunk[g]
@@ -658,7 +656,7 @@ class Psum_QLinear(SplitLinear):
             df_hist = pd.DataFrame(list(a_hist_dict.items()), columns = ['val', 'count'])
             # wbitplane hist
             if os.path.isfile(abitplane_hist):
-                print(f'[{self.layer_idx}]Update abitplane_hist for a:{abit} ({abitplane_hist})')
+                print(f'[{self.layer_idx}] Update abitplane_hist for a:{abit} ({abitplane_hist})')
                 df_abitplane_hist = pd.read_pickle(abitplane_hist) 
                 df_merge = pd.merge(df_abitplane_hist, df_hist, how="outer", on="val")
                 df_merge = df_merge.replace(np.nan, 0)
@@ -666,7 +664,7 @@ class Psum_QLinear(SplitLinear):
                 df_merge = df_merge[['val', 'count']]
                 df_merge.to_pickle(abitplane_hist)
             else:
-                print(f'[{self.layer_idx}]Create abitplane_hist for a:{abit} ({abitplane_hist})')
+                print(f'[{self.layer_idx}] Create abitplane_hist for a:{abit} ({abitplane_hist})')
                 df_hist.to_pickle(abitplane_hist)
 
             # update layer hist
@@ -705,7 +703,7 @@ class Psum_QLinear(SplitLinear):
             df_hist.to_pickle(layer_hist)
         # network hist
         if os.path.isfile(network_hist):
-            print(f'[{self.layer_idx}]Update network_hist ({network_hist})')
+            print(f'[{self.layer_idx}] Update network_hist ({network_hist})')
             df_network_hist = pd.read_pickle(network_hist) 
             df_merge = pd.merge(df_network_hist, df_hist, how="outer", on="val")
             df_merge = df_merge.replace(np.nan, 0)

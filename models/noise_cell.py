@@ -64,19 +64,20 @@ class Noise_cell(nn.Module):
                 assert False, 'This file does not support that cbits are lower than wbits'
     
     def grad_epoch_list(self, max_epoch):
-        self.clvl_list = [int(math.floor(max_epoch/self.clevel)) for _ in range(self.clevel)]
-        for idx in range((max_epoch - self.clvl_list[0]*self.clevel)):
+        self.clvl_list = [int(math.floor(max_epoch/self.clevel.item())) for _ in range(int(self.clevel.item()))]
+        for idx in range(int(max_epoch - self.clvl_list[0]*self.clevel.item())):
             self.clvl_list[idx] +=1
     
     def compute_std(self, state):
+        std_offset = self.std_offset.to(state.device)
         if self.w_format == 'state':
-            return self.co_noise * (state+self.std_offset)
+            return self.co_noise * (state+std_offset)
         else:
             if (self.mapping_mode == '2T2R') or (self.mapping_mode == 'PN'):
-                return self.co_noise * torch.sqrt(torch.pow(state+self.std_offset, 2) + torch.pow(self.std_offset, 2))
+                return self.co_noise * torch.sqrt(torch.pow(state+std_offset, 2) + torch.pow(std_offset, 2))
             elif self.mapping_mode == 'ref_a':
-                w_ref = 2**(self.wbits-1).to(self.std_offset.device)
-                return self.co_noise * torch.sqrt(torch.pow(state+self.std_offset, 2) + torch.pow(w_ref+self.std_offset, 2))
+                w_ref = 2**(self.wbits-1).to(std_offset.device)
+                return self.co_noise * torch.sqrt(torch.pow(state+std_offset, 2) + torch.pow(w_ref+std_offset, 2))
             else:
                 assert False, 'This {} mapping mode is not supported in relative mode'.format(self.mapping_mode)
 
@@ -120,10 +121,9 @@ class Noise_cell(nn.Module):
         if float_comp and (res_val == 'rel'):
             if self.w_format == 'state':
                 assert False, "the input of noise_cell have to be weight format during training, but got {}".format(self.w_format)
-            
             if noise_type == 'prop':
                 x_cell = x + 2**(self.wbits-1) if self.mapping_mode == 'ref_a' else abs(x)
-                output = x + torch.normal(0, self.compute_std(x_cell)).to(x.device)
+                output = x + torch.normal(0, self.compute_std(x_cell))
             else:
                 output = x + (self.G_std[0] * torch.randn_like(x, device=x.device))
         else:

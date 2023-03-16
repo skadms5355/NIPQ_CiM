@@ -14,7 +14,7 @@
 
 --evaluate      y
 --gpu-id	    0
---amp           y
+# --amp           y
 
 --wbits         4
 --abits         4
@@ -23,8 +23,8 @@
 --arraySize     128
 --mapping_mode  2T2R
 --cbits         4
---abit-serial   n
---wbit-serial   n
+--abit-serial   y
+--wbit-serial   y
 
 --psum_comp     y
 --psum_mode     sigma

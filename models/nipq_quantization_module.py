@@ -104,16 +104,47 @@ class Quantizer(nn.Module):
         lsq, Qn, Qp = self.lsq_forward(x+offset, bit.round(), alpha, sym)
 
         if is_training and noise:
+            if hnoise:
+                import seaborn as sns
+                import matplotlib.pyplot as plt
+                fig, ax = plt.subplots(1, 1, figsize=(10, 3))
+                sns.histplot(data=(x/alpha).detach().cpu().numpy().ravel())
+                plt.savefig('./nipq_qnoise_weight_hist.png')
+                plt.close()
             x = (x + offset) / alpha + qnoise_make.apply(x)
             x = torch.clamp(x, Qn, Qp) 
             if hnoise:
-                import pdb; pdb.set_trace()
+                fig, ax = plt.subplots(1, 1, figsize=(10, 3))
+                ax.set_xticks(np.arange(-8, 8, 1))
+                sns.histplot(data=(x).detach().cpu().numpy().ravel())
+                plt.savefig('./nipq_qnoise_weight_hist_noise.png')
+            if hnoise:
                 x = self.noise_cell(x, float_comp=True)
+                fig, ax = plt.subplots(1, 1, figsize=(10, 3))
+                ax.set_xticks(np.arange(-8, 8, 1))
+                sns.histplot(data=(x).detach().cpu().numpy().ravel())
+                plt.savefig('./nipq_hqnoise_weight_hist_noise.png')
+                import pdb; pdb.set_trace()
 
             return x * alpha - offset
         else:
             if hnoise:
+                # import seaborn as sns
+                # import matplotlib.pyplot as plt
+                # fig, ax = plt.subplots(1, 1, figsize=(10, 3))
+                # # xlabels = [np.arange(-8, 7)]
+                # # ax.set_xticks(xlabels)
+                # ax.set_xticks(np.arange(-8, 8, 1))
+                # sns.histplot(data=(lsq/alpha).detach().cpu().numpy().ravel())
+                # plt.savefig('./weight_hist.png')
+                # plt.close()
                 lsq = self.noise_cell((lsq / alpha).round()) * alpha
+                # fig, ax = plt.subplots(1, 1, figsize=(10, 3))
+                # ax.set_xticks(np.arange(-8, 8, 1))
+                # sns.histplot(data=(lsq/alpha).detach().cpu().numpy().ravel())
+                # plt.savefig('./weight_hist_noise.png')
+                # import pdb; pdb.set_trace()
+
             return lsq - offset
 
 
@@ -174,7 +205,7 @@ class Q_Conv2d(nn.Conv2d):
         # import pdb; pdb.set_trace()
         if self.act_func is not None:
             x = self.act_func(x)
-        
+
         return F.conv2d(x, self._weight_quant(), self.bias,
                         self.stride, self.padding, self.dilation, self.groups)
     

@@ -111,7 +111,10 @@ def main():
                 prefix = os.path.join(prefix, args.mapping_mode, "no_psum_c:{}".format(args.cbits))
 
             if args.is_noise:
-                prefix = os.path.join(prefix, '{}_type_{}').format(args.noise_type, args.co_noise)
+                if args.tn_file is not None:
+                    prefix = os.path.join(prefix, '{}_{}_type_{}').format(args.tn_file, args.noise_type, args.co_noise)
+                else:
+                    prefix = os.path.join(prefix, '{}_type_{}').format(args.noise_type, args.co_noise)
         else:
             pass
 
@@ -372,7 +375,8 @@ def main_worker(gpu, ngpus_per_node, args):
         if args.evaluate:
             report_path = os.path.join(str(pathlib.Path().resolve()), ((args.checkpoint.replace('checkpoints', 'report')).replace('eval/', '')).replace('/log_bitserial_info', '').replace(f'type_{args.co_noise}', 'type'))
             graph_path = os.path.join(str(pathlib.Path().resolve()), 'graph', args.dataset, f'Psum_{args.arch}', args.mapping_mode, args.psum_mode, 'class_{}'.format(args.per_class))
-            report_path = '/'.join(report_path.split('/')[:-1]) # time folder remove 
+            if not args.psum_comp:
+                report_path = '/'.join(report_path.split('/')[:-1]) # time folder remove 
             os.makedirs(report_path, exist_ok=True)
             report_file = os.path.join(report_path, 'model_report.pkl')
 
@@ -386,7 +390,7 @@ def main_worker(gpu, ngpus_per_node, args):
                 PQ.psum_initialize(model, act=True, weight=True, fixed_bit=args.fixed_bit, cbits=args.cbits, arraySize=args.arraySize, mapping_mode=args.mapping_mode, \
                                     psum_mode=args.psum_mode, wbit_serial=args.wbit_serial, pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma, \
                                     checkpoint=args.checkpoint, log_file=args.log_file)
-                if args.is_noise and args.nipq_noise == 'hwnoise':
+                if args.is_noise and 'hwnoise' in args.nipq_noise:
                     PQ.hnoise_initilaize(model, weight=True, hnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
                                         noise_type=args.noise_type, res_val=args.res_val)
             elif (args.model_mode == 'quant') or (args.model_mode == 'hn_quant'):
@@ -414,7 +418,7 @@ def main_worker(gpu, ngpus_per_node, args):
                 from models.nipq_quantization_module import QuantOps as Q
                 Q.initialize(model, act=True, weight=True, noise=False, fixed_bit=args.fixed_bit)
 
-                if args.is_noise and args.nipq_noise == 'hwnoise':
+                if args.is_noise and 'hwnoise' in args.nipq_noise:
                     Q.hnoise_initilaize(model, weight=True, hnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
                                         noise_type=args.noise_type, res_val=args.res_val)
         log_time = time.time()
@@ -501,8 +505,7 @@ def main_worker(gpu, ngpus_per_node, args):
     if args.model_mode == 'nipq':
         from models.nipq_quantization_module import QuantOps as Q
         Q.initialize(model, act=True, weight=True, fixed_bit=args.fixed_bit)
-
-        if args.is_noise and args.nipq_noise == 'hwnoise':
+        if args.is_noise and 'hwnoise' in args.nipq_noise:
             Q.hnoise_initilaize(model, weight=True, hnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
                                 noise_type=args.noise_type, res_val=args.res_val, max_epoch=(args.epochs - args.ft_epoch))
 
