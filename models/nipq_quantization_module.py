@@ -67,8 +67,9 @@ class Quantizer(nn.Module):
     
     def hnoise_init(self, cbits, mapping_mode, co_noise=0.01, noise_type='prop', res_val='rel', max_epoch=-1):
         bit = 2 + torch.sigmoid(self.bit)*12
+        w_format = 'state' if res_val == 'abs' or noise_type == 'meas' else 'weight'
         self.noise_cell = Noise_cell(bit.round().squeeze(), cbits, mapping_mode, co_noise, noise_type=noise_type, \
-                                    res_val=res_val, w_format='weight', max_epoch=max_epoch)
+                                    res_val=res_val, w_format=w_format, max_epoch=max_epoch)
     
     def get_alpha(self):
         return self.alpha
@@ -77,7 +78,7 @@ class Quantizer(nn.Module):
         bit = 2 + torch.sigmoid(self.bit)*12
         return bit.round_().squeeze()
 
-    def forward(self, x, is_training=True):
+    def forward(self, x, is_training=True, serial=False):
         # parameter define
         sym = self.sym
         offset = self.offset
@@ -104,31 +105,14 @@ class Quantizer(nn.Module):
         lsq, Qn, Qp = self.lsq_forward(x+offset, bit.round(), alpha, sym)
 
         if is_training and noise:
-            if hnoise:
-                import seaborn as sns
-                import matplotlib.pyplot as plt
-                fig, ax = plt.subplots(1, 1, figsize=(10, 3))
-                sns.histplot(data=(x/alpha).detach().cpu().numpy().ravel())
-                plt.savefig('./nipq_qnoise_weight_hist.png')
-                plt.close()
             x = (x + offset) / alpha + qnoise_make.apply(x)
             x = torch.clamp(x, Qn, Qp) 
             if hnoise:
-                fig, ax = plt.subplots(1, 1, figsize=(10, 3))
-                ax.set_xticks(np.arange(-8, 8, 1))
-                sns.histplot(data=(x).detach().cpu().numpy().ravel())
-                plt.savefig('./nipq_qnoise_weight_hist_noise.png')
-            if hnoise:
                 x = self.noise_cell(x, float_comp=True)
-                fig, ax = plt.subplots(1, 1, figsize=(10, 3))
-                ax.set_xticks(np.arange(-8, 8, 1))
-                sns.histplot(data=(x).detach().cpu().numpy().ravel())
-                plt.savefig('./nipq_hqnoise_weight_hist_noise.png')
-                import pdb; pdb.set_trace()
 
             return x * alpha - offset
         else:
-            if hnoise:
+            if hnoise and not serial:
                 # import seaborn as sns
                 # import matplotlib.pyplot as plt
                 # fig, ax = plt.subplots(1, 1, figsize=(10, 3))
@@ -144,7 +128,6 @@ class Quantizer(nn.Module):
                 # sns.histplot(data=(lsq/alpha).detach().cpu().numpy().ravel())
                 # plt.savefig('./weight_hist_noise.png')
                 # import pdb; pdb.set_trace()
-
             return lsq - offset
 
 

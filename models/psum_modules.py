@@ -263,8 +263,8 @@ class PsumQConv(SplitConv):
     
     def _cell_noise_inject(self, weight_list):
         weight_cond = []
-        for weight in weight_list:
-            weight_cond.append(self.noise_cell(weight))
+        for w, weight in enumerate(weight_list):
+            weight_cond.append(2**w * self.noise_cell(weight/2**w))
         
         return weight_cond
     
@@ -323,6 +323,9 @@ class PsumQConv(SplitConv):
                     # print(set(weight_chunk_debug[0].cpu().detach().numpy().ravel()))
                     weight_chunk = self._cell_noise_inject(weight_chunk)
                     delta_G = self.noise_cell.get_deltaG()
+                    if not (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
+                        delta_G, G_min = self.noise_cell.get_deltaG(G_min=True)
+                        w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
                 else:
                     delta_G = 1
 
@@ -437,6 +440,10 @@ class PsumQConv(SplitConv):
                     else:
                         layer_hist_dict[val] = count
                 
+                if self.is_noise and not (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
+                    out_one = (-G_min/delta_G) * self._split_forward(input_s, w_one, padded=True, ignore_bias=True,
+                                                    weight_is_split=True, infer_only=True, merge_group=True)
+                    out_wsum -= out_one
                 output = out_wsum if abit ==0 else output+out_wsum
 
             # restore output's scale
@@ -597,6 +604,9 @@ class PsumQConv(SplitConv):
                     weight_chunk = self._cell_noise_inject(weight_chunk)
                     delta_G = self.noise_cell.get_deltaG()
                     cat_output = True
+                    if not (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
+                        delta_G, G_min = self.noise_cell.get_deltaG(G_min=True)
+                        w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
                 else:
                     cat_output = False
                     delta_G = 1
@@ -643,6 +653,10 @@ class PsumQConv(SplitConv):
                         else:
                             out_wsum = out_adc if wbit == 0 else out_wsum + out_adc
                         out_adc = None
+                    if self.is_noise and not (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
+                        out_one = (-G_min/delta_G) * self._split_forward(input_s, w_one, padded=True, ignore_bias=True, cat_output=False,
+                                                weight_is_split=True, infer_only=True, merge_group=True)
+                        out_wsum -= out_one
                     # output_real = F.conv2d(input_s, qweight, bias=self.bias,
                     #                         stride=self.stride, dilation=self.dilation, groups=self.groups)
                     # import pdb; pdb.set_trace()
@@ -897,8 +911,8 @@ class PsumQLinear(SplitLinear):
     
     def _cell_noise_inject(self, weight_list):
         weight_cond = []
-        for weight in weight_list:
-            weight_cond.append(self.noise_cell(weight))
+        for w, weight in enumerate(weight_list):
+            weight_cond.append(2**w * self.noise_cell(weight/2**w))
         
         return weight_cond
     
@@ -938,10 +952,13 @@ class PsumQLinear(SplitLinear):
         ### Cell conductance value change + Cell noise injection 
         if self.is_noise:
             if self.w_format == "state":
-                    # weight_chunk_debug= weight_chunk
-                    # print(set(weight_chunk_debug[0].cpu().detach().numpy().ravel()))
-                    weight_chunk = self._cell_noise_inject(weight_chunk)
-                    delta_G = self.noise_cell.get_deltaG()
+                # weight_chunk_debug= weight_chunk
+                # print(set(weight_chunk_debug[0].cpu().detach().numpy().ravel()))
+                weight_chunk = self._cell_noise_inject(weight_chunk)
+                delta_G = self.noise_cell.get_deltaG()
+                if not (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
+                        delta_G, G_min = self.noise_cell.get_deltaG(G_min=True)
+                        w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
             else:
                 delta_G = 1
 
@@ -1053,7 +1070,10 @@ class PsumQLinear(SplitLinear):
                     layer_hist_dict[val] += count
                 else:
                     layer_hist_dict[val] = count
-            
+
+            if self.is_noise and not (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
+                out_one = (-G_min/delta_G) * self._split_forward(input_s, w_one, ignore_bias=True, infer_only=True, merge_group=True)
+                out_wsum -= out_one
             output = out_wsum if abit ==0 else output+out_wsum
 
         # restore output's scale
@@ -1188,6 +1208,9 @@ class PsumQLinear(SplitLinear):
                     weight_chunk = self._cell_noise_inject(weight_chunk)
                     delta_G = self.noise_cell.get_deltaG()
                     cat_output = True
+                    if not (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
+                        delta_G, G_min = self.noise_cell.get_deltaG(G_min=True)
+                        w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
                 else:
                     cat_output = False
                     delta_G = 1
@@ -1209,7 +1232,7 @@ class PsumQLinear(SplitLinear):
                                     # temp = [temp - out_tmp for (temp, out_tmp) in zip(temp, out_tmp)]
                                     # out_tmp = list(map(lambda x: x/delta_G, temp))
                             else:
-                                out_tmp /= delta_G
+                                out_tmp /= delta_G 
                                 # out_tmp = list(map(lambda x: x/delta_G, out_tmp))
                             out_tmp = torch.chunk(out_tmp, self.split_groups, dim=1)
                             out_tmp = list(map(lambda x: x.contiguous(), out_tmp))
@@ -1249,6 +1272,10 @@ class PsumQLinear(SplitLinear):
                         else:
                             out_wsum = out_adc if wbit == 0 else out_wsum + out_adc
                         out_adc = None
+
+                    if self.is_noise and not (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
+                        out_one = (-G_min/delta_G) * self._split_forward(input_s, w_one, ignore_bias=True, infer_only=True, merge_group=True)
+                        out_wsum -= out_one
                     output = out_wsum if abit == 0 else output+out_wsum
 
                 # restore output's scale

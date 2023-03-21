@@ -14,12 +14,12 @@ class Psum_mlp(nn.Module):
         self.bn1 = nn.BatchNorm1d(512)
         self.qact = add_act(abits=kwargs['abits'], bitserial=kwargs['abit_serial'])
 
-        self.fc2 = PsumQLinear(512, 512, wbits=kwargs['wbits'], arraySize=kwargs['arraySize'], 
-                            mapping_mode=kwargs['mapping_mode'], cell=kwargs['cell'])
+        self.fc2 = PsumQLinear(512, 512, wbits=kwargs['wbits'], arraySize=kwargs['arraySize'], wbit_serial=kwargs['wbit_serial'], psum_mode=kwargs['psum_mode'],
+                            mapping_mode=kwargs['mapping_mode'], cbits=kwargs['cbits'], is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type'])
         self.bn2 = nn.BatchNorm1d(512)
 
-        self.fc3 = PsumQLinear(512, 512, wbits=kwargs['wbits'], arraySize=kwargs['arraySize'], 
-                            mapping_mode=kwargs['mapping_mode'], cell=kwargs['cell'])
+        self.fc3 = PsumQLinear(512, 512, wbits=kwargs['wbits'], arraySize=kwargs['arraySize'], wbit_serial=kwargs['wbit_serial'], psum_mode=kwargs['psum_mode'],
+                            mapping_mode=kwargs['mapping_mode'], cbits=kwargs['cbits'], is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type'])
         self.bn3 = nn.BatchNorm1d(512)
         self.act = add_act(abits=32)
 

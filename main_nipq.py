@@ -111,10 +111,17 @@ def main():
                 prefix = os.path.join(prefix, args.mapping_mode, "no_psum_c:{}".format(args.cbits))
 
             if args.is_noise:
-                if args.tn_file is not None:
-                    prefix = os.path.join(prefix, '{}_{}_type_{}').format(args.tn_file, args.noise_type, args.co_noise)
+                if args.noise_type == 'meas':
+                    type = '{}'.format(args.meas_type)
                 else:
-                    prefix = os.path.join(prefix, '{}_type_{}').format(args.noise_type, args.co_noise)
+                    type = 'type_{}'.format(args.co_noise)
+
+                if args.tn_file is not None:
+                    prefix = os.path.join(prefix, '{}_{}_{}').format(args.tn_file, args.noise_type, type)
+                else:
+                    prefix = os.path.join(prefix, '{}_{}').format(args.noise_type, type)
+                
+
         else:
             pass
 

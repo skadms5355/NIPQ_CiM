@@ -25,19 +25,19 @@
 --psum_comp     y
 --arraySize     128
 --cbits         4
---mapping_mode  2T2R
+--mapping_mode  two_com
 --wbit-serial   y
 --abit-serial   y
 
 --psum_mode     sigma
---pbits         32
+--pbits         6
 --pclipmode     Layer
 --pclip         sigma
 --psigma        3
 
 # noise option
---is_noise      y
---nipq_noise    hwnoise
+--is_noise      n
+--nipq_noise    qnoise
 --co_noise      0.03
 --noise_type    prop
 --res_val       rel

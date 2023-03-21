@@ -28,6 +28,9 @@ class Noise_cell(nn.Module):
 
     def init_state(self):
         self.effective_clevel()
+        if self.noise_type == 'meas':
+            self.G = torch.tensor([43.9e-6, 96.16e-6])
+            self.G_std = torch.tensor([5.02e-6, 9.52e-6]) #MRAM data
 
         if self.res_val == 'rel':
             self.std_offset = torch.Tensor(1).fill_((self.clevel - 1) / (self.ratio - 1))
@@ -41,6 +44,8 @@ class Noise_cell(nn.Module):
                 self.G_std = torch.Tensor(1).fill_(self.co_noise * self.G[idx])
             elif self.noise_type == 'prop':
                 self.G_std = torch.tensor([self.co_noise * self.G[i] for i in range(self.clevel)])
+            elif self.noise_type == 'meas':
+                self.delta_G = self.G[-1] - self.G[0]
             else:
                 assert False, 'In the {} mode, the {} noise type is not supported, you have to choose static or prop'.format(self.res_val, self.noise_type)
         else:
@@ -50,6 +55,8 @@ class Noise_cell(nn.Module):
         if self.mapping_mode == 'two_com':
             if self.cbits >= (self.wbits-1):
                 self.clevel = 2**(self.wbits - 1) # cell can represent self.wbits-1 bits
+            elif self.cbits == 1:
+                self.clevel = 2
             else:
                 assert False, 'This file does not support that cbits are lower than wbits-1'
         elif (self.mapping_mode == '2T2R') or (self.mapping_mode == 'PN'):
@@ -78,6 +85,8 @@ class Noise_cell(nn.Module):
             elif self.mapping_mode == 'ref_a':
                 w_ref = 2**(self.wbits-1).to(std_offset.device)
                 return self.co_noise * torch.sqrt(torch.pow(state+std_offset, 2) + torch.pow(w_ref+std_offset, 2))
+            elif self.mapping_mode == 'two_com':
+                return self.co_noise * (state+std_offset)
             else:
                 assert False, 'This {} mapping mode is not supported in relative mode'.format(self.mapping_mode)
 
@@ -99,6 +108,11 @@ class Noise_cell(nn.Module):
         elif self.noise_type == 'prop':
             G = torch.arange(0, self.clevel)
             self.G_std = self.compute_std(G)
+        elif self.noise_type == 'meas':
+            #MRAM data
+            self.delta_G = self.G[-1] - self.G[0] 
+            self.std_offset = self.G[0] / self.delta_G 
+            self.G_std /= self.delta_G 
         else:
             assert False, 'Check noise type, you write {} noise type'.format(self.noise_type)
 
@@ -111,8 +125,13 @@ class Noise_cell(nn.Module):
         else:
             assert False, 'Only gradually mode is updated'
 
-    def get_deltaG(self):
+    def get_deltaG(self, G_min=False):
+        if G_min:
+            return self.delta_G, self.G[0]
         return self.delta_G
+
+    def get_offset(self):
+        return self.std_offset
 
     def forward(self, x, float_comp=False):
         noise_type = self.noise_type
@@ -132,7 +151,7 @@ class Noise_cell(nn.Module):
                 if noise_type == 'static':
                     output = torch.normal(self.G[x_idx], self.G_std[0]).to(x.device)
                     output = torch.where(output<0, output[output>0].min(), output).to(x.device)
-                elif noise_type == 'prop':
+                elif noise_type == 'prop' or 'meas':
                     output = torch.normal(self.G[x_idx], self.G_std[x_idx]).to(x.device)
                 assert torch.all(output > 0), "Do not set negative cell value"
             elif res_val == 'rel':
@@ -142,6 +161,13 @@ class Noise_cell(nn.Module):
                     else:
                         x_cell = x+2**(self.wbits-1) if self.mapping_mode == 'ref_a' else abs(x)
                     output = x + torch.normal(0, self.G_std[x_cell.detach().cpu().numpy()]).to(x.device)
+                elif noise_type == 'meas':
+                    if self.w_format == 'state':
+                        x_cell = x
+                        output = x + self.std_offset + torch.normal(0, self.G_std[x_cell.detach().cpu().numpy()]).to(x.device)
+                    else:
+                        x_cell = x+2**(self.wbits-1) if self.mapping_mode == 'ref_a' else abs(x)
+                        output = x + torch.normal(0, self.G_std[x_cell.detach().cpu().numpy()]).to(x.device)
                 else:
                     output = x + (self.G_std[0] * torch.randn_like(x, device=x.device))
                 

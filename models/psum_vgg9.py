@@ -60,6 +60,7 @@ class PNIPQ_vgg9(nn.Module):
         x = x.view(x.size(0), -1)
         x = self.classifier(x)
         return x
+    
 class PLSQ_vgg9(nn.Module):
     def __init__(self, **kwargs):
         super(PLSQ_vgg9, self).__init__()

@@ -367,7 +367,7 @@ def main_worker(gpu, ngpus_per_node, args):
     log_time = start_time
     if args.is_noise:
         set_Noise_injection(model, weight=True, hnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
-                                        noise_type=args.noise_type, res_val=args.res_val, w_format="weight")
+                                        noise_type=args.noise_type, res_val=args.res_val, w_format="state")
     
     if args.psum_comp:
 
