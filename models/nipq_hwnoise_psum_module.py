@@ -68,7 +68,7 @@ class Psum_QConv2d(SplitConv):
 
         self.quant_func = Quantizer(sym=True, noise=False, offset=0, is_stochastic=True, is_discretize=True)
         self.bits = self.quant_func.get_bit()
-        self.hnoise = False
+        self.hwnoise = False
 
         ## for psum quantization
         self.mapping_mode = '2T2R' # Array mapping method [2T2R, ref_a]]
@@ -205,7 +205,7 @@ class Psum_QConv2d(SplitConv):
             if w_serial:
                 sweight, _ = self.bitserial_split(self.sweight, act=False) 
                 sweight = torch.where(sweight>0, 1., 0.)
-                if self.hnoise:
+                if self.hwnoise:
                     sweight = self.quant_func.noise_cell(sweight)
                     std_offset = self.quant_func.noise_cell.get_offset()
                 wsplit_num = int(self.bits / self.cbits)
@@ -223,7 +223,7 @@ class Psum_QConv2d(SplitConv):
             for abit, input_s in enumerate(input_chunk):
                 abitplane_hist = f'{self.checkpoint}/hist/layer{self.layer_idx}_a:{abit}_hist.pkl'
                 a_hist_dict = {}
-                if w_serial and self.hnoise:
+                if w_serial and self.hwnoise:
                     out_one = std_offset * self._split_forward(input_s, w_one, padded=True, ignore_bias=True,
                                                 weight_is_split=True, infer_only=True, merge_group=True)
                 for wbit, weight_s in enumerate(weight_chunk):
@@ -279,7 +279,7 @@ class Psum_QConv2d(SplitConv):
                             out_tmp += output_chunk[g]
                     
                     if w_serial:
-                        out_tmp = 2**(wbit)*(out_tmp - out_one) if self.hnoise else 2**(wbit)*(out_tmp)
+                        out_tmp = 2**(wbit)*(out_tmp - out_one) if self.hwnoise else 2**(wbit)*(out_tmp)
                         if wsplit_num == wbit+1:
                             out_wsum -= out_tmp
                         else:
@@ -434,7 +434,7 @@ class Psum_QConv2d(SplitConv):
                 if w_serial:
                     sweight, _ = self.bitserial_split(self.sweight, act=False) 
                     sweight = torch.where(sweight>0, 1., 0.)
-                    if self.hnoise:
+                    if self.hwnoise:
                         sweight = self.quant_func.noise_cell(sweight)
                         std_offset = self.quant_func.noise_cell.get_offset()
                     wsplit_num = int(self.bits / self.cbits)
@@ -460,7 +460,7 @@ class Psum_QConv2d(SplitConv):
                     assert False, 'This script does not support {self.psum_mode}'
 
                 for abit, input_s in enumerate(input_chunk):
-                    if w_serial and self.hnoise:
+                    if w_serial and self.hwnoise:
                         out_one = std_offset * self._split_forward(input_s, w_one, padded=True, ignore_bias=True, cat_output=False,
                                                     weight_is_split=True, infer_only=True, merge_group=True)
                     for wbit, weight_s in enumerate(weight_chunk):
@@ -475,7 +475,7 @@ class Psum_QConv2d(SplitConv):
                                                     pbound=self.pbound, center=self.center, weight=a_mag,
                                                     groups=self.split_groups, pzero=self.pzero)
                         if w_serial:
-                            out_adc = 2**(wbit) * (out_adc - out_one) if self.hnoise else 2**(wbit) * out_adc
+                            out_adc = 2**(wbit) * (out_adc - out_one) if self.hwnoise else 2**(wbit) * out_adc
                             if wsplit_num == wbit+1:
                                 out_wsum -= out_adc
                             else:
@@ -535,7 +535,7 @@ class Psum_QLinear(SplitLinear):
     def __init__(self, *args, act_func=None, **kargs):
         super(Psum_QLinear, self).__init__(*args, **kargs)
         self.act_func = act_func
-        self.hnoise = False
+        self.hwnoise = False
 
         self.quant_func = Quantizer(sym=True, noise=False, offset=0, is_stochastic=True, is_discretize=True)
         self.bits = self.quant_func.get_bit()
@@ -653,7 +653,7 @@ class Psum_QLinear(SplitLinear):
         if w_serial:
             sweight, _ = self.bitserial_split(qweight/w_scale, act=False) 
             sweight = torch.where(sweight>0, 1., 0.)
-            if self.hnoise:
+            if self.hwnoise:
                 sweight = self.quant_func.noise_cell(sweight)
                 std_offset = self.quant_func.noise_cell.get_offset()
             wsplit_num = int(self.bits / self.cbits)
@@ -671,7 +671,7 @@ class Psum_QLinear(SplitLinear):
         for abit, input_s in enumerate(input_chunk):
             abitplane_hist = f'{self.checkpoint}/hist/layer{self.layer_idx}_a:{abit}_hist.pkl'
             a_hist_dict = {}
-            if w_serial and self.hnoise:
+            if w_serial and self.hwnoise:
                 out_one = (std_offset) * self._split_forward(input_s, w_one, ignore_bias=True, infer_only=True, merge_group=True)
             for wbit, weight_s in enumerate(weight_chunk):
                 wabitplane_hist = f'{self.checkpoint}/hist/layer{self.layer_idx}_w:{wbit}_a:{abit}_hist.pkl'
@@ -726,7 +726,7 @@ class Psum_QLinear(SplitLinear):
                         out_tmp += output_chunk[g]
 
                 if w_serial:
-                    out_tmp = 2**(wbit)* (out_tmp-out_one) if self.hnoise else 2**(wbit) * out_tmp
+                    out_tmp = 2**(wbit)* (out_tmp-out_one) if self.hwnoise else 2**(wbit) * out_tmp
                     if wsplit_num == wbit+1:
                         out_wsum -= out_tmp
                     else:
@@ -877,7 +877,7 @@ class Psum_QLinear(SplitLinear):
                 if w_serial:
                     sweight, _ = self.bitserial_split(qweight/w_scale, act=False) 
                     sweight = torch.where(sweight>0, 1., 0.)
-                    if self.hnoise:
+                    if self.hwnoise:
                         sweight = self.quant_func.noise_cell(sweight)
                         std_offset = self.quant_func.noise_cell.get_offset()
                     wsplit_num = int(self.bits / self.cbits)
@@ -901,7 +901,7 @@ class Psum_QLinear(SplitLinear):
 
                 # to compare output data
                 for abit, input_s in enumerate(input_chunk):
-                    if w_serial and self.hnoise:
+                    if w_serial and self.hwnoise:
                         out_one = (std_offset) * self._split_forward(input_s, w_one, ignore_bias=True, infer_only=True, merge_group=True)
                     for wbit, weight_s in enumerate(weight_chunk):
                         out_adc = None
@@ -914,7 +914,7 @@ class Psum_QLinear(SplitLinear):
                                                     pbound=self.pbound, center=self.center, weight=a_mag,
                                                     groups=self.split_groups, pzero=self.pzero)
                         if w_serial:
-                            out_adc = 2**(wbit) * (out_adc - out_one) if self.hnoise else 2**(wbit) * out_adc
+                            out_adc = 2**(wbit) * (out_adc - out_one) if self.hwnoise else 2**(wbit) * out_adc
                             if wsplit_num == wbit+1:
                                 out_wsum -= out_adc
                             else:
@@ -1038,16 +1038,16 @@ def unset_bitserial_log(model):
             print("Finish log unsetting {}, idx: {}".format(name.replace("module.", ""), counter))
             counter += 1
 
-def hnoise_initilaize(model, weight=False, hnoise=True, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', max_epoch=-1):
+def hwnoise_initilaize(model, weight=False, hwnoise=True, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', max_epoch=-1):
     for name, module in model.named_modules():
-        if isinstance(module, (Psum_QConv2d, Psum_QLinear)) and weight and hnoise:
-            module.quant_func.hnoise = True
-            module.hnoise = True
+        if isinstance(module, (Psum_QConv2d, Psum_QLinear)) and weight and hwnoise:
+            module.quant_func.hwnoise = True
+            module.hwnoise = True
 
             if noise_type == 'grad':
-                assert max_epoch != -1, "Enter max_epoch in hnoise_initialize function"
-            if hnoise:
-                module.quant_func.hnoise_init(cbits=cbits, mapping_mode=mapping_mode, co_noise=co_noise, noise_type=noise_type, res_val=res_val, max_epoch=max_epoch)
+                assert max_epoch != -1, "Enter max_epoch in hwnoise_initialize function"
+            if hwnoise:
+                module.quant_func.hwnoise_init(cbits=cbits, mapping_mode=mapping_mode, co_noise=co_noise, noise_type=noise_type, res_val=res_val, max_epoch=max_epoch)
 
 def print_ratio(checkpoint, layer_idx, input, weight):
     total_inum = input[0].cpu().numpy().size
@@ -1075,7 +1075,7 @@ def print_ratio(checkpoint, layer_idx, input, weight):
 
 class PsumQuantOps(object):
     psum_initialize = psum_initialize
-    hnoise_initilaize = hnoise_initilaize
+    hwnoise_initilaize = hwnoise_initilaize
     unset_bitserial_log = unset_bitserial_log
     Conv2d = Psum_QConv2d
     Linear = Psum_QLinear

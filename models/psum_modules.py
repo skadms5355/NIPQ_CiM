@@ -1381,14 +1381,14 @@ def set_Qact_bitserial(model, pquant_idx, abit_serial=True):
             counter += 1
     print("finish setting quantact bitserial ")
 
-def set_Noise_injection(model, weight=False, hnoise=True, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', w_format='weight', max_epoch=-1):
+def set_Noise_injection(model, weight=False, hwnoise=True, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', w_format='weight', max_epoch=-1):
     for name, module in model.named_modules():
-        if isinstance(module, (PsumQConv, PsumQLinear)) and weight and hnoise:
+        if isinstance(module, (PsumQConv, PsumQLinear)) and weight and hwnoise:
             module.is_noise = True
 
             if noise_type == 'grad':
-                assert max_epoch != -1, "Enter max_epoch in hnoise_initialize function"
-            if hnoise:
+                assert max_epoch != -1, "Enter max_epoch in hwnoise_initialize function"
+            if hwnoise:
                 module._cell_noise_init(cbits=cbits, mapping_mode=mapping_mode, co_noise=co_noise, noise_type=noise_type, res_val=res_val, w_format=w_format, max_epoch=max_epoch)
 
 def count_ArrayMaxV(wbits, cbits, mapping_mode, arraySize):

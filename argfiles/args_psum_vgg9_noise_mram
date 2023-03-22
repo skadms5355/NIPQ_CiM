@@ -21,9 +21,16 @@
 # trained model with NIPQ quantization
 --arch          psum_nipq_vgg9
 --pretrained    ./checkpoints/cifar10/nipq/nipq_vgg9/qnoise_fix:4/2023-Feb-22-14-31-20/model_best.pth.tar
+--nipq_noise    qnoise
 --model_mode    nipq
 --fixed_bit       4
 --res_val       rel
+
+#mram
+# --pretrained    ./checkpoints/cifar10/nipq/nipq_vgg9/qhwnoise_fix:4/two_com/no_psum_c:1/meas_mram/2023-Mar-21-20-15-08/model_best.pth.tar
+# --tn_file       t_val
+# --nipq_noise    qhwnoise
+
 
 --evaluate      y
 --gpu-id	    0
@@ -49,8 +56,7 @@
 # split_per_class 50 (set at Data_loader)
 
 # for noise
---is_noise      y
---nipq_noise    hwnoise
+--is_noise      n
 --co_noise      0
 --noise_type    meas
 --meas_type     mram

@@ -1,7 +1,7 @@
 import torch 
 import torch.nn as nn
 from .nipq_quantization_module import QuantOps as Q
-from .nipq_hnoise_psum_module import PsumQuantOps as PQ
+from .nipq_hwnoise_psum_module import PsumQuantOps as PQ
 from .quantized_lsq_modules import *
 from .quantized_basic_modules import *
 from .psum_modules import *

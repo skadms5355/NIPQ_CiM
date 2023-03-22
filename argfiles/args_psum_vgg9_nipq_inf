@@ -30,13 +30,13 @@
 --abit-serial   y
 
 --psum_mode     sigma
---pbits         6
+--pbits         4
 --pclipmode     Layer
 --pclip         sigma
 --psigma        3
 
 # noise option
---is_noise      n
+--is_noise      y
 --nipq_noise    qnoise
 --co_noise      0.03
 --noise_type    prop

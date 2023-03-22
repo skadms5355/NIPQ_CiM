@@ -232,8 +232,8 @@ def set_arguments():
     noise_group.add_argument('--nipq_noise', default='qnoise', type=str, 
                             choices=['qnoise', 'hwnoise', 'qhwnoise'],
                             help='Type of injection noise (default: quant noise) \
-                                qnoise: quantization noise (training-inf), hwnoise: quantizatio noise training - hnoise inf \
-                                qhwnoise: hnoise + quantizatio noise (training) - hnoise(inf)')                       
+                                qnoise: quantization noise (training-inf), hwnoise: quantizatio noise training - hwnoise inf \
+                                qhwnoise: hwnoise + quantizatio noise (training) - hwnoise(inf)')                       
     noise_group.add_argument('--co_noise', type=float, default=0.01,
                             help='coefficient of cell noise variation (range: 0.01 ~ 0.05) during inference.')
     noise_group.add_argument('--ratio', type=int, default=100,
