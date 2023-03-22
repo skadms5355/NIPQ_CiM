@@ -23,8 +23,8 @@
 --pretrained    ./checkpoints/cifar10/nipq/nipq_vgg9/qnoise_fix:4/2023-Feb-22-14-31-20/model_best.pth.tar
 
 --psum_comp     y
---arraySize     128
---cbits         4
+--arraySize     256
+--cbits         1
 --mapping_mode  two_com
 --wbit-serial   y
 --abit-serial   y

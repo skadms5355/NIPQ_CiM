@@ -108,8 +108,7 @@ class Quantizer(nn.Module):
             x = (x + offset) / alpha + qnoise_make.apply(x)
             x = torch.clamp(x, Qn, Qp) 
             if hnoise:
-                x = self.noise_cell(x, float_comp=True)
-
+                x = self.noise_cell(x, float_comp=True, w_split=serial)
             return x * alpha - offset
         else:
             if hnoise and not serial:
@@ -122,7 +121,7 @@ class Quantizer(nn.Module):
                 # sns.histplot(data=(lsq/alpha).detach().cpu().numpy().ravel())
                 # plt.savefig('./weight_hist.png')
                 # plt.close()
-                lsq = self.noise_cell((lsq / alpha).round()) * alpha
+                lsq = self.noise_cell((lsq / alpha).round(), w_split=serial) * alpha
                 # fig, ax = plt.subplots(1, 1, figsize=(10, 3))
                 # ax.set_xticks(np.arange(-8, 8, 1))
                 # sns.histplot(data=(lsq/alpha).detach().cpu().numpy().ravel())

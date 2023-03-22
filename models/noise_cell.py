@@ -133,18 +133,21 @@ class Noise_cell(nn.Module):
     def get_offset(self):
         return self.std_offset
 
-    def forward(self, x, float_comp=False):
+    def forward(self, x, float_comp=False, w_split=True):
         noise_type = self.noise_type
         res_val = self.res_val
         
         if float_comp and (res_val == 'rel'):
             if self.w_format == 'state':
-                assert False, "the input of noise_cell have to be weight format during training, but got {}".format(self.w_format)
+                if noise_type == 'meas':
+                    output = x + (85 * self.G_std.max()**2 * torch.randn_like(x, device=x.device))
+                else:
+                    assert False, "the input of noise_cell have to be weight format during training, but got {}".format(self.w_format)
             if noise_type == 'prop':
                 x_cell = x + 2**(self.wbits-1) if self.mapping_mode == 'ref_a' else abs(x)
                 output = x + torch.normal(0, self.compute_std(x_cell))
             else:
-                output = x + (self.G_std[0] * torch.randn_like(x, device=x.device))
+                output = x + (self.G_std[0]**2 * torch.randn_like(x, device=x.device))
         else:
             if res_val == 'abs':
                 x_idx = x.detach().cpu().numpy()
@@ -164,11 +167,14 @@ class Noise_cell(nn.Module):
                 elif noise_type == 'meas':
                     if self.w_format == 'state':
                         x_cell = x
-                        output = x + self.std_offset + torch.normal(0, self.G_std[x_cell.detach().cpu().numpy()]).to(x.device)
+                        if w_split:
+                            output = x + torch.normal(self.std_offset, self.G_std[x_cell.detach().cpu().numpy()]).to(x.device)
+                        else:
+                            output = x + (85 * self.G_std.max()**2 * torch.randn_like(x, device=x.device))
                     else:
                         x_cell = x+2**(self.wbits-1) if self.mapping_mode == 'ref_a' else abs(x)
                         output = x + torch.normal(0, self.G_std[x_cell.detach().cpu().numpy()]).to(x.device)
                 else:
-                    output = x + (self.G_std[0] * torch.randn_like(x, device=x.device))
+                    output = x + (self.G_std[0]**2 * torch.randn_like(x, device=x.device))
                 
         return output

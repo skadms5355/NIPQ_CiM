@@ -35,8 +35,9 @@
 --is_noise      y
 --nipq_noise    qhwnoise
 --co_noise      0.03
---noise_type    prop
+--noise_type    meas
+--meas_type     mram
 --res_val       rel
 
---cbits         4
---mapping_mode  2T2R
+--cbits         1
+--mapping_mode  two_com
