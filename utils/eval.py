@@ -13,9 +13,10 @@ from .progress.progress.bar import Bar as Bar
 from .zca import ZCATransformation
 import scipy.io as sio
 
-
 __all__ = ['accuracy', 'accuracy_mixup', 'train', 'test']
 
+#torch.backends.cuda.matmul.allow_tf32 = True
+#torch.backends.cudnn.allow_tf32 = True
 
 def accuracy(output, target, topk=(1,), num_classes=10):
     """Computes the precision@k for the specified values of k"""
@@ -70,7 +71,8 @@ def train(train_loader, model, teacher, criterion, optimizer, scheduler, scaler,
 
     # switch to train mode
     model.train()
-
+    # print('Count of using GPUs:', torch.cuda.device_count())
+    # print('Current cuda device:', torch.cuda.current_device())
     if args.transfer_mode is not 0:
         teacher.eval()
         teacher.cuda()
@@ -87,13 +89,13 @@ def train(train_loader, model, teacher, criterion, optimizer, scheduler, scaler,
 
     if args.rank == 0:
         bar = Bar('Processing', max=len_trainloader)
-    
+
     if args.zca:
         mat_contents = sio.loadmat('./utils/zca_cifar10.mat')
         transformation_matrix = torch.from_numpy(mat_contents['zca_matrix']).float()
         transformation_mean = torch.from_numpy(mat_contents['zca_mean'][0]).float()
         zca = ZCATransformation(transformation_matrix, transformation_mean)
-    
+
     for batch_idx, data in enumerate(train_loader):
         if args.dali:
             inputs = data[0]["data"]
@@ -114,6 +116,7 @@ def train(train_loader, model, teacher, criterion, optimizer, scheduler, scaler,
         inputs = inputs.to("cuda")
         targets = targets.to("cuda", non_blocking=True)
 
+
         if args.mixup:
             inputs, targets_a, targets_b, lam = mixup_data(inputs, targets, args.alpha)
 
@@ -123,6 +126,7 @@ def train(train_loader, model, teacher, criterion, optimizer, scheduler, scaler,
         # tensorboard add_hooks.
         if batch_idx == 0:
             writer.add_hooks(model, epoch)
+
 
         # Runs the forward pass with autocasting.
         if scaler is not None:
@@ -144,7 +148,6 @@ def train(train_loader, model, teacher, criterion, optimizer, scheduler, scaler,
                     loss_ce = mixup_criterion(criterion, outputs, targets_a, targets_b, lam)
                 else:
                     loss_ce = criterion(outputs, targets)
-
                 # compute teacher-student loss
                 if args.transfer_mode == 1:
                     loss_kd = kd_loss_fn(outputs, outputs_teacher, args.kd_temperature, args.kd_alpha)
@@ -160,8 +163,8 @@ def train(train_loader, model, teacher, criterion, optimizer, scheduler, scaler,
                 else:
                     loss_kd = 0
                     loss_at = 0
-                
-                # penalty loss 
+
+                # penalty loss
                 # loss_pen = F.huber_loss()
 
                 loss = loss_ce + loss_kd + loss_at
@@ -270,7 +273,7 @@ def train(train_loader, model, teacher, criterion, optimizer, scheduler, scaler,
             bar.next()
     if args.rank == 0:
         bar.finish()
-        
+
     return (losses_ce.avg+losses_kd.avg+losses_at.avg, top1.avg, top5.avg)
 
 def test(val_loader, model, criterion, epoch, args):
@@ -291,13 +294,13 @@ def test(val_loader, model, criterion, epoch, args):
 
     if args.rank == 0:
         bar = Bar('Processing', max=len_valloader)
-    
+
     if args.zca:
         mat_contents = sio.loadmat('./utils/zca_cifar10.mat')
         transformation_matrix = torch.from_numpy(mat_contents['zca_matrix']).float()
         transformation_mean = torch.from_numpy(mat_contents['zca_mean'][0]).float()
         zca = ZCATransformation(transformation_matrix, transformation_mean)
-    
+
 
     with torch.no_grad():
         start_time=time.time()
@@ -310,13 +313,13 @@ def test(val_loader, model, criterion, epoch, args):
 
             # measure data loading time
             data_time.update(time.time() - end)
-            
+
             if args.zca:
                 inputs = zca(inputs)
 
             inputs = inputs.to("cuda", non_blocking=True)
             targets = targets.to("cuda", non_blocking=True)
-            
+
             # compute output
             model.module.transfer = False
             outputs = model(inputs)
@@ -395,11 +398,11 @@ def log_test(meas_loader, model, args):
 
             inputs = inputs.to("cuda", non_blocking=True)
             targets = targets.to("cuda", non_blocking=True)
-            
+
             # compute output
             model.module.transfer = False
             outputs = model(inputs)
-        
+
             # measure elapsed time
             batch_time.update(time.time() - end)
             end = time.time()
@@ -416,10 +419,10 @@ def log_test(meas_loader, model, args):
                 bar.next()
 
         print('\nParameter Search Time: {total_time}s'.format(total_time=time.time()-start_time))
-        
+
         if args.rank == 0:
             bar.finish()
-    return 
+    return
 
 
 def reduce_tensor(tensor, args):

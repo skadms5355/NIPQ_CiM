@@ -1,0 +1,40 @@
+# model : vgg9
+# dataset : imagenet
+# This is a argfile for training vgg9 model.
+
+--dataset       imagenet
+# --workers       8
+# -loc            /home/nameunkang/Project/NIPQ_CiM
+
+# stage1-25 stage2-3
+--epochs        25
+--ft_epoch      3 
+--train-batch   512
+--test-batch    200
+--valid-size    0
+
+--optimizer     sgd
+--lr-method     lr_cosineanneal
+--warmup        3
+--warmup_start_multiplier 0.1
+--eta_min       1e-3
+# total epoch (except for warmup lr)
+--T0            25
+--gamma         0.1
+
+--arch          nipq_resnet18
+--gpu-id	    0
+# --amp           y
+
+--model_mode    nipq
+--fixed_bit       4
+--lr            0.005
+--weight-decay  1e-5
+--dropout	    0.0
+
+--pretrained    url
+--teacher       resnet18
+--transfer-mode    1
+
+--dali          y
+--distributed   y

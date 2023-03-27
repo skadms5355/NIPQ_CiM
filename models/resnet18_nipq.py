@@ -4,20 +4,20 @@ We alter the code slightly to match our script, but there are no modifications
 model-wise.
 """
 
-import torch
 import torch.nn as nn
-from .nipq_quantization_module import *
+from typing import Any
+from .nipq_quantization_module import QuantOps as Q
+
 __all__ = ['nipq_resnet18']
 
-def conv3x3(in_planes, out_planes, fix_bit=None, stride=1):
+def conv3x3(in_planes, out_planes, stride=1):
     """3x3 convolution with padding"""
-    return Q_Conv2d(in_planes, out_planes, kernel_size=3, stride=stride, padding=1,
-                      groups=1, bias=False, act_func='relu1', fix_bit=fix_bit)
+    return Q.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride, padding=1,
+                      bias=False, act_func=Q.ReLU())
 
-def conv1x1(in_planes, out_planes, fix_bit=None, stride=1):
+def conv1x1(in_planes, out_planes, stride=1):
     """1x1 convolution with padding"""
-    return Q_Conv2d(in_planes, out_planes, kernel_size=1, stride=stride,
-                      groups=1, bias=False, act_func='relu1', fix_bit=fix_bit)
+    return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
 
 class BasicBlock(nn.Module):
     expansion = 1
@@ -25,24 +25,21 @@ class BasicBlock(nn.Module):
     def __init__(self, inplanes, planes, stride=1, downsample=None, **kwargs):
         super(BasicBlock, self).__init__()
 
-        self.fix_bit = kwargs['fix_bit']
-        self.padding_mode = kwargs['padding_mode']
-
-        self.act = nn.ReLU(inplace=True)
-        self.conv1 = conv3x3(inplanes, planes, fix_bit=self.fix_bit, stride=stride)
+        self.relu = nn.ReLU(inplace=True)
+        self.conv1 = conv3x3(inplanes, planes, stride=stride)
         self.bn1 = nn.BatchNorm2d(planes)
-        self.conv2 = conv3x3(planes, planes, fix_bit=self.fix_bit, stride=1)
+        self.conv2 = conv3x3(planes, planes, stride=1)
         self.bn2 = nn.BatchNorm2d(planes)
 
         self.downsample = downsample
-
+        
     def forward(self, x):
         identity = x 
 
-        out = self.act(x) # floating point short current with no activation function (higer accruacy)
+        out = self.relu(x) # floating point short current with no activation function (higer accruacy)
         out = self.conv1(out)
         out = self.bn1(out)
-        out = self.act(out)
+        out = self.relu(out)
         out = self.conv2(out)
         out = self.bn2(out)
 
@@ -53,7 +50,6 @@ class BasicBlock(nn.Module):
 
         return out
 
-
 class ResNet(nn.Module):
     def __init__(self, block, layers, **kwargs):
 
@@ -63,8 +59,7 @@ class ResNet(nn.Module):
 
         self.conv1 = nn.Conv2d(3, self.inplanes, kernel_size=7, stride=2, padding=3, bias=False)
         self.bn1 = nn.BatchNorm2d(self.inplanes)
-        self.relu1 = nn.ReLU(inplace=True)
-        # self.relu1 = add_act(abits=kwargs['abits'])
+        self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         self.bn2 = nn.BatchNorm2d(self.inplanes)
 
@@ -73,18 +68,29 @@ class ResNet(nn.Module):
         self.layer3 = self._make_layer(block, 256, layers[2], stride=2, **kwargs)
         self.layer4 = self._make_layer(block, 512, layers[3], stride=2, **kwargs)
 
-        self.relu2 = nn.ReLU(inplace=True)
         self.avgpool = nn.AdaptiveAvgPool2d((1,1)) # this layer works for any size of input.
         self.fc = nn.Linear(512 * block.expansion, 1000) ## assume that Last layer is FP
 
+        # weight initialization
+        # for m in self.modules():
+        #     if isinstance(m, nn.Conv2d):
+        #         nn.init.kaiming_normal_(m.weight, mode='fan_out')
+        #         if m.bias is not None:
+        #             nn.init.zeros_(m.bias)
+        #     elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm)):
+        #         nn.init.ones_(m.weight)
+        #         nn.init.zeros_(m.bias)
+        #     elif isinstance(m, nn.Linear):
+        #         nn.init.normal_(m.weight, 0, 0.01)
+        #         nn.init.zeros_(m.bias)
 
     def _make_layer(self, block, planes, blocks, stride=1, **kwargs):
 
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
-                nn.AvgPool2d(kernel_size=2, stride=2),
-                conv1x1(self.inplanes, planes * block.expansion, 32, stride=1),
+                # nn.AvgPool2d(kernel_size=2, stride=2),
+                conv1x1(self.inplanes, planes * block.expansion, stride=stride),
                 nn.BatchNorm2d(planes * block.expansion),
             )
             #print(kwargs['downample']
@@ -121,16 +127,16 @@ class ResNet(nn.Module):
 
         x = self.conv1(x)
         x = self.bn1(x)
-        x = self.relu1(x)
+        x = self.relu(x)
         x = self.maxpool(x)
-        x = self.bn2(x)
+        x = self.bn2(x) # resnet18 baseline X
 
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.layer3(x)
         x = self.layer4(x)
 
-        x = self.relu2(x)
+        x = self.relu(x) # resnet18 baseline X
         x = self.avgpool(x)
         x = x.view(x.size(0), -1)
         x = self.fc(x)
@@ -163,8 +169,9 @@ class ResNet_cifar10(nn.Module):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
-                nn.AvgPool2d(kernel_size=2, stride=2),
-                conv1x1(self.inplanes, planes * block.expansion, 32, 0, False, 'zeros', stride=1),
+                # nn.AvgPool2d(kernel_size=2, stride=2),
+                # conv1x1(self.inplanes, planes * block.expansion, stride=1),
+                nn.Conv2d(self.inplanes, planes * block.expansion, kernel_size=1, stride=stride, bias=False),
                 nn.BatchNorm2d(planes * block.expansion),
             )
             #if kwargs['downsample'] == 'avgpool':
@@ -218,7 +225,8 @@ class ResNet_cifar10(nn.Module):
 
         return x
 
-def lsq_resnet18(**kwargs):
+def nipq_resnet18(**kwargs: Any):
+
     r"""ResNet-18 model from
     `"Deep Residual Learning for Image Recognition" <https://arxiv.org/pdf/1512.03385.pdf>`_
     """

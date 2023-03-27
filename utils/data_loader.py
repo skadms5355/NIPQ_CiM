@@ -51,7 +51,7 @@ class VisualWakeWordsClassification(datasets.vision.VisionDataset):
         self.transform = transform
         self.target_transform = target_transform
         self.root = root
-        
+
     def __getitem__(self, index):
         """
         Args:
@@ -64,21 +64,21 @@ class VisualWakeWordsClassification(datasets.vision.VisionDataset):
         img_id = self.ids[index]
         ann_ids = vww.getAnnIds(imgIds=img_id)
         target = vww.loadAnns(ann_ids)[0]['category_id']
-        
+
         path = vww.loadImgs(img_id)[0]['file_name']
-        
+
         img = Image.open(os.path.join(self.root, path)).convert('RGB')
-        
-        
+
+
         if self.transform is not None:
             img = self.transform(img)
-            
-            
+
+
         if self.target_transform is not None:
             target = self.target_transform(target)
-                
+
         return img, target
-            
+
     def __len__(self):
         return len(self.ids)
 
@@ -117,7 +117,7 @@ def get_vww_train_valid_loader(data_dir,
         transform=train_transform, split='train')
 
     train_loader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=batch_size, shuffle=True, 
+        train_dataset, batch_size=batch_size, shuffle=True,
         num_workers=num_workers, pin_memory=pin_memory, worker_init_fn=worker_init_fn
     )
 
@@ -168,18 +168,18 @@ def get_pascal_train_valid_loader(dataset,
                                     valid_size=0.1,
                                     shuffle=True,
                                     num_workers=4,
-                                    class_split=False, 
-                                    per_class = 50, 
+                                    class_split=False,
+                                    per_class = 50,
                                     distributed=False,
                                     pin_memory=False):
     assert (valid_size == 0), \
             "[!] valid size should be 0 for pascal dataset."
-    
+
     # if augment:
-        
+
     # else:
     #     train_transform = BaseTransport()
-    
+
     # train_dataset = VOCDetection(root=VOC_ROOT, image_sets=[('2007', 'train'), ('2012', 'trainval')]),
     #                             transforms=
 
@@ -313,8 +313,8 @@ def get_cifar10_100_train_valid_loader(dataset,
                                        valid_size=0.1,
                                        shuffle=True,
                                        num_workers=4,
-                                       class_split=False, 
-                                       per_class = 50, 
+                                       class_split=False,
+                                       per_class = 50,
                                        distributed=False,
                                        pin_memory=False):
     """
@@ -529,7 +529,7 @@ def set_data_loader(args):
         test_loader = get_vww_test_loader(
             data_dir=args.data, batch_size=args.test_batch, input_size=args.input_size,
             shuffle=False, num_workers=args.workers, pin_memory=True)
-    
+
     elif args.dataset == 'pascal':
         train_loader, train_sampler, valid_loader = get_pascal_train_valid_loader(
             dataset=args.dataset, data_dir=args.data, batch_size=args.train_batch,

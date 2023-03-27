@@ -46,8 +46,12 @@ assert torch.cuda.is_available(), "check if cuda is avaliable"
 
 torch.autograd.set_detect_anomaly(True)
 
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
+
+
 def PickUnusedPort():
-    
+
     '''Picks unused port in the current node'''
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.bind(('localhost', 0))
@@ -94,7 +98,7 @@ def main():
 
         if args.evaluate:
             prefix = os.path.join(prefix, "eval")
-        
+
 
         if args.model_mode == 'nipq':
             prefix = os.path.join(prefix, "{}_fix:{}".format(args.nipq_noise, args.fixed_bit))
@@ -102,7 +106,7 @@ def main():
             prefix = os.path.join(prefix, "a:{}_w:{}".format(args.abits, args.wbits), "trained_noise_{}_ratio_{}".format(args.trained_noise, args.ratio))
         else:
             prefix = os.path.join(prefix, "a:{}_w:{}".format(args.abits,args.wbits))
-        
+
         if args.mapping_mode != 'none':
 
             if args.arraySize > 0 and args.psum_comp: # inference with psum comp
@@ -138,7 +142,7 @@ def main():
                     os.makedirs(os.path.join(args.checkpoint, 'hist'))
         else:
             args.checkpoint = misc.mkdir_now(prefix)
-    else: 
+    else:
         os.makedirs(args.checkpoint, exist_ok=True)
     print(f"==> Save everything in \n {args.checkpoint}")\
 
@@ -159,8 +163,8 @@ def main():
 def main_worker(gpu, ngpus_per_node, args):
 
     # initialize parameters for results
-    top1 = {'train': 0, 'valid': 0, 'test': 0, 'best_valid': 0, 'test_at_best_valid_top1': 0}
-    top5 = {'train': 0, 'valid': 0, 'test': 0, 'best_valid': 0, 'test_at_best_valid_top1': 0}
+    top1 = {'train': 0, 'valid': 0, 'test': 0, 'best_valid': 0, 'test_at_best_valid_top1': 0, 'best_test': 0}
+    top5 = {'train': 0, 'valid': 0, 'test': 0, 'best_valid': 0, 'test_at_best_valid_top1': 0, 'best_test': 0}
     loss = {'train': None, 'valid': None, 'test': None}
 
     start_epoch = args.start_epoch  # start from epoch 0 or last checkpoint epoch
@@ -193,7 +197,7 @@ def main_worker(gpu, ngpus_per_node, args):
     else:
         print(f"gpu: {args.gpu_id}, current_device: {torch.cuda.current_device()}, "
               f"train_batch_total: {args.train_batch}, workers_total: {args.workers}")
-    
+
     # Set data loader
     cudnn.benchmark = True
     #cudnn.deterministic = True
@@ -202,11 +206,17 @@ def main_worker(gpu, ngpus_per_node, args):
     # Load teacher model if required
     if args.teacher is not None:
         print("==> Loading teacher model...")
-        assert os.path.exists(args.teacher), 'Error: no teacher model found!'
-        state = torch.load(args.teacher, map_location=lambda storage, loc: storage.cuda(args.gpu))
-        teacher = models.__dict__[state['args_dict']['arch']](**state['args_dict'])
-#        for p in teacher.parameters():
-#            p.requires_grad = False
+        if args.dataset == 'imagenet':
+            if args.teacher=='resnet18':
+                from torchvision.models import resnet18
+                teacher = resnet18(weights='DEFAULT')
+        else:
+            assert os.path.exists(args.teacher), 'Error: no teacher model found!'
+            state = torch.load(args.teacher, map_location=lambda storage, loc: storage.cuda(args.gpu))
+            teacher = models.__dict__[state['args_dict']['arch']](**state['args_dict'])
+
+        # for p in teacher.parameters():
+        #     p.requires_grad = False
     else:
         teacher = None
 
@@ -225,14 +235,14 @@ def main_worker(gpu, ngpus_per_node, args):
             initialize.init_weight(m, method=args.init_method, dist=args.init_dist, mode=args.init_fan)
             # print('Layer {} has been initialized.'.format(type(m).__name__))
         if type(m).__name__ in bn_modules_to_init:
-            if args.bn_bias != 0.0:    
+            if args.bn_bias != 0.0:
                 # print(f"Initializing BN bias to {args.bn_bias}")
                 torch.nn.init.constant_(m.bias, args.bn_bias)
                 #print('Layer {} has been initialized.'.format(type(m).__name__))
 
     # define loss function (criterion) and optimizer
     criterion = torch.nn.CrossEntropyLoss()
- 
+
     # We want to make sure that we apply weight decay only to weights.
     all_parameters = model.parameters()
     weight_parameters = []
@@ -271,7 +281,9 @@ def main_worker(gpu, ngpus_per_node, args):
                 teacher.to("cuda"), device_ids=[args.gpu], output_device=args.gpu)
         else:
             teacher = torch.nn.DataParallel(teacher).to("cuda")
-        teacher.load_state_dict(state['state_dict'])
+
+        if not args.dataset == 'imagenet':
+            teacher.load_state_dict(state['state_dict'])
 
     # Print model information
     if args.rank == 0:
@@ -284,33 +296,23 @@ def main_worker(gpu, ngpus_per_node, args):
     if args.pretrained:
         if args.rank == 0:
             print('==> Get pre-trained model..')
-        assert os.path.exists(args.pretrained), 'Error: no pre-trained model found!'
 
-        load_dict = torch.load(args.pretrained, map_location=lambda storage, loc: storage.cuda(args.gpu))['state_dict']
+        if args.pretrained == 'url':
+            model_urls = {
+                        'resnet18': 'https://download.pytorch.org/models/resnet18-5c106cde.pth',
+                    }
+            if 'resnet18' in args.arch:
+                load_dict = torch.hub.load_state_dict_from_url(model_urls['resnet18'], progress=False)
+            load_dict = dict(zip(['module.'+key for key in load_dict.keys()], load_dict.values()))
+        else:
+            assert os.path.exists(args.pretrained), 'Error: no pre-trained model found!'
+            load_dict = torch.load(args.pretrained, map_location=lambda storage, loc: storage.cuda(args.gpu))['state_dict']
+
         model_dict = model.state_dict()
         model_keys = model_dict.keys()
         for name, param in load_dict.items():
             if name in model_keys:
                 model_dict[name] = param
-
-        # mismatch = 0 
-        # update = 0
-        # for name, param in load_dict.items():
-        #     name_split = name.split(".")
-        #     name_split[2] = str(int(name_split[2])-mismatch)
-        #     name = ".".join(name_split)
-        #     if "classifier" in name_split[1] and update == 0:
-        #         mismatch = 0
-        #         update = 1
-
-        #     if (name in model_keys) and (param.size() == model_dict[name].size()):
-        #         model_dict[name] = param
-        #     else:
-        #         mismatch += 1
-        #         name_split[2] = str(int(name_split[2])-1)
-        #         name = ".".join(name_split)
-        #         if name in model_keys:
-        #             model_dict[name] = param
 
         model.load_state_dict(model_dict)
         if not args.psum_comp and test_loader is not None:
@@ -376,7 +378,7 @@ def main_worker(gpu, ngpus_per_node, args):
             report_path = os.path.join(str(pathlib.Path().resolve()), ((args.checkpoint.replace('checkpoints', 'report')).replace('eval/', '')).replace('/log_bitserial_info', '').replace(f'type_{args.co_noise}', 'type'))
             graph_path = os.path.join(str(pathlib.Path().resolve()), 'graph', args.dataset, f'Psum_{args.arch}', args.mapping_mode, args.psum_mode, 'class_{}'.format(args.per_class))
             if not args.psum_comp:
-                report_path = '/'.join(report_path.split('/')[:-1]) # time folder remove 
+                report_path = '/'.join(report_path.split('/')[:-1]) # time folder remove
             os.makedirs(report_path, exist_ok=True)
             report_file = os.path.join(report_path, 'model_report.pkl')
 
@@ -411,9 +413,9 @@ def main_worker(gpu, ngpus_per_node, args):
                 PQ.unset_bitserial_log(model)
             elif (args.model_mode == 'quant') or (args.model_mode == 'hn_quant'):
                 unset_BitSerial_log(model)
-                
+
         else:
-        
+
             if args.model_mode == 'nipq':
                 from models.nipq_quantization_module import QuantOps as Q
                 Q.initialize(model, act=True, weight=True, noise=False, fixed_bit=args.fixed_bit)
@@ -466,7 +468,7 @@ def main_worker(gpu, ngpus_per_node, args):
             "per_class":        args.per_class if args.psum_comp else "No_psum",
             "pbits":            args.pbits if args.psum_comp else "No_psum",
             "psum_mode":        args.psum_mode if args.psum_comp else "No_psum",
-            "pclipmode":        args.pclipmode if args.psum_comp else "No_psum", 
+            "pclipmode":        args.pclipmode if args.psum_comp else "No_psum",
             "pclip":            args.pclip if args.psum_comp else "No_psum",
             "coefficient_noise":  args.co_noise if args.is_noise else "No_noise",
             "res_val":          args.res_val if args.is_noise else "No_noise",
@@ -499,7 +501,7 @@ def main_worker(gpu, ngpus_per_node, args):
 
         # reset DALI iterators
         if args.dali:
-            valid_loader.reset()
+            test_loader.reset()
 
     # initialize in the nipq mode with fixed_bit
     if args.model_mode == 'nipq':
@@ -510,11 +512,12 @@ def main_worker(gpu, ngpus_per_node, args):
                                 noise_type=args.noise_type, res_val=args.res_val, max_epoch=(args.epochs - args.ft_epoch))
 
         # TO DO: When adding yolov2 (object detection)
-        img = torch.Tensor(1, 3, 224, 224) if args.dataset =='imagenet' else torch.Tensor(1, 3, 32, 32)  # only two option imagenet 
-        Q.sample_activation_size(model, img)
+        if args.rank == 0:
+            img = torch.Tensor(1, 3, 224, 224) if args.dataset =='imagenet' else torch.Tensor(1, 3, 32, 32)  # only two option imagenet
+            Q.sample_activation_size(model, img)
 
-        bops_total = bops_cal(model) * (2. ** -30) # 1 GigaBitOps = 2 ** 30 BitOps
-        print(f"     Bops: {bops_total.item()}GBops")
+            bops_total = bops_cal(model) * (2. ** -30) # 1 GigaBitOps = 2 ** 30 BitOps
+            print(f"     Bops: {bops_total.item()}GBops")
 
     # Train and val
     start_time = time.time()
@@ -530,7 +533,7 @@ def main_worker(gpu, ngpus_per_node, args):
                 for name, module in model.named_modules():
                     if isinstance(module, (Q.ReLU, Q.Sym, Q.HSwish, Q.Conv2d, Q.Linear)):
                         module.quant_func.bit.requires_grad = False
-                
+
 
         # TODO (VINN): if anyone can find a better way to caculate lr with glorot scaling, please do.
         # The way to do it without glr is scheduler.get_lr()
@@ -544,7 +547,7 @@ def main_worker(gpu, ngpus_per_node, args):
         loss['train'], top1['train'], top5['train'] = eval.train(
             train_loader, model, teacher, criterion,
             optimizer, scheduler, scaler, epoch, writer, args)
-        
+
         # log train loss and accuracy on tensorboard
         writer.log_scalars('train', {'loss': loss['train'], 'top1': top1['train'], 'top5': top5['train']}, epoch)
 
@@ -574,7 +577,7 @@ def main_worker(gpu, ngpus_per_node, args):
             logger.append([
                 current_lr, loss['train'], loss['valid'], loss['test'],
                 top1['train'], top5['train'], top1['valid'], top5['valid'], top1['test'], top5['test']])
-            
+
             if valid_loader is not None:
                 logging.save_checkpoint(
                     {
@@ -603,7 +606,7 @@ def main_worker(gpu, ngpus_per_node, args):
                         'after_scheduler':          after_scheduler.state_dict(),
                     },
                     is_best_test_top1, checkpoint=args.checkpoint)
-        
+
             print("Training end time per one epoch: {}s, {}s".format(str(datetime.timedelta(seconds=(time.time()-start_time))), time.time()-start_time))
         # log test/valid loss and accuracy on tensorboard
         if loss['valid']:
@@ -618,7 +621,7 @@ def main_worker(gpu, ngpus_per_node, args):
                 valid_loader.reset()
             if test_loader is not None:
                 test_loader.reset()
-    
+
 
 
     writer.close() # closing the tensorboard summarywriter.
@@ -655,7 +658,7 @@ def main_worker(gpu, ngpus_per_node, args):
 
     if args.distributed:
         dist.destroy_process_group()
-    
+
     if args.rank == 0:
         print("Training end time: ", str(datetime.timedelta(seconds=(time.time()-start_time))))
 

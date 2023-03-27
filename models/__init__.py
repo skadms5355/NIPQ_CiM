@@ -10,6 +10,7 @@ from .vgg9 import *
 from .mlp import *
 from .alexnet import *
 from .resnet18_lsq import *
+from .resnet18_nipq import *
 
 # for partial sum compuatation 
 from .psum_vgg9 import *

@@ -459,7 +459,7 @@ def main_worker(gpu, ngpus_per_node, args):
 
         # reset DALI iterators
         if args.dali:
-            valid_loader.reset()
+            test_loader.reset()
 
     # Train and val
     start_time=time.time()

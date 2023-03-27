@@ -305,6 +305,13 @@ def check_arguments(args):
             args.data = './data/cifar100/'
         elif args.dataset == 'imagenet':
             args.data = '/home/data/images/'
+            if not os.path.exists(args.data):
+                args.data = '/home/data/imagenet/images/'
+                if not os.path.exists(args.data):
+                    print("Due to no local data, connected imagenet data in nas server")
+                    args.data = '/mnt/nfs/dataset/imagenet/images/'
+                    if not os.path.exists(args.data):
+                        assert False, "Check dataset path {}".format(args.data)
         elif args.dataset == 'vww':
             args.data = '/home/data/COCO14/'
 

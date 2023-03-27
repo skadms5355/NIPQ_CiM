@@ -202,10 +202,9 @@ class Q_Conv2d(nn.Conv2d):
         
         
     def forward(self, x):
-        # import pdb; pdb.set_trace()
         if self.act_func is not None:
             x = self.act_func(x)
-
+        
         return F.conv2d(x, self._weight_quant(), self.bias,
                         self.stride, self.padding, self.dilation, self.groups)
     
@@ -288,10 +287,10 @@ def sample_activation_size(model, x):
         if isinstance(module, (nn.Conv2d, nn.Linear)):
             hooks.append(module.register_forward_hook(forward_hook))
 
-    # with torch.no_grad():
-    model.eval()
-    model.cuda()
-    model(x.cuda())
+    with torch.no_grad():
+        model.eval()
+        model.cuda()
+        model(x.cuda())
 
     for hook in hooks:
         hook.remove()

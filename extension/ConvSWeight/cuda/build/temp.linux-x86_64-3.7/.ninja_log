@@ -14,3 +14,5 @@
 1	38682	1675688560576514968	/mnt/nfs/nameunkang/Project/NIPQ_CiM/extension/ConvSWeight/cuda/build/temp.linux-x86_64-3.7/conv_sweight_cuda_kernel.o	38623c571e35e8b6
 0	21082	1677828468420420610	/mnt/nfs/nameunkang/Project/NIPQ_CiM/extension/ConvSWeight/cuda/build/temp.linux-x86_64-3.7/conv_sweight_cuda.o	f70dd3b14e742a53
 0	48072	1677828495449421783	/mnt/nfs/nameunkang/Project/NIPQ_CiM/extension/ConvSWeight/cuda/build/temp.linux-x86_64-3.7/conv_sweight_cuda_kernel.o	38623c571e35e8b6
+8	17263	1679642302285134778	/mnt/nfs/nameunkang/Project/NIPQ_CiM/extension/ConvSWeight/cuda/build/temp.linux-x86_64-3.7/conv_sweight_cuda.o	3aef7718802d026
+10	41738	1679642326757812110	/mnt/nfs/nameunkang/Project/NIPQ_CiM/extension/ConvSWeight/cuda/build/temp.linux-x86_64-3.7/conv_sweight_cuda_kernel.o	525633bc440d4787

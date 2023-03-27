@@ -166,16 +166,16 @@ class Quant_vgg9(nn.Module):
         return x
 
 def nipq_vgg9(**kwargs: Any) -> NIPQ_vgg9:
-    assert kwargs['dataset'] == 'cifar10', f"binarynet vgg model only supports CIFAR-10 dataset."
+    assert kwargs['dataset'] == 'cifar10', f"vgg model only supports CIFAR-10 dataset."
 
     return NIPQ_vgg9(**kwargs)
     
 def lsq_vgg9(**kwargs):
-    assert kwargs['dataset'] == 'cifar10', f"binarynet vgg model only supports CIFAR-10 dataset."
+    assert kwargs['dataset'] == 'cifar10', f"vgg model only supports CIFAR-10 dataset."
 
     return LSQ_vgg9(**kwargs)
 
 def quant_vgg9(**kwargs):
-    assert kwargs['dataset'] == 'cifar10', f"binarynet vgg model only supports CIFAR-10 dataset."
+    assert kwargs['dataset'] == 'cifar10', f"vgg model only supports CIFAR-10 dataset."
 
     return Quant_vgg9(**kwargs)
