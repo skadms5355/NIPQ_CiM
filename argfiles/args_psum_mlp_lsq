@@ -8,28 +8,40 @@
 --epoch         1
 --train-batch   256
 --test-batch    200
---search-img    0.25
 
 --arch          psum_mlp
 
 --evaluate      y
 --gpu-id	    0
 
---wbits         2
---abits         2
+--model_mode    quant
+--wbits         4
+--abits         4
 #A4_W4 quantized
-# --pretrained    ./checkpoints/mnist/lsq_mlp/a:4_w:4/2022-Apr-11-01-36-40/model_best.pth.tar 
+--pretrained    ./checkpoints/mnist/quant/lsq_mlp/a:4_w:4/model_best.pth.tar 
 ##A2_W2 quantized 
---pretrained    ./checkpoints/mnist/lsq_mlp/a:2_w:2/2022-Apr-18-18-11-50/model_best.pth.tar 
+# --pretrained    ./checkpoints/mnist/lsq_mlp/a:2_w:2/2022-Apr-18-18-11-50/model_best.pth.tar 
 # --pretrained    ./checkpoints/mnist/binarynet_512mlp/a:1_w:1/2022-Apr-18-17-31-52/model_best.pth.tar ## binary quantized
 
---arraySize     128
+--arraySize     32
 --mapping_mode  two_com
+--cbits         1
 --abit-serial   y
 --wbit-serial   y
 
 --psum_comp     y
+--psum_mode     sigma
 --pbits         32
 --pclipmode     Layer
---pclip         max
+# quant range [max or sigma] in sigma mode
+--pclip         sigma
 --psigma        3
+
+# for class_split
+--class-split   y
+
+# for noise
+--is_noise      y
+--co_noise      0
+--noise_type    meas
+--res_val       abs

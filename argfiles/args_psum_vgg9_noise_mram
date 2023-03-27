@@ -1,0 +1,62 @@
+# model : psum_vgg9
+# dataset : cifar10
+# This is a argfile for training vgg9 model.
+
+--dataset       cifar10
+--augment	    y  
+--log_file      n
+
+--epoch         1
+--train-batch   256
+--test-batch    200
+
+# trained model with LSQ quantization
+# --arch          psum_lsq_vgg9
+# --pretrained    ./checkpoints/cifar10/quant/lsq_vgg9/a:4_w:4/2022-Apr-01-18-57-49/model_best.pth.tar
+# --model_mode    quant
+# --wbits         4
+# --abits         4
+# --res_val       abs
+
+# trained model with NIPQ quantization
+--arch          psum_nipq_vgg9
+--pretrained    ./checkpoints/cifar10/nipq/nipq_vgg9/qnoise_fix:4/2023-Feb-22-14-31-20/model_best.pth.tar
+--nipq_noise    qnoise
+--model_mode    nipq
+--fixed_bit       4
+--res_val       rel
+
+#mram
+# --pretrained    ./checkpoints/cifar10/nipq/nipq_vgg9/qhwnoise_fix:4/two_com/no_psum_c:1/meas_mram/2023-Mar-21-20-15-08/model_best.pth.tar
+# --tn_file       t_val
+# --nipq_noise    qhwnoise
+
+
+--evaluate      y
+--gpu-id	    0
+# --amp           y
+
+--psum_comp     y
+--arraySize     32
+--cbits         1
+--mapping_mode  two_com
+--abit-serial   y
+--wbit-serial   y
+
+--psum_mode     sigma
+--pbits         32
+--pclipmode     Layer
+# quant range [max or sigma] in sigma mode
+--pclip         sigma
+--psigma        3
+
+# for class_split
+--class-split   y
+--per_class     500
+# split_per_class 50 (set at Data_loader)
+
+# for noise
+--is_noise      n
+--co_noise      0
+--noise_type    meas
+--meas_type     mram

@@ -1,7 +1,7 @@
 import torch 
 import torch.nn as nn
 from .nipq_quantization_module import QuantOps as Q
-from .nipq_hnoise_psum_module import PsumQuantOps as PQ
+from .nipq_hwnoise_psum_module import PsumQuantOps as PQ
 from .quantized_lsq_modules import *
 from .quantized_basic_modules import *
 from .psum_modules import *
@@ -60,6 +60,7 @@ class PNIPQ_vgg9(nn.Module):
         x = x.view(x.size(0), -1)
         x = self.classifier(x)
         return x
+    
 class PLSQ_vgg9(nn.Module):
     def __init__(self, **kwargs):
         super(PLSQ_vgg9, self).__init__()
