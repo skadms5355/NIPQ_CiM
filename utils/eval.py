@@ -73,7 +73,7 @@ def train(train_loader, model, teacher, criterion, optimizer, scheduler, scaler,
     model.train()
     # print('Count of using GPUs:', torch.cuda.device_count())
     # print('Current cuda device:', torch.cuda.current_device())
-    if args.transfer_mode is not 0:
+    if args.transfer_mode != 0:
         teacher.eval()
         teacher.cuda()
 

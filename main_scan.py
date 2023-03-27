@@ -20,7 +20,7 @@ from utils.misc import ForkedPdb
 from utils.schedule_train import set_optimizer, set_scheduler
 
 from utils.preproc_bi_real_net import CrossEntropyLabelSmooth	# for Bi-real-net
-from models.psum_modules import get_statistics_from_hist, set_BitSerial_log, unset_BitSerial_log, set_bitserial_layer, set_Qact_bitserial
+from models.psum_modules import get_statistics_from_hist, set_BitSerial_log, unset_BitSerial_log, set_bitserial_layer
 
 warnings.simplefilter("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", "Corrupt EXIF data", UserWarning)
