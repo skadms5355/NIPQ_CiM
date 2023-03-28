@@ -166,8 +166,8 @@ def main():
 def main_worker(gpu, ngpus_per_node, args):
 
     # initialize parameters for results
-    top1 = {'train': 0, 'valid': 0, 'test': 0, 'best_valid': 0, 'test_at_best_valid_top1': 0}
-    top5 = {'train': 0, 'valid': 0, 'test': 0, 'best_valid': 0, 'test_at_best_valid_top1': 0}
+    top1 = {'train': 0, 'valid': 0, 'test': 0, 'best_valid': 0, 'test_at_best_valid_top1': 0, 'best_test': 0}
+    top5 = {'train': 0, 'valid': 0, 'test': 0, 'best_valid': 0, 'test_at_best_valid_top1': 0, 'best_test': 0}
     loss = {'train': None, 'valid': None, 'test': None}
 
     start_epoch = args.start_epoch  # start from epoch 0 or last checkpoint epoch

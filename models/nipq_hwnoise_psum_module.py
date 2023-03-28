@@ -1038,6 +1038,25 @@ def unset_bitserial_log(model):
             print("Finish log unsetting {}, idx: {}".format(name.replace("module.", ""), counter))
             counter += 1
 
+def set_bitserial_layer(model, pquant_idx, wbit_serial=None, pbits=32, center=[]):
+    ## set block for bit serial computation
+    print("start setting bitserial layer")
+    counter = 0
+    for name, module in model.named_modules():
+        if isinstance(module, (Psum_QConv2d, Psum_QLinear)):
+            if counter == pquant_idx:
+                module.reset_layer(wbit_serial=wbit_serial, pbits=pbits, center=center)
+            counter += 1
+    print("finish setting bitserial layer ")
+
+def set_bound_layer(model, pquant_idx, pbits, pbound, center):
+    counter = 0
+    for name, module in model.named_modules():
+        if isinstance(module, (Psum_QConv2d, Psum_QLinear)):
+            if counter == pquant_idx:
+                module.setting_pquant_func(pbits, center, pbound)
+            counter += 1
+
 def hwnoise_initilaize(model, weight=False, hwnoise=True, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', max_epoch=-1):
     for name, module in model.named_modules():
         if isinstance(module, (Psum_QConv2d, Psum_QLinear)) and weight and hwnoise:
@@ -1075,6 +1094,8 @@ def print_ratio(checkpoint, layer_idx, input, weight):
 
 class PsumQuantOps(object):
     psum_initialize = psum_initialize
+    set_bitserial_layer = set_bitserial_layer
+    set_bound_layer = set_bound_layer
     hwnoise_initilaize = hwnoise_initilaize
     unset_bitserial_log = unset_bitserial_log
     Conv2d = Psum_QConv2d

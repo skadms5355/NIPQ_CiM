@@ -20,7 +20,7 @@ from utils.misc import ForkedPdb
 from utils.schedule_train import set_optimizer, set_scheduler
 
 from utils.preproc_bi_real_net import CrossEntropyLabelSmooth	# for Bi-real-net
-from models.psum_modules import get_statistics_from_hist, set_BitSerial_log, unset_BitSerial_log, set_bitserial_layer, set_Qact_bitserial
+from models.psum_modules import get_statistics_from_hist, set_bitserial_layer, set_BitSerial_log, set_Noise_injection, unset_BitSerial_log
 from utils.network_info import get_num_split_layers, get_baseline_acc
 
 warnings.simplefilter("ignore", category=FutureWarning)
@@ -82,22 +82,44 @@ def main():
 
 
     if args.checkpoint is None:
+        prefix = os.path.join("checkpoints", args.dataset, args.model_mode, args.arch)
+
         if args.evaluate:
-            if args.arraySize > 0:
-                if args.mapping_mode == "2T2R":
-                    if args.wsymmetric:
-                        prefix = os.path.join("checkpoints", args.dataset, "eval", args.arch, args.mapping_mode, "{}_c:{}".format(str(args.arraySize), args.cbits),"a:{}_w:{}".format(args.abits,args.wbits), "class_split_per_{}".format(args.per_class), "weight_sym")
-                    else: 
-                        prefix = os.path.join("checkpoints", args.dataset, "eval", args.arch, args.mapping_mode, "{}_c:{}".format(str(args.arraySize), args.cbits),"a:{}_w:{}".format(args.abits,args.wbits), "class_split_per_{}".format(args.per_class), "weight_asym")
-                else:
-                    prefix = os.path.join("checkpoints", args.dataset, "eval", args.arch, args.mapping_mode, "{}_c:{}".format(str(args.arraySize), args.cbits),"a:{}_w:{}".format(args.abits,args.wbits), "class_split_per_{}".format(args.per_class))
-            else:
-                prefix = os.path.join("checkpoints", args.dataset, "eval", args.arch, "a:{}_w:{}".format(args.abits,args.wbits), "search_img:{}".format(args.search_img))
+            prefix = os.path.join(prefix, "eval")
+        
+
+        if args.model_mode == 'nipq':
+            prefix = os.path.join(prefix, "{}_fix:{}".format(args.nipq_noise, args.fixed_bit))
+        elif args.model_mode == 'hn_quant':
+            prefix = os.path.join(prefix, "a:{}_w:{}".format(args.abits, args.wbits), "trained_noise_{}_ratio_{}".format(args.trained_noise, args.ratio))
         else:
-            if args.arraySize > 0:
-                prefix = os.path.join("checkpoints", args.dataset, args.arch, args.mapping_mode, "{}_c:{}".format(str(args.arraySize), args.cbits), "a:{}_w:{}".format(args.abits,args.wbits))
+            prefix = os.path.join(prefix, "a:{}_w:{}".format(args.abits,args.wbits))
+        
+        if args.mapping_mode != 'none':
+
+            if args.arraySize > 0 and args.psum_comp: # inference with psum comp
+                prefix = os.path.join(prefix, args.mapping_mode, "{}_c:{}".format(str(args.arraySize), args.cbits))
             else:
-                prefix = os.path.join("checkpoints", args.dataset, args.arch, "a:{}_w:{}".format(args.abits,args.wbits))
+                prefix = os.path.join(prefix, args.mapping_mode, "no_psum_c:{}".format(args.cbits))
+
+            if args.is_noise:
+                if args.noise_type == 'meas':
+                    type = '{}'.format(args.meas_type)
+                else:
+                    type = 'type_{}'.format(args.co_noise)
+
+                if args.tn_file is not None:
+                    prefix = os.path.join(prefix, '{}_{}_{}').format(args.tn_file, args.noise_type, type)
+                else:
+                    prefix = os.path.join(prefix, '{}_{}').format(args.noise_type, type)
+        else:
+            pass
+
+        if args.local is None:
+            prefix = prefix
+        else:
+            prefix_bak = prefix
+            prefix = os.path.join(args.local, prefix_bak)
 
         if args.psum_comp:
             args.checkpoint = os.path.join(prefix, "log_bitserial_info")
@@ -115,7 +137,6 @@ def main():
             args.checkpoint = misc.mkdir_now(prefix)
     else: 
         os.makedirs(args.checkpoint, exist_ok=True)
-    print(f"==> Save everything in \n {args.checkpoint}")
 
     misc.lndir_p(args.checkpoint, args.link)
 
@@ -125,7 +146,11 @@ def main():
         mp.spawn(main_worker, nprocs=ngpus_per_node, args=(ngpus_per_node, args), join=True)
     else:
         main_worker(0, ngpus_per_node, args)
-
+    
+    # move to checkpoint file
+    if args.local:
+        dest_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), prefix_bak)
+        misc.copy_folder(args.checkpoint, dest_path)
 
 # gpu numbers vary from 0 to (ngpus_per_node - 1)
 def main_worker(gpu, ngpus_per_node, args):
@@ -273,6 +298,11 @@ def main_worker(gpu, ngpus_per_node, args):
             if name in model_keys:
                 model_dict[name] = param
         model.load_state_dict(model_dict)
+
+        if not args.psum_comp and test_loader is not None:
+            loss['test'], top1['test'], top5['test'] = eval.test(test_loader, model, criterion, 0, args)
+            if args.rank == 0:
+                print(f"Test loss: {loss['test']:<10.6f} Test top1: {top1['test']:<7.4f} Test top5: {top5['test']:<7.4f}")
 
     # Overwrite arguments from reading checkpoint's arg_dict
     # Load from checkpoint if resume is enabled.
@@ -446,7 +476,10 @@ def apply_pbound_scan_to_model(model, basepath, numlayers, pclipmode, pbits, arg
             else:
                 assert False, f'pbound or best_pbound does not exist in the dataframe'
             # apply
-            set_BitSerial_log(model, pbits=pbits, pclipmode=pclipmode, pquant_idx=idx, pbound=pbound, 
+            if args.model_mode == 'nipq':
+                PQ.set_bound_layer(model, pquant_idx=idx, pbits=pbits, pbound=pbound, center=center_dict)
+            else:
+                set_BitSerial_log(model, pbits=pbits, pclipmode=pclipmode, pquant_idx=idx, pbound=pbound, 
                                 center=center_dict)
         elif pclipmode == 'Layer':
             # get pbound
@@ -457,7 +490,10 @@ def apply_pbound_scan_to_model(model, basepath, numlayers, pclipmode, pbits, arg
             else:
                 assert False, f'pbound or best_pbound does not exist in the dataframe'
             # apply
-            set_BitSerial_log(model, pbits=pbits, pclipmode=pclipmode, pquant_idx=idx, pbound=pbound, 
+            if args.model_mode == 'nipq':
+                PQ.set_bound_layer(model, pquant_idx=idx, pbits=pbits, pbound=pbound, center=center_dict)
+            else:
+                set_BitSerial_log(model, pbits=pbits, pclipmode=pclipmode, pquant_idx=idx, pbound=pbound, 
                                 center=center_dict)
         elif pclipmode == 'Abitplane':
             # get pbound
@@ -471,7 +507,10 @@ def apply_pbound_scan_to_model(model, basepath, numlayers, pclipmode, pbits, arg
                     pbound_dict[bitplane_idx] = pbound * (2**args.wbits)
                     bitplane_idx += 1
             # apply
-            set_BitSerial_log(model, pbits=pbits, pclipmode=pclipmode, pquant_idx=idx, pbound=pbound, 
+            if args.model_mode == 'nipq':
+                PQ.set_bound_layer(model, pquant_idx=idx, pbits=pbits, pbound=pbound, center=center_dict)
+            else:
+                set_BitSerial_log(model, pbits=pbits, pclipmode=pclipmode, pquant_idx=idx, pbound=pbound, 
                                 center=center_dict)
         else:
             assert False, f'we do not support statistics with range [{pclipmode}]'

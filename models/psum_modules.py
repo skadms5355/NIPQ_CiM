@@ -1359,27 +1359,20 @@ def unset_BitSerial_log(model):
             print("finish log unsetting {}, idx: {}".format(type(m).__name__, counter))
             counter += 1
 
-def set_bitserial_layer(model, pquant_idx, wbit_serial=None, pbits=32, center=[]):
+def set_bitserial_layer(model, pquant_idx, abit_serial=True, wbit_serial=None, pbits=32, center=[]):
     ## set block for bit serial computation
     print("start setting conv/fc bitserial layer")
-    counter = 0
-    for m in model.modules():
-        if type(m).__name__ in ['PsumQConv' , 'PsumQLinear']:
-            if counter == pquant_idx:
-                m.reset_layer(wbit_serial=wbit_serial, pbits=pbits, center=center)
-            counter += 1
-    print("finish setting conv/fc bitserial layer ")
-
-def set_Qact_bitserial(model, pquant_idx, abit_serial=True):
-    ## set quantact bitserial
-    print("start setting quantact bitserial")
     counter = 0
     for m in model.modules():
         if type(m).__name__ is ['Q_act', 'QLeakyReLU']:
             if counter == pquant_idx:
                 m.bitserial = abit_serial
+            
+        if type(m).__name__ in ['PsumQConv' , 'PsumQLinear']:
+            if counter == pquant_idx:
+                m.reset_layer(wbit_serial=wbit_serial, pbits=pbits, center=center)
             counter += 1
-    print("finish setting quantact bitserial ")
+    print("finish setting bitserial layer ")
 
 def set_Noise_injection(model, weight=False, hwnoise=True, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', w_format='weight', max_epoch=-1):
     for name, module in model.named_modules():

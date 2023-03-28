@@ -4,6 +4,7 @@ import os
 import time
 import random
 import warnings
+import pathlib
 import numpy as np
 import pandas as pd
 import socket
@@ -20,7 +21,8 @@ from utils.misc import ForkedPdb
 from utils.schedule_train import set_optimizer, set_scheduler
 
 from utils.preproc_bi_real_net import CrossEntropyLabelSmooth	# for Bi-real-net
-from models.psum_modules import get_statistics_from_hist, set_BitSerial_log, unset_BitSerial_log, set_bitserial_layer, set_Qact_bitserial
+from models.psum_modules import get_statistics_from_hist, set_bitserial_layer, set_BitSerial_log, set_Noise_injection, unset_BitSerial_log
+from models.nipq_quantization_module import bops_cal
 
 warnings.simplefilter("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", "Corrupt EXIF data", UserWarning)
@@ -79,24 +81,48 @@ def main():
         args.dist_url = f"tcp://127.0.0.1:{PickUnusedPort()}"
         print(f"Binding to processes using : {args.dist_url}")
 
+    if not args.psum_comp:
+        assert False, f"This script only supports psum quantization"
 
     if args.checkpoint is None:
+        prefix = os.path.join("checkpoints", args.dataset, args.model_mode, args.arch)
+
         if args.evaluate:
-            if args.arraySize > 0:
-                if args.mapping_mode == "2T2R":
-                    if args.wsymmetric:
-                        prefix = os.path.join("checkpoints", args.dataset, "eval", args.arch, args.mapping_mode, "{}_c:{}".format(str(args.arraySize), args.cbits),"a:{}_w:{}".format(args.abits,args.wbits), "class_split_per_{}".format(args.per_class), "weight_sym")
-                    else: 
-                        prefix = os.path.join("checkpoints", args.dataset, "eval", args.arch, args.mapping_mode, "{}_c:{}".format(str(args.arraySize), args.cbits),"a:{}_w:{}".format(args.abits,args.wbits), "class_split_per_{}".format(args.per_class), "weight_asym")
-                else:
-                    prefix = os.path.join("checkpoints", args.dataset, "eval", args.arch, args.mapping_mode, "{}_c:{}".format(str(args.arraySize), args.cbits),"a:{}_w:{}".format(args.abits,args.wbits), "class_split_per_{}".format(args.per_class))
-            else:
-                prefix = os.path.join("checkpoints", args.dataset, "eval", args.arch, "a:{}_w:{}".format(args.abits,args.wbits), "search_img:{}".format(args.search_img))
+            prefix = os.path.join(prefix, "eval")
+        
+
+        if args.model_mode == 'nipq':
+            prefix = os.path.join(prefix, "{}_fix:{}".format(args.nipq_noise, args.fixed_bit))
+        elif args.model_mode == 'hn_quant':
+            prefix = os.path.join(prefix, "a:{}_w:{}".format(args.abits, args.wbits), "trained_noise_{}_ratio_{}".format(args.trained_noise, args.ratio))
         else:
-            if args.arraySize > 0:
-                prefix = os.path.join("checkpoints", args.dataset, args.arch, args.mapping_mode, "{}_c:{}".format(str(args.arraySize), args.cbits), "a:{}_w:{}".format(args.abits,args.wbits))
+            prefix = os.path.join(prefix, "a:{}_w:{}".format(args.abits,args.wbits))
+        
+        if args.mapping_mode != 'none':
+
+            if args.arraySize > 0 and args.psum_comp: # inference with psum comp
+                prefix = os.path.join(prefix, args.mapping_mode, "{}_c:{}".format(str(args.arraySize), args.cbits))
             else:
-                prefix = os.path.join("checkpoints", args.dataset, args.arch, "a:{}_w:{}".format(args.abits,args.wbits))
+                prefix = os.path.join(prefix, args.mapping_mode, "no_psum_c:{}".format(args.cbits))
+
+            if args.is_noise:
+                if args.noise_type == 'meas':
+                    type = '{}'.format(args.meas_type)
+                else:
+                    type = 'type_{}'.format(args.co_noise)
+
+                if args.tn_file is not None:
+                    prefix = os.path.join(prefix, '{}_{}_{}').format(args.tn_file, args.noise_type, type)
+                else:
+                    prefix = os.path.join(prefix, '{}_{}').format(args.noise_type, type)
+        else:
+            pass
+
+        if args.local is None:
+            prefix = prefix
+        else:
+            prefix_bak = prefix
+            prefix = os.path.join(args.local, prefix_bak)
 
         if args.psum_comp:
             args.checkpoint = os.path.join(prefix, "log_bitserial_info")
@@ -125,13 +151,18 @@ def main():
     else:
         main_worker(0, ngpus_per_node, args)
 
+    # move to checkpoint file
+    if args.local:
+        dest_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), prefix_bak)
+        misc.copy_folder(args.checkpoint, dest_path)
+
 
 # gpu numbers vary from 0 to (ngpus_per_node - 1)
 def main_worker(gpu, ngpus_per_node, args):
 
     # initialize parameters for results
-    top1 = {'train': 0, 'valid': 0, 'test': 0, 'best_valid': 0, 'test_at_best_valid_top1': 0}
-    top5 = {'train': 0, 'valid': 0, 'test': 0, 'best_valid': 0, 'test_at_best_valid_top1': 0}
+    top1 = {'train': 0, 'valid': 0, 'test': 0, 'best_valid': 0, 'test_at_best_valid_top1': 0, 'best_test': 0}
+    top5 = {'train': 0, 'valid': 0, 'test': 0, 'best_valid': 0, 'test_at_best_valid_top1': 0, 'best_test': 0}
     loss = {'train': None, 'valid': None, 'test': None}
 
     start_epoch = args.start_epoch  # start from epoch 0 or last checkpoint epoch
@@ -272,6 +303,10 @@ def main_worker(gpu, ngpus_per_node, args):
             if name in model_keys:
                 model_dict[name] = param
         model.load_state_dict(model_dict)
+        if not args.psum_comp and test_loader is not None:
+            loss['test'], top1['test'], top5['test'] = eval.test(test_loader, model, criterion, 0, args)
+            if args.rank == 0:
+                print(f"Test loss: {loss['test']:<10.6f} Test top1: {top1['test']:<7.4f} Test top5: {top5['test']:<7.4f}")
 
     # Overwrite arguments from reading checkpoint's arg_dict
     # Load from checkpoint if resume is enabled.
@@ -328,64 +363,73 @@ def main_worker(gpu, ngpus_per_node, args):
     best_path = os.path.join(args.checkpoint, f'best_scan.pkl')
 
     numlayers = 0
-    if args.arch == 'psum_vgg9':
+    if 'vgg9' in args.arch:
         numlayers = 7
-    elif args.arch == 'psum_alexnet':
+    elif 'alexnet' in args.arch:
         numlayers = 6
     else:
         assert False, f"This script does not support architecture type {args.arch}"
+    
+    if args.rank % ngpus_per_node == 0:
+        # Resume and initializing logger
+        if args.evaluate:
+            report_path = os.path.join(str(pathlib.Path().resolve()), ((args.checkpoint.replace('checkpoints', 'report')).replace('eval/', '')).replace('/log_bitserial_info', '').replace(f'type_{args.co_noise}', 'type'))
+            graph_path = os.path.join(str(pathlib.Path().resolve()), 'graph', args.dataset, f'Psum_{args.arch}', args.mapping_mode, args.psum_mode, 'class_{}'.format(args.per_class))
+            if not args.psum_comp:
+                report_path = '/'.join(report_path.split('/')[:-1]) # time folder remove 
+            os.makedirs(report_path, exist_ok=True)
+            report_file = os.path.join(report_path, 'model_report.pkl')
 
     if args.evaluate:
         if args.rank == 0:
             print('\nEvaluation only')
 
-        if args.psum_comp == False:
-            assert False, f"This script only supports psum quantization"
+        if args.model_mode == 'nipq':
+            from models.nipq_hwnoise_psum_module import PsumQuantOps as PQ
+            PQ.psum_initialize(model, act=True, weight=True, fixed_bit=args.fixed_bit, cbits=args.cbits, arraySize=args.arraySize, mapping_mode=args.mapping_mode, \
+                                psum_mode=args.psum_mode, wbit_serial=args.wbit_serial, pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma, \
+                                checkpoint=args.checkpoint, log_file=args.log_file)
+            if args.is_noise and 'hwnoise' in args.nipq_noise:
+                PQ.hwnoise_initilaize(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
+                                    noise_type=args.noise_type, res_val=args.res_val)
+        elif (args.model_mode == 'quant') or (args.model_mode == 'hn_quant'):
+            set_BitSerial_log(model, checkpoint=args.checkpoint, log_file=args.log_file,\
+                pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma, graph_path=graph_path)
+            if args.is_noise:
+                set_Noise_injection(model, co_noise=args.co_noise, ratio=args.ratio)
+        else:
+            assert False, "This mode is not supported psum computation"
 
         # search layer-wise min, max, value 
         if args.log_file:
-            for idx in range(0, numlayers):
-                if args.arch == 'psum_vgg9':
-                    set_bitserial_layer(model, idx, wbit_serial=args.wbit_serial)
-                elif args.arch == 'psum_alexnet':
-                    set_bitserial_layer(model, idx, wbit_serial=args.wbit_serial)
-                else:
-                    assert False, 'This file does not support arch {}'.format(args.arch)
-
-                set_BitSerial_log(model, checkpoint=args.checkpoint, log_file=args.log_file,
-                                pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma,
-                                pquant_idx=idx)
 
             if args.class_split:
                 eval.log_test(valid_loader, model, args)
             else:
                 eval.log_test(train_loader, model, args)
 
-            unset_BitSerial_log(model)
+            if args.model_mode == 'nipq':
+                PQ.unset_bitserial_log(model)
+            elif (args.model_mode == 'quant') or (args.model_mode == 'hn_quant'):
+                unset_BitSerial_log(model)
 
         start_time=time.time()
         # disable the bitserial operation for the entire network
         for idx in range(0, numlayers):
-            if args.arch == 'psum_vgg9':
-                set_bitserial_layer(model, idx, wbit_serial=False)
-            elif args.arch == 'psum_alexnet':
-                set_bitserial_layer(model, idx, wbit_serial=False)
-            else:
-                assert False, 'This file does not support arch {}'.format(args.arch)
-            set_Qact_bitserial(model, idx, abit_serial=False)
+            if args.model_mode == 'nipq':
+                PQ.set_bitserial_layer(model, idx, wbit_serial=False)
+            elif (args.model_mode == 'quant') or (args.model_mode == 'hn_quant'):    
+                set_bitserial_layer(model, idx, abit_serial=False, wbit_serial=False)
+
         print('reset the model before bitserial psum quant optimization')
 
         # optimize the psum quant iteratively
         for idx in range(0, numlayers):
-            layer_time=time.time()
-            # set bitserial operation for target layer
-            if args.arch == 'psum_vgg9':
-                set_bitserial_layer(model, idx, wbit_serial=args.wbit_serial)
-            elif args.arch == 'psum_alexnet':
-                set_bitserial_layer(model, idx, wbit_serial=args.wbit_serial)
-            else:
-                assert False, 'This file does not support arch {}'.format(args.arch)
-            set_Qact_bitserial(model, idx, abit_serial=True)
+            layer_time = time.time()
+            if args.model_mode == 'nipq':
+                PQ.set_bitserial_layer(model, idx, wbit_serial=args.wbit_serial)
+            elif (args.model_mode == 'quant') or (args.model_mode == 'hn_quant'):
+                set_bitserial_layer(model, idx, abit_serial=True, wbit_serial=args.wbit_serial)
             
             # get maxV, minV information for target layer
             filepath = f'{args.checkpoint}/hist/layer{idx}_hist.pkl'
@@ -402,20 +446,19 @@ def main_worker(gpu, ngpus_per_node, args):
                 maxpbound = max(maxbound, abs(minbound))
                 minpbound = 0
                 center = 0
-            # else:
-            #     print("No statistic layer information, Search All range")
-            #     maxpbound = count_ArrayMaxV(args.wbits, args.cbits, args.mapping_mode, args.arraySize)
-            #     minpbound = 0
                 
             # pbound scan
             best_acc = 0
             best_pbound = 0
             for pbound in range(maxpbound, minpbound, -1):
                 pbound_time=time.time()
-                print(f"pbound is {pbound}")
-                set_BitSerial_log(model, checkpoint=args.checkpoint,
-                                pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma,
-                                pquant_idx=idx, pbound=pbound-center, center=center)
+                print(f"layer is {idx}, pbound is {pbound}")
+                if args.model_mode == 'nipq':
+                    PQ.set_bound_layer(model, pquant_idx=idx, pbits=args.pbits, pbound=pbound-center, center=center)
+                else:
+                    set_BitSerial_log(model, checkpoint=args.checkpoint,
+                                    pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma,
+                                    pquant_idx=idx, pbound=pbound-center, center=center)
 
                 # do evaluation 
                 epoch = 0 
@@ -427,7 +470,7 @@ def main_worker(gpu, ngpus_per_node, args):
                 # update best pbound
                 if best_acc < top1['valid']:
                     if args.rank == 0:
-                        print(f"update best_acc: {top1['valid']}, best_pbound: {pbound} (old best_acc: {best_acc})")
+                        print(f"Update best_acc: {top1['valid']}, best_pbound: {pbound} (old best_acc: {best_acc})")
                     best_acc = top1['valid']
                     best_pbound = pbound
 
@@ -452,9 +495,12 @@ def main_worker(gpu, ngpus_per_node, args):
 
             # update best pbound and get accuracy
             # set QuantPsum with given pbits and best pbound for next iteration
-            set_BitSerial_log(model, checkpoint=args.checkpoint,
-                                pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma,
-                                pquant_idx=idx, pbound=best_pbound-center, center=center)
+            if args.model_mode == 'nipq':
+                PQ.set_bound_layer(model, pquant_idx=idx, pbits=args.pbits, pbound=best_pbound-center, center=center)
+            else:
+                set_BitSerial_log(model, checkpoint=args.checkpoint,
+                                    pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma,
+                                    pquant_idx=idx, pbound=best_pbound-center, center=center)
             
             # evaluate
             if args.rank == 0:
@@ -481,10 +527,6 @@ def main_worker(gpu, ngpus_per_node, args):
 
                 # apply and evaluate the best pbound
                 # update report
-                report_path = os.path.join('report', args.dataset, 'Psum', args.mapping_mode, args.psum_mode, 'class_{}'.format(args.per_class))
-                if not os.path.exists(report_path):
-                    os.makedirs(report_path)
-                report_file = os.path.join(report_path, 'Arraysize_{}_wsym_{}_report.pkl'.format(args.arraySize, args.wsymmetric))
 
                 if os.path.isfile(report_file):
                     df = pd.read_pickle(report_file)
@@ -513,7 +555,7 @@ def main_worker(gpu, ngpus_per_node, args):
                     "Total Time":   end-start_time
                     }, ignore_index=True)
                 df.to_pickle(report_file)
-                df.to_csv(report_path+'/Arraysize_{}_psum_{}_accu.txt'.format(args.arraySize, args.psum_mode), sep = '\t', index = False)
+                df.to_csv(report_path+'/accuracy_report.txt', sep = '\t', index = False) # last result remain
 
             # reset DALI iterators
             if args.dali:
