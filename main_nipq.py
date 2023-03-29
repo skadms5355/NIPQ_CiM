@@ -318,7 +318,7 @@ def main_worker(gpu, ngpus_per_node, args):
         model_dict = model.state_dict()
         model_keys = model_dict.keys()
         for name, param in load_dict.items():
-            if 'resnet18' in args.arch and 'downsample' in name:
+            if ('resnet18' in args.arch and 'downsample' in name) and args.pretrained == 'url':
                 name_list = name.split('.')
                 name_list[-2] = str(int(name_list[4])+1)
                 name = ".".join(name_list)
@@ -471,28 +471,28 @@ def main_worker(gpu, ngpus_per_node, args):
             else:
                 df = pd.DataFrame()
 
-        df = df.append({
-            "dataset":          args.dataset,
-            "Network":          args.arch,
-            "Mapping_mode":     args.mapping_mode,
-            "arraySize":        args.arraySize if args.psum_comp else "No_psum",
-            'cell bits':        args.cbits if args.psum_comp else "No_psum",
-            "per_class":        args.per_class if args.psum_comp else "No_psum",
-            "pbits":            args.pbits if args.psum_comp else "No_psum",
-            "psum_mode":        args.psum_mode if args.psum_comp else "No_psum",
-            "pclipmode":        args.pclipmode if args.psum_comp else "No_psum",
-            "pclip":            args.pclip if args.psum_comp else "No_psum",
-            "coefficient_noise":  args.co_noise if args.is_noise else "No_noise",
-            "res_val":          args.res_val if args.is_noise else "No_noise",
-            "Valid Top1":       top1['valid'],
-            "Test Top1":        top1['test'],
-            "Test Top5":        top5['test'],
-            "Log time":         log_time-start_time,
-            "Total Time":       end-start_time
-            }, ignore_index=True)
-        df.to_pickle(report_file)
-        df.to_csv(report_path+'/accuracy_report.txt', sep = '\t', index = False) # last result remain
-        df.to_csv(args.checkpoint+'/log.txt', sep = '\t', index = False) # results log (time)
+            df = df.append({
+                "dataset":          args.dataset,
+                "Network":          args.arch,
+                "Mapping_mode":     args.mapping_mode,
+                "arraySize":        args.arraySize if args.psum_comp else "No_psum",
+                'cell bits':        args.cbits if args.psum_comp else "No_psum",
+                "per_class":        args.per_class if args.psum_comp else "No_psum",
+                "pbits":            args.pbits if args.psum_comp else "No_psum",
+                "psum_mode":        args.psum_mode if args.psum_comp else "No_psum",
+                "pclipmode":        args.pclipmode if args.psum_comp else "No_psum",
+                "pclip":            args.pclip if args.psum_comp else "No_psum",
+                "coefficient_noise":  args.co_noise if args.is_noise else "No_noise",
+                "res_val":          args.res_val if args.is_noise else "No_noise",
+                "Valid Top1":       top1['valid'],
+                "Test Top1":        top1['test'],
+                "Test Top5":        top5['test'],
+                "Log time":         log_time-start_time,
+                "Total Time":       end-start_time
+                }, ignore_index=True)
+            df.to_pickle(report_file)
+            df.to_csv(report_path+'/accuracy_report.txt', sep = '\t', index = False) # last result remain
+            df.to_csv(args.checkpoint+'/log.txt', sep = '\t', index = False) # results log (time)
 
         return
 

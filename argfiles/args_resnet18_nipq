@@ -32,9 +32,11 @@
 --weight-decay  1e-5
 --dropout	    0.0
 
-# --pretrained    url
-# --teacher       resnet18
-# --transfer-mode    1
+--pretrained    url
+--teacher       resnet18
+--transfer-mode    1
+--kd-alpha          0.5
+--kd-temperature    4
 
 --dali          y
 --distributed   y

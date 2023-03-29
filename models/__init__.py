@@ -17,3 +17,4 @@ from .psum_vgg9 import *
 from .psum_mlp import *
 from .psum_alexnet import *
 from .psum_resnet18 import *
+from .psum_resnet18_nipq import *

@@ -1,0 +1,31 @@
+# model : vgg9
+# dataset : imagenet
+# This is a argfile for training vgg9 model.
+
+--dataset       imagenet
+
+# --workers       8
+# -loc            /home/nameunkang/Project/NIPQ_CiM
+
+--epochs        1
+--train-batch   1024
+--test-batch    200
+--valid-size    0
+
+--evaluate      y
+--gpu-id	    0
+
+# --arch          nipq_resnet18
+# --model_mode    nipq
+# --fixed_bit       4
+# --pretrained    ./checkpoints/imagenet/quant/lsq_resnet18/a:4_w:4/2022-Sep-12-01-10-42/model_best.pth.tar
+
+--arch          lsq_resnet18
+--model_mode    quant
+--wbits         4
+--abits         4
+
+--pretrained    ./checkpoints/imagenet/quant/lsq_resnet18/a:4_w:4/2022-Sep-12-01-10-42/model_best.pth.tar
+
+--dali          y
+--distributed   y
