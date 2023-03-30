@@ -327,7 +327,7 @@ def main_worker(gpu, ngpus_per_node, args):
                 model_dict[name] = param
 
         model.load_state_dict(model_dict)
-        if not args.psum_comp and test_loader is not None:
+        if not args.psum_comp and test_loader is not None and not args.evaluate:
             loss['test'], top1['test'], top5['test'] = eval.test(test_loader, model, criterion, 0, args)
             if args.rank == 0:
                 print(f"Test loss: {loss['test']:<10.6f} Test top1: {top1['test']:<7.4f} Test top5: {top5['test']:<7.4f}")
@@ -409,9 +409,10 @@ def main_worker(gpu, ngpus_per_node, args):
                                         noise_type=args.noise_type, res_val=args.res_val)
             elif (args.model_mode == 'quant') or (args.model_mode == 'hn_quant'):
                 set_BitSerial_log(model, checkpoint=args.checkpoint, log_file=args.log_file,\
-                    pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma, graph_path=graph_path)
+                    pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma)
                 if args.is_noise:
-                    set_Noise_injection(model, co_noise=args.co_noise, ratio=args.ratio)
+                    set_Noise_injection(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
+                                        noise_type=args.noise_type, res_val=args.res_val)
             else:
                 assert False, "This mode is not supported psum computation"
 
@@ -427,7 +428,6 @@ def main_worker(gpu, ngpus_per_node, args):
                 unset_BitSerial_log(model)
 
         else:
-
             if args.model_mode == 'nipq':
                 from models.nipq_quantization_module import QuantOps as Q
                 Q.initialize(model, act=True, weight=True, noise=False, fixed_bit=args.fixed_bit)

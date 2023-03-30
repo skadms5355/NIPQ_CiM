@@ -439,8 +439,8 @@ class PsumQConv(SplitConv):
                         layer_hist_dict[val] += count
                     else:
                         layer_hist_dict[val] = count
-                
-                if self.is_noise and not (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
+
+                if self.is_noise and not ((self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a')):
                     out_one = (-G_min/delta_G) * self._split_forward(input_s, w_one, padded=True, ignore_bias=True,
                                                     weight_is_split=True, infer_only=True, merge_group=True)
                     out_wsum -= out_one
@@ -653,7 +653,7 @@ class PsumQConv(SplitConv):
                         else:
                             out_wsum = out_adc if wbit == 0 else out_wsum + out_adc
                         out_adc = None
-                    if self.is_noise and not (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
+                    if self.is_noise and not ((self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a')):
                         out_one = (-G_min/delta_G) * self._split_forward(input_s, w_one, padded=True, ignore_bias=True, cat_output=False,
                                                 weight_is_split=True, infer_only=True, merge_group=True)
                         out_wsum -= out_one
@@ -1071,7 +1071,7 @@ class PsumQLinear(SplitLinear):
                 else:
                     layer_hist_dict[val] = count
 
-            if self.is_noise and not (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
+            if self.is_noise and not ((self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a')):
                 out_one = (-G_min/delta_G) * self._split_forward(input_s, w_one, ignore_bias=True, infer_only=True, merge_group=True)
                 out_wsum -= out_one
             output = out_wsum if abit ==0 else output+out_wsum
@@ -1273,7 +1273,7 @@ class PsumQLinear(SplitLinear):
                             out_wsum = out_adc if wbit == 0 else out_wsum + out_adc
                         out_adc = None
 
-                    if self.is_noise and not (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
+                    if self.is_noise and not ((self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a')):
                         out_one = (-G_min/delta_G) * self._split_forward(input_s, w_one, ignore_bias=True, infer_only=True, merge_group=True)
                         out_wsum -= out_one
                     output = out_wsum if abit == 0 else output+out_wsum

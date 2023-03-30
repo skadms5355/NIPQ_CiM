@@ -11,7 +11,7 @@
 --valid-size    0
 
 --dali	        True
---distributed	True
+--distributed	n
 
 --evaluate      y
 --gpu-id        0

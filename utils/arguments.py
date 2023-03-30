@@ -128,7 +128,7 @@ def set_arguments():
 
     # LR scheduler options
     scheduler_group.add_argument('--lr-method', default='lr_step', type=str,
-                                 choices=['lr_step', 'lr_linear', 'lr_exp', 'lr_cosineanneal'],
+                                 choices=['lr_step', 'lr_linear', 'lr_exp', 'lr_cosineannealwr', 'lr_cosineanneal'],
                                  help='Set learning rate scheduling method.')
     scheduler_group.add_argument('--schedule', nargs='+', default=[150, 225], type=int,
                                  help='Decrease learning rate at these epochs when using step method')
