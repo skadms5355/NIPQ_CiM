@@ -353,10 +353,6 @@ def test(val_loader, model, criterion, epoch, args):
                 )
                 bar.next()
 
-            if args.whist:
-                print("\nSave weight hist so exit")
-                exit()
-
         if args.rank == 0:
             print('\nEvaluation Total Time: {total_time}s'.format(total_time=str(datetime.timedelta(seconds=(time.time()-start_time)))))
             bar.finish()

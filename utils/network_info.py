@@ -3,7 +3,7 @@
 def get_num_split_layers(arch):
     """ Return number of layers in the CIM arrays"""
     numlayers = 0
-    if arch == 'psum_vgg9':
+    if 'vgg9' in arch:
         numlayers = 7
     else:
         assert False, "No information about #split_layers of {arch}"

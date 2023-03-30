@@ -7,6 +7,7 @@ import warnings
 import numpy as np
 import pandas as pd
 import socket
+import pathlib
 from datetime import datetime
 
 import models
@@ -80,6 +81,8 @@ def main():
         args.dist_url = f"tcp://127.0.0.1:{PickUnusedPort()}"
         print(f"Binding to processes using : {args.dist_url}")
 
+    if args.psum_comp == False:
+        assert False, f"This script only supports psum quantization"
 
     if args.checkpoint is None:
         prefix = os.path.join("checkpoints", args.dataset, args.model_mode, args.arch)
@@ -98,7 +101,7 @@ def main():
         if args.mapping_mode != 'none':
 
             if args.arraySize > 0 and args.psum_comp: # inference with psum comp
-                prefix = os.path.join(prefix, args.mapping_mode, "{}_c:{}".format(str(args.arraySize), args.cbits))
+                prefix = os.path.join(prefix, args.mapping_mode, "{}_c:{}_{}".format(str(args.arraySize), args.cbits, args.per_class))
             else:
                 prefix = os.path.join(prefix, args.mapping_mode, "no_psum_c:{}".format(args.cbits))
 
@@ -356,15 +359,22 @@ def main_worker(gpu, ngpus_per_node, args):
     assert args.arraySize > 0, "This script only support arraySize > 0"
 
     numlayers = get_num_split_layers(args.arch)
-    test_baseline_acc = get_baseline_acc(args.arch, args.wbits, args.abits)
+
+    if args.rank % ngpus_per_node == 0:
+        # Resume and initializing logger
+        if args.evaluate:
+            report_path = os.path.join(str(pathlib.Path().resolve()), ((args.checkpoint.replace('checkpoints', 'report')).replace('eval/', '')).replace('/log_bitserial_info', '').replace(f'type_{args.co_noise}', 'type'))
+            graph_path = os.path.join(str(pathlib.Path().resolve()), 'graph', args.dataset, f'Psum_{args.arch}', args.mapping_mode, args.psum_mode, 'class_{}'.format(args.per_class))
+            if not args.psum_comp:
+                report_path = '/'.join(report_path.split('/')[:-1]) # time folder remove 
+            os.makedirs(report_path, exist_ok=True)
+            report_file = os.path.join(report_path, 'model_report.pkl')
 
     if args.evaluate:
         logger_path = os.path.join(args.checkpoint, f'log_scan_pbits_{args.pbits}.pkl')
         if args.rank == 0:
             print('\nEvaluation only')
 
-        if args.psum_comp == False:
-            assert False, f"This script only supports psum quantization"
 
         """ [APPLY STATISTICS]: set QuantPsum with given pbits and pbound """
         model = apply_pbound_scan_to_model(model, args.checkpoint, numlayers, args.pclipmode, args.pbits, args)
@@ -390,7 +400,6 @@ def main_worker(gpu, ngpus_per_node, args):
             "pbits":        args.pbits,
             "Valid Top1":   top1['valid'],
             "Test Top1":    top1['test'],
-            "acc_drop":     test_baseline_acc - top1['test'],
             }, ignore_index=True)
         df.to_pickle(logger_path)
 
@@ -402,11 +411,6 @@ def main_worker(gpu, ngpus_per_node, args):
                 test_loader.reset()
 
         # update report
-        report_path = os.path.join('report', args.dataset, 'Psum', args.mapping_mode, args.psum_mode, 'class_{}'.format(args.per_class))
-        if not os.path.exists(report_path):
-            os.makedirs(report_path)
-        report_file = os.path.join(report_path, 'Arraysize_{}_wsym_{}_report_summary.pkl'.format(args.arraySize, args.wsymmetric))
-
         if os.path.isfile(report_file):
             if args.testlog_reset:
                 df = pd.DataFrame()
@@ -428,10 +432,9 @@ def main_worker(gpu, ngpus_per_node, args):
             "pbits":        args.pbits,
             "Valid Top1":   top1['valid'],
             "Test Top1":    top1['test'],
-            "acc_drop":     test_baseline_acc - top1['test'],
             }, ignore_index=True)
         df.to_pickle(report_file)
-        df.to_csv(report_path+'/Arraysize_{}_psum_{}_summary_report.txt'.format(args.arraySize, args.psum_mode), sep = '\t', index = False) 
+        df.to_csv(report_path+'/accuracy_report_apply_scan.txt'.format(args.arraySize, args.psum_mode), sep = '\t', index = False) 
 
         return
     else:
@@ -439,81 +442,107 @@ def main_worker(gpu, ngpus_per_node, args):
         return
     
 def apply_pbound_scan_to_model(model, basepath, numlayers, pclipmode, pbits, args):
+    if args.model_mode == 'nipq':
+        from models.nipq_hwnoise_psum_module import PsumQuantOps as PQ
+        PQ.psum_initialize(model, act=True, weight=True, fixed_bit=args.fixed_bit, cbits=args.cbits, arraySize=args.arraySize, mapping_mode=args.mapping_mode, \
+                            psum_mode=args.psum_mode, wbit_serial=args.wbit_serial, pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma, \
+                            checkpoint=args.checkpoint, info_print=args.info_print, log_file=args.log_file)
+        if args.is_noise and 'hwnoise' in args.nipq_noise:
+            PQ.hwnoise_initilaize(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
+                                noise_type=args.noise_type, res_val=args.res_val)
+    elif (args.model_mode == 'quant') or (args.model_mode == 'hn_quant'):
+        set_BitSerial_log(model, checkpoint=args.checkpoint, log_file=args.log_file,\
+            pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma)
+        if args.is_noise:
+            set_Noise_injection(model, co_noise=args.co_noise, ratio=args.ratio)
+    else:
+        assert False, "This mode is not supported psum computation"
     # required file paths
     pbound_filepath = ''
 
     # apply pscale_scan result
     for idx in range(0, numlayers):
-        # get filepath for pscale_scan & center filepath
-        if pclipmode == 'Network':
-            center_filepath = f"{basepath}/hist/network_hist.pkl"
-            pbound_filepath = f"{basepath}/best_scan.pkl"
-        elif pclipmode == 'Layer':
-            center_filepath = f"{basepath}/hist/layer{idx}_hist.pkl"
-            pbound_filepath = f"{basepath}/best_scan.pkl"
+        if args.pbits ==32:
+            # apply
+            if args.model_mode == 'nipq':
+                PQ.set_bound_layer(model, pquant_idx=idx, pbits=pbits, pbound=0, center=0)
+            else:
+                set_BitSerial_log(model, pbits=pbits, pclipmode=pclipmode, pquant_idx=idx, pbound=0, 
+                                center=0)
         else:
-            assert False, f'we do not support statistics with range [{pclipmode}]'
-        print(f'open {pbound_filepath}')
+            # get filepath for pscale_scan & center filepath
+            if pclipmode == 'Network':
+                center_filepath = f"{basepath}/hist/network_hist.pkl"
+                pbound_filepath = f"{basepath}/best_scan.pkl"
+            elif pclipmode == 'Layer':
+                center_filepath = f"{basepath}/hist/layer{idx}_hist.pkl"
+                pbound_filepath = f"{basepath}/best_scan.pkl"
+            else:
+                assert False, f'we do not support statistics with range [{pclipmode}]'
+            print(f'open {pbound_filepath}')
 
-        # get center
-        center_dict = {}
-        df = pd.read_pickle(f'{center_filepath}')
-        min_val = df['val'].min()
+            # get center
+            center_dict = {}
+            df = pd.read_pickle(f'{center_filepath}')
+            min_val = df['val'].min()
 
-        if (args.mapping_mode == 'two_com') or (args.mapping_mode == 'ref_d'):
-            center_dict = min_val
-        else:
-            center_dict = 0
-        
-        # get pbound & apply it to the network
-        df = pd.read_pickle(f'{pbound_filepath}')
-        if pclipmode == 'Network':
-            # get pbound
-            if 'pbound' in df.columns:
-                pbound = df[df['pbits'] == pbits]['pbound'].values[0]
-            elif 'best_pbound' in df.columns:
-                pbound = df[df['pbits'] == pbits]['best_pbound'].values[0]
+            if (args.mapping_mode == 'two_com') or (args.mapping_mode == 'ref_d'):
+                center_dict = min_val
             else:
-                assert False, f'pbound or best_pbound does not exist in the dataframe'
-            # apply
-            if args.model_mode == 'nipq':
-                PQ.set_bound_layer(model, pquant_idx=idx, pbits=pbits, pbound=pbound, center=center_dict)
+                center_dict = 0
+            
+            # get pbound & apply it to the network
+            df = pd.read_pickle(f'{pbound_filepath}')
+            if pclipmode == 'Network':
+                # get pbound
+                if 'pbound' in df.columns:
+                    pbound = int(df[df['pbits'] == pbits]['pbound'].values.mean())
+                elif 'best_pbound' in df.columns:
+                    pbound = int(df[df['pbits'] == pbits]['best_pbound'].values.mean())
+                else:
+                    assert False, f'pbound or best_pbound does not exist in the dataframe'
+                # apply
+                print('Layer {} pbount {} center {}'.format(idx, pbound, center_dict))
+                if args.model_mode == 'nipq':
+                    PQ.set_bound_layer(model, pquant_idx=idx, pbits=pbits, pbound=pbound, center=center_dict)
+                else:
+                    set_BitSerial_log(model, pbits=pbits, pclipmode=pclipmode, pquant_idx=idx, pbound=pbound, 
+                                    center=center_dict)
+            elif pclipmode == 'Layer':
+                # get pbound
+                if 'pbound' in df.columns:
+                    pbound = df[(df['pquant_idx'] == idx)& (df['pbits'] == pbits)]['pbound'].values[0]
+                elif 'best_pbound' in df.columns:
+                    pbound = df[(df['pquant_idx'] == idx)& (df['pbits'] == pbits)]['best_pbound'].values[0]
+                else:
+                    assert False, f'pbound or best_pbound does not exist in the dataframe'
+                # apply
+                print('Layer {} pbount {} center {}'.format(idx, pbound, center_dict))
+                if args.model_mode == 'nipq':
+                    PQ.set_bound_layer(model, pquant_idx=idx, pbits=pbits, pbound=pbound, center=center_dict)
+                else:
+                    set_BitSerial_log(model, pbits=pbits, pclipmode=pclipmode, pquant_idx=idx, pbound=pbound, 
+                                    center=center_dict)
+            elif pclipmode == 'Abitplane':
+                # get pbound
+                df_idx = df[df['pquant_idx'] == idx]
+                pbound_dict = {}
+                bitplane_idx = 0
+                for w in range(args.abits-1, -1, -1):
+                    ## NOTE: not using this one now
+                    pbound = df_idx[df_idx['abits'] == w]['pbound'].values[0]
+                    for a in range(args.wbits-1, -1, -1):
+                        pbound_dict[bitplane_idx] = pbound * (2**args.wbits)
+                        bitplane_idx += 1
+                # apply
+                print('Layer {} pbount {} center {}'.format(idx, pbound, center_dict))
+                if args.model_mode == 'nipq':
+                    PQ.set_bound_layer(model, pquant_idx=idx, pbits=pbits, pbound=pbound, center=center_dict)
+                else:
+                    set_BitSerial_log(model, pbits=pbits, pclipmode=pclipmode, pquant_idx=idx, pbound=pbound, 
+                                    center=center_dict)
             else:
-                set_BitSerial_log(model, pbits=pbits, pclipmode=pclipmode, pquant_idx=idx, pbound=pbound, 
-                                center=center_dict)
-        elif pclipmode == 'Layer':
-            # get pbound
-            if 'pbound' in df.columns:
-                pbound = df[(df['pquant_idx'] == idx)& (df['pbits'] == pbits)]['pbound'].values[0]
-            elif 'best_pbound' in df.columns:
-                pbound = df[(df['pquant_idx'] == idx)& (df['pbits'] == pbits)]['best_pbound'].values[0]
-            else:
-                assert False, f'pbound or best_pbound does not exist in the dataframe'
-            # apply
-            if args.model_mode == 'nipq':
-                PQ.set_bound_layer(model, pquant_idx=idx, pbits=pbits, pbound=pbound, center=center_dict)
-            else:
-                set_BitSerial_log(model, pbits=pbits, pclipmode=pclipmode, pquant_idx=idx, pbound=pbound, 
-                                center=center_dict)
-        elif pclipmode == 'Abitplane':
-            # get pbound
-            df_idx = df[df['pquant_idx'] == idx]
-            pbound_dict = {}
-            bitplane_idx = 0
-            for w in range(args.abits-1, -1, -1):
-                ## NOTE: not using this one now
-                pbound = df_idx[df_idx['abits'] == w]['pbound'].values[0]
-                for a in range(args.wbits-1, -1, -1):
-                    pbound_dict[bitplane_idx] = pbound * (2**args.wbits)
-                    bitplane_idx += 1
-            # apply
-            if args.model_mode == 'nipq':
-                PQ.set_bound_layer(model, pquant_idx=idx, pbits=pbits, pbound=pbound, center=center_dict)
-            else:
-                set_BitSerial_log(model, pbits=pbits, pclipmode=pclipmode, pquant_idx=idx, pbound=pbound, 
-                                center=center_dict)
-        else:
-            assert False, f'we do not support statistics with range [{pclipmode}]'
+                assert False, f'we do not support statistics with range [{pclipmode}]'
     
     return model    
 

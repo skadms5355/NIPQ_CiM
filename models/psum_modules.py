@@ -586,6 +586,11 @@ class PsumQConv(SplitConv):
                     minVal, maxVal, midVal = self._ADC_clamp_value()
                     self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
                 elif self.psum_mode == 'scan':
+                    if self.info_print:
+                        self.info_print = False
+                    if self.pbits == 32:
+                        maxVal = 1
+                        minVal = 0
                     pass
                 else:
                     assert False, 'This script does not support {self.psum_mode}'
@@ -1346,8 +1351,6 @@ def set_BitSerial_log(model, pbits, pclipmode, pclip=None, psigma=None, checkpoi
                 m.pclip = pclip
                 m.psigma = psigma
                 print("finish setting {}, idx: {}".format(type(m).__name__, counter))
-            else:
-                print(f"pass {m} with counter {counter}")
             counter += 1
 
 def unset_BitSerial_log(model):
@@ -1363,14 +1366,14 @@ def set_bitserial_layer(model, pquant_idx, abit_serial=True, wbit_serial=None, p
     ## set block for bit serial computation
     print("start setting conv/fc bitserial layer")
     counter = 0
-    for m in model.modules():
-        if type(m).__name__ is ['Q_act', 'QLeakyReLU']:
+    for name, module in model.named_modules():
+        if isinstance(module, (Q_act)):
             if counter == pquant_idx:
-                m.bitserial = abit_serial
+                module.bitserial = abit_serial
             
-        if type(m).__name__ in ['PsumQConv' , 'PsumQLinear']:
+        if isinstance(module, (PsumQConv, PsumQLinear)):
             if counter == pquant_idx:
-                m.reset_layer(wbit_serial=wbit_serial, pbits=pbits, center=center)
+                module.reset_layer(wbit_serial=wbit_serial, pbits=pbits, center=center)
             counter += 1
     print("finish setting bitserial layer ")
 

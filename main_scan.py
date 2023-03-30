@@ -89,7 +89,6 @@ def main():
 
         if args.evaluate:
             prefix = os.path.join(prefix, "eval")
-        
 
         if args.model_mode == 'nipq':
             prefix = os.path.join(prefix, "{}_fix:{}".format(args.nipq_noise, args.fixed_bit))
@@ -101,7 +100,7 @@ def main():
         if args.mapping_mode != 'none':
 
             if args.arraySize > 0 and args.psum_comp: # inference with psum comp
-                prefix = os.path.join(prefix, args.mapping_mode, "{}_c:{}".format(str(args.arraySize), args.cbits))
+                prefix = os.path.join(prefix, args.mapping_mode, "{}_c:{}_{}".format(str(args.arraySize), args.cbits, args.per_class))
             else:
                 prefix = os.path.join(prefix, args.mapping_mode, "no_psum_c:{}".format(args.cbits))
 
@@ -303,6 +302,7 @@ def main_worker(gpu, ngpus_per_node, args):
             if name in model_keys:
                 model_dict[name] = param
         model.load_state_dict(model_dict)
+        
         if not args.psum_comp and test_loader is not None:
             loss['test'], top1['test'], top5['test'] = eval.test(test_loader, model, criterion, 0, args)
             if args.rank == 0:
@@ -394,7 +394,7 @@ def main_worker(gpu, ngpus_per_node, args):
                                     noise_type=args.noise_type, res_val=args.res_val)
         elif (args.model_mode == 'quant') or (args.model_mode == 'hn_quant'):
             set_BitSerial_log(model, checkpoint=args.checkpoint, log_file=args.log_file,\
-                pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma, graph_path=graph_path)
+                pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma)
             if args.is_noise:
                 set_Noise_injection(model, co_noise=args.co_noise, ratio=args.ratio)
         else:
@@ -439,13 +439,14 @@ def main_worker(gpu, ngpus_per_node, args):
             print(f'Max Value [{maxbound}] | Min Value [{minbound}]')
 
             if (args.mapping_mode == 'two_com') or (args.mapping_mode == 'ref_d'):
-                maxpbound = maxbound
-                minpbound = minbound
+                maxpbound = int(2**args.pbits)-1 if maxbound < 2**args.pbits else maxbound
+                minpbound = int(2**args.pbits)-2 if minbound < 2**args.pbits else minbound
                 center = minbound
             else:
                 maxpbound = max(maxbound, abs(minbound))
-                minpbound = 0
+                minpbound = int(2**args.pbits)-2
                 center = 0
+            print(f'Search Range: Max Value [{maxpbound}] | Min Value [{minpbound}]')
                 
             # pbound scan
             best_acc = 0
@@ -468,7 +469,7 @@ def main_worker(gpu, ngpus_per_node, args):
                         print(f"Valid loss: {loss['valid']:<10.6f} Valid top1: {top1['valid']:<7.4f} Valid top5: {top5['valid']:<7.4f}")
 
                 # update best pbound
-                if best_acc < top1['valid']:
+                if best_acc <= top1['valid']:
                     if args.rank == 0:
                         print(f"Update best_acc: {top1['valid']}, best_pbound: {pbound} (old best_acc: {best_acc})")
                     best_acc = top1['valid']
@@ -524,6 +525,7 @@ def main_worker(gpu, ngpus_per_node, args):
                     "Test Top1":        top1['test'],
                     }, ignore_index=True)
                 df.to_pickle(best_path)
+                df.to_csv(args.checkpoint+'/scan_bound.txt', sep = '\t', index = False)
 
                 # apply and evaluate the best pbound
                 # update report

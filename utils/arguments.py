@@ -273,7 +273,7 @@ def set_arguments():
                             help='Path to latest checkpoint (default: none)')
     ckpt_group.add_argument('--report', default='', type=str, metavar='PATH',
                             help='Path to report file (default: none)')
-    ckpt_group.add_argument('--whist', default='False', type=str2bool,
+    ckpt_group.add_argument('--info_print', default='False', type=str2bool,
                         help='Store weight hist')
 
     # Miscs

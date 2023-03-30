@@ -4,6 +4,8 @@ import math
 import os
 import torch.nn.functional as F
 import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
 import utils.padding as Pad
 from .bitserial_modules import *
 from .split_modules import *
@@ -93,6 +95,7 @@ class Psum_QConv2d(SplitConv):
         self.info_print = True
 
     def model_split_groups(self, arraySize):
+        self.arraySize = arraySize
         self.split_groups = calculate_groups(arraySize, self.fan_in)
         if self.fan_in % self.split_groups != 0:
             raise ValueError('fan_in must be divisible by groups')
@@ -146,7 +149,62 @@ class Psum_QConv2d(SplitConv):
             self.wbit_serial = wbit_serial
 
         self.setting_pquant_func(pbits=pbits, center=center, pbound=pbound)
-    
+
+    def print_ratio(self, bits, input, weight):
+        # LSB > MSB 
+        fig, axes = plt.subplots(nrows=2, ncols=4, figsize=(18, 6))
+        ax = axes.flatten()
+        write_file = f'{self.checkpoint}/model_ratio1.txt'
+
+        if os.path.isfile(write_file) and (self.layer_idx == 0):
+            option = 'w'
+        else:
+            option = 'a'
+
+        with open(write_file, option) as file:
+            if self.layer_idx == 0:
+                file.write(f'Input & Weight ratio 1\n')
+            file.write(f'\nConv Layer {self.layer_idx}')
+                
+            for b in range(bits):
+                file.write(f'\nGroup  Mean Input:{b}    Min Input:{b}     Max Input:{b}    Mean Weight:{b}   Min Weight:{b}     Max Weight:{b}\n')
+
+                #split_weight
+                split_weight = weight[b].chunk(self.split_groups, dim=0)
+                
+                input_channel = 0
+                for i in range(0, self.split_groups):
+                    split_input = input[b].narrow(1, input_channel, self.group_in_channels) / 2**b
+                    w_one = torch.ones(size=split_weight[i].size(), device=split_input.device)
+                    weight_group = split_weight[i].reshape(split_weight[i].shape[0], -1) # ratio of output channels
+                    
+                    sum_weight = torch.sum(weight_group, axis=1)
+                    ratio_w = (sum_weight/self.arraySize)*100
+                    sum_input = F.conv2d(split_input, w_one, bias=None, stride=self.stride, padding=0, dilation=self.dilation)
+                    ratio_i = torch.mean((sum_input/self.arraySize)*100, dim=1)
+                    
+                    if i == 0:
+                        group_w = ratio_w
+                        group_i = ratio_i
+                    else:
+                        group_w += ratio_w
+                        group_i += ratio_i
+
+                    file.write(f'Group_{i}  {ratio_i.mean()}    {ratio_i.min()}     {ratio_i.max()}     {ratio_w.mean()}    {ratio_w.min()}     {ratio_w.max()}\n')
+                    # prepare for the next stage
+                    if i < self.split_groups - 1:
+                        input_channel += self.group_move_in_channels[i]
+
+                colors=sns.color_palette("husl", bits)
+                sns.histplot(data=(group_i/self.split_groups).cpu().reshape(-1), bins=100, linewidth=0, alpha=0.7, ax=ax[b], color=colors[b], stat="count")
+                sns.histplot(data=(group_w/self.split_groups).cpu().reshape(-1), bins=100, linewidth=0, alpha=0.7, ax=ax[b+4], color=colors[b], stat="count")
+                ax[b].set_title('Input {}'.format(b), fontsize=15, fontdict=dict(weight='bold'))
+                ax[b+4].set_title('Weight {}'.format(b), fontsize=15, fontdict=dict(weight='bold'))
+                ax[b].set_xlabel('Ratio [%]', fontsize=13)
+                ax[b+4].set_xlabel('Ratio [%]', fontsize=13)
+                fig.tight_layout(pad=1.0, h_pad=2)
+                plt.savefig(f'{self.checkpoint}/Ratio_layer{self.layer_idx}.png')
+        
     def bitserial_split(self, input, act=True):
         """
             input: [batch, channel, H, W]
@@ -447,7 +505,7 @@ class Psum_QConv2d(SplitConv):
                     w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
 
                 if self.info_print:
-                    print_ratio(self.checkpoint, self.layer_idx, input_chunk, weight_chunk)
+                    self.print_ratio(bits, input_chunk, weight_chunk)
 
                 psum_scale = w_scale * a_scale
 
@@ -455,6 +513,8 @@ class Psum_QConv2d(SplitConv):
                     minVal, maxVal, midVal = self._ADC_clamp_value()
                     self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
                 elif self.psum_mode == 'scan':
+                    if self.info_print:
+                        self.info_print = False
                     pass
                 else:
                     assert False, 'This script does not support {self.psum_mode}'
@@ -488,7 +548,6 @@ class Psum_QConv2d(SplitConv):
                 output = output * psum_scale
         else:
             # no serial computation with psum computation
-            self.pbits = 32
             output = self._split_forward(input, qweight, padded=True, ignore_bias=True, merge_group=True)
 
         # add bias
@@ -563,6 +622,7 @@ class Psum_QLinear(SplitLinear):
         self.info_print = True
 
     def model_split_groups(self, arraySize=0):
+        self.arraySize = arraySize
         self.split_groups = calculate_groups(arraySize, self.in_features)
         if self.in_features % self.split_groups != 0:
             raise ValueError('in_features must be divisible by groups')
@@ -626,6 +686,54 @@ class Psum_QLinear(SplitLinear):
         # output.mul_(bitserial_step) ## for preventing overflow
 
         return output.round_(), scale
+    
+    def print_ratio(self, bits, input, weight):
+        # LSB > MSB 
+        
+        fig, axes = plt.subplots(nrows=2, ncols=bits, figsize=(18, 6))
+        ax = axes.flatten()
+        write_file = f'{self.checkpoint}/model_ratio1.txt'
+
+        if os.path.isfile(write_file) and (self.layer_idx == 0):
+            option = 'w'
+        else:
+            option = 'a'
+
+        with open(write_file, option) as file:
+            if self.layer_idx == 0:
+                file.write(f'Input & Weight ratio 1\n')
+                
+            file.write(f'\nFC Layer {self.layer_idx}')
+            for b in range(bits):
+                file.write(f'\nGroup  Mean Input:{b}    Min Input:{b}     Max Input:{b}    Mean Weight:{b}   Min Weight:{b}     Max Weight:{b}\n')
+
+                #split
+                split_input = input[b].chunk(self.split_groups, dim=-1)
+                split_weight = weight[b].chunk(self.split_groups, dim=1)
+                
+                for i in range(0, self.split_groups):
+                    sum_weight = torch.sum(split_weight[i], axis=1)
+                    sum_input = torch.sum(split_input[i]/ 2**b, axis=1)
+
+                    ratio_w = (sum_weight/self.arraySize)*100
+                    ratio_i = (sum_input/self.arraySize)*100
+                    if i == 0:
+                        group_w = ratio_w
+                        group_i = ratio_i
+                    else:
+                        group_w += ratio_w
+                        group_i += ratio_i
+                    file.write(f'Group_{i}  {ratio_i.mean()}    {ratio_i.min()}     {ratio_i.max()}     {ratio_w.mean()}    {ratio_w.min()}     {ratio_w.max()}\n')
+                
+                colors=sns.color_palette("husl", bits)
+                sns.histplot(data=(group_i/self.split_groups).cpu(), bins=100, linewidth=0, alpha=0.7, ax=ax[b], color=colors[b], stat="count")
+                sns.histplot(data=(group_w/self.split_groups).cpu(), bins=100, linewidth=0, alpha=0.7, ax=ax[b+4], color=colors[b], stat="count")
+                ax[b].set_title('Input {}'.format(b), fontsize=15, fontdict=dict(weight='bold'))
+                ax[b+4].set_title('Weight {}'.format(b), fontsize=15, fontdict=dict(weight='bold'))
+                ax[b].set_xlabel('Ratio [%]', fontsize=13)
+                ax[b+4].set_xlabel('Ratio [%]', fontsize=13)
+                fig.tight_layout(pad=1.0, h_pad=2)
+                plt.savefig(f'{self.checkpoint}/Ratio_layer{self.layer_idx}.png')
 
     def _bitserial_log_forward(self, input):
         print(f'[layer{self.layer_idx}]: bitserial mac log')
@@ -889,12 +997,14 @@ class Psum_QLinear(SplitLinear):
                     w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
                 
                 if self.info_print:
-                    print_ratio(self.checkpoint, self.layer_idx, input_chunk, weight_chunk)
+                    self.print_ratio(bits, input_chunk, weight_chunk)
 
                 if self.psum_mode == 'sigma':
                     minVal, maxVal, midVal = self._ADC_clamp_value()
                     self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
                 elif self.psum_mode == 'scan':
+                    if self.info_print:
+                        self.info_print = False
                     pass
                 else:
                     assert False, 'This script does not support {self.psum_mode}'
@@ -979,7 +1089,7 @@ def get_statistics_from_hist(df_hist):
 
 def psum_initialize(model, act=True, weight=True, fixed_bit=-1, cbits=4, arraySize=128, mapping_mode='2T2R', psum_mode='sigma',
                     wbit_serial=False, pbits=32, pclipmode='layer', pclip='sigma', psigma=3, pbound=None, center=None,
-                    checkpoint=None, log_file=None):
+                    checkpoint=None, info_print=False, log_file=None):
     counter=0
     for name, module in model.named_modules():
         if isinstance(module, (QuantActs.ReLU, QuantActs.HSwish, QuantActs.Sym)) and act:
@@ -1027,6 +1137,7 @@ def psum_initialize(model, act=True, weight=True, fixed_bit=-1, cbits=4, arraySi
             module.bitserial_log = log_file
             module.layer_idx = counter 
             module.checkpoint = checkpoint
+            module.info_print = info_print
             counter += 1
 
 def unset_bitserial_log(model):
@@ -1067,30 +1178,6 @@ def hwnoise_initilaize(model, weight=False, hwnoise=True, cbits=4, mapping_mode=
                 assert max_epoch != -1, "Enter max_epoch in hwnoise_initialize function"
             if hwnoise:
                 module.quant_func.hwnoise_init(cbits=cbits, mapping_mode=mapping_mode, co_noise=co_noise, noise_type=noise_type, res_val=res_val, max_epoch=max_epoch)
-
-def print_ratio(checkpoint, layer_idx, input, weight):
-    total_inum = input[0].cpu().numpy().size
-    total_wnum = weight[0].cpu().numpy().size
-    ratio_i3 = np.count_nonzero(input[3].cpu())/total_inum * 100 
-    ratio_i2 = np.count_nonzero(input[2].cpu())/total_inum * 100 
-    ratio_i1 = np.count_nonzero(input[1].cpu())/total_inum * 100 
-    ratio_i0 = np.count_nonzero(input[0].cpu())/total_inum * 100 
-
-    ratio_w3 = np.count_nonzero(weight[3].cpu())/total_wnum * 100 
-    ratio_w2 = np.count_nonzero(weight[2].cpu())/total_wnum * 100 
-    ratio_w1 = np.count_nonzero(weight[1].cpu())/total_wnum * 100 
-    ratio_w0 = np.count_nonzero(weight[0].cpu())/total_wnum * 100 
-
-    write_file = f'{checkpoint}/model_ratio1.txt'
-    if os.path.isfile(write_file) and (layer_idx == 0):
-        option = 'w'
-    else:
-        option = 'a'
-    with open(write_file, option) as file:
-        if layer_idx == 0:
-            file.write(f'Input & Weight ratio 1\n')
-            file.write(f'Layer_information  Input:3  Input:2    Input:1   Input:0   Weight:3  Weight:2    Weight:1   Weight:0\n')
-        file.write(f'Layer{layer_idx}  {ratio_i3}  {ratio_i2}   {ratio_i1}   {ratio_i0}   {ratio_w3}    {ratio_w2}    {ratio_w1}    {ratio_w0}\n')
 
 class PsumQuantOps(object):
     psum_initialize = psum_initialize
