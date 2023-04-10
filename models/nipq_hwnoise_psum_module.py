@@ -446,8 +446,8 @@ class Psum_QConv2d(SplitConv):
                 if w_serial:
                     w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
 
-                if self.info_print:
-                    print_ratio(self.checkpoint, self.layer_idx, input_chunk, weight_chunk)
+                # if self.info_print:
+                #     print_ratio(self.checkpoint, self.layer_idx, input_chunk, weight_chunk)
 
                 psum_scale = w_scale * a_scale
 
@@ -888,8 +888,8 @@ class Psum_QLinear(SplitLinear):
                 if w_serial:
                     w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
                 
-                if self.info_print:
-                    print_ratio(self.checkpoint, self.layer_idx, input_chunk, weight_chunk)
+                # if self.info_print:
+                #     print_ratio(self.checkpoint, self.layer_idx, input_chunk, weight_chunk)
 
                 if self.psum_mode == 'sigma':
                     minVal, maxVal, midVal = self._ADC_clamp_value()
@@ -1048,30 +1048,6 @@ def hwnoise_initilaize(model, weight=False, hwnoise=True, cbits=4, mapping_mode=
                 assert max_epoch != -1, "Enter max_epoch in hwnoise_initialize function"
             if hwnoise:
                 module.quant_func.hwnoise_init(cbits=cbits, mapping_mode=mapping_mode, co_noise=co_noise, noise_type=noise_type, res_val=res_val, max_epoch=max_epoch)
-
-def print_ratio(checkpoint, layer_idx, input, weight):
-    total_inum = input[0].cpu().numpy().size
-    total_wnum = weight[0].cpu().numpy().size
-    ratio_i3 = np.count_nonzero(input[3].cpu())/total_inum * 100 
-    ratio_i2 = np.count_nonzero(input[2].cpu())/total_inum * 100 
-    ratio_i1 = np.count_nonzero(input[1].cpu())/total_inum * 100 
-    ratio_i0 = np.count_nonzero(input[0].cpu())/total_inum * 100 
-
-    ratio_w3 = np.count_nonzero(weight[3].cpu())/total_wnum * 100 
-    ratio_w2 = np.count_nonzero(weight[2].cpu())/total_wnum * 100 
-    ratio_w1 = np.count_nonzero(weight[1].cpu())/total_wnum * 100 
-    ratio_w0 = np.count_nonzero(weight[0].cpu())/total_wnum * 100 
-
-    write_file = f'{checkpoint}/model_ratio1.txt'
-    if os.path.isfile(write_file) and (layer_idx == 0):
-        option = 'w'
-    else:
-        option = 'a'
-    with open(write_file, option) as file:
-        if layer_idx == 0:
-            file.write(f'Input & Weight ratio 1\n')
-            file.write(f'Layer_information  Input:3  Input:2    Input:1   Input:0   Weight:3  Weight:2    Weight:1   Weight:0\n')
-        file.write(f'Layer{layer_idx}  {ratio_i3}  {ratio_i2}   {ratio_i1}   {ratio_i0}   {ratio_w3}    {ratio_w2}    {ratio_w1}    {ratio_w0}\n')
 
 class PsumQuantOps(object):
     psum_initialize = psum_initialize

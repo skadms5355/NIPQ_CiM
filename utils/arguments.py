@@ -327,7 +327,7 @@ def check_arguments(args):
         args.num_classes = 1000
         if args.psum_comp:
             if args.filelist is None:
-                args.filelist = '/mnt/nfs/nameunkang/Project/QNN_CIM/data/imagenet/imagenet_val_from_train_list_per_{}.txt'.format(args.per_class)
+                args.filelist = os.getcwd() + '/data/imagenet/imagenet_val_from_train_list_per_{}.txt'.format(args.per_class)
             if os.path.isfile(args.filelist):
                 print('Exist a valid dataset file from train set')
             else:

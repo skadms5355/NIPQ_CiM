@@ -124,7 +124,6 @@ def main():
                     prefix = os.path.join(prefix, '{}_{}_{}').format(args.tn_file, args.noise_type, type)
                 else:
                     prefix = os.path.join(prefix, '{}_{}').format(args.noise_type, type)
-                
 
         else:
             pass
@@ -382,7 +381,7 @@ def main_worker(gpu, ngpus_per_node, args):
     if args.rank % ngpus_per_node == 0:
         # Resume and initializing logger
         if args.evaluate:
-            report_path = os.path.join(str(pathlib.Path().resolve()), ((args.checkpoint.replace('checkpoints', 'report')).replace('eval/', '')).replace('/log_bitserial_info', '').replace(f'type_{args.co_noise}', 'type'))
+            report_path = os.path.join(str(pathlib.Path().resolve()), ((args.checkpoint.replace('checkpoints', 'report')).replace('eval/', '')).replace('/log_bitserial_info', ''))
             graph_path = os.path.join(str(pathlib.Path().resolve()), 'graph', args.dataset, f'Psum_{args.arch}', args.mapping_mode, args.psum_mode, 'class_{}'.format(args.per_class))
             if not args.psum_comp:
                 report_path = '/'.join(report_path.split('/')[:-1]) # time folder remove
