@@ -4,10 +4,10 @@
 
 --dataset       imagenet
 --workers       8
--loc            /home/nameunkang/Project/QNN_CIM
+# -loc            /home/nameunkang/Project/QNN_CIM
 
---epochs        110
---train-batch   2048
+--epochs        80
+--train-batch   1024
 --test-batch    256
 --valid-size    0
 
@@ -15,21 +15,33 @@
 --init-method	kaiming
 --init-fan      fan_out
 
---schedule      30 60 85 95
+--lr-method     lr_cosineannealwr
+--T0            80
 --gamma         0.1
 
+--model_mode    quant
 --arch          lsq_resnet18
 # --gpu-id	    0
---amp           y
+# --amp           y
 
 --wbits         4
 --abits         4
 
---lr            0.1
---weight-decay  1e-4
+--lr            0.01
+--weight-decay  5e-4
 --momentum      0.9
 --dropout	    0.0
 
 --dali          y
---dali-cpu      y
 --distributed   y
+
+#hwnoise
+--pretrained    ./checkpoints/imagenet/quant/lsq_resnet18/a:4_w:4/2022-Sep-12-01-10-42/model_best.pth.tar
+--mapping_mode  ref_a
+--cbits         4
+
+# noise option
+--is_noise      y
+--co_noise      0.03
+--noise_type    prop
+--res_val       rel

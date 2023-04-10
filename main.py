@@ -93,8 +93,6 @@ def main():
 
         if args.model_mode == 'nipq':
             prefix = os.path.join(prefix, "{}_fix:{}".format(args.nipq_noise, args.fixed_bit))
-        elif args.model_mode == 'hn_quant':
-            prefix = os.path.join(prefix, "a:{}_w:{}".format(args.abits, args.wbits), "trained_noise_{}_ratio_{}".format(args.trained_noise, args.ratio))
         else:
             prefix = os.path.join(prefix, "a:{}_w:{}".format(args.abits,args.wbits))
         

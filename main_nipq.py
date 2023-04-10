@@ -102,8 +102,6 @@ def main():
 
         if args.model_mode == 'nipq':
             prefix = os.path.join(prefix, "{}_fix:{}".format(args.nipq_noise, args.fixed_bit))
-        elif args.model_mode == 'hn_quant':
-            prefix = os.path.join(prefix, "a:{}_w:{}".format(args.abits, args.wbits), "trained_noise_{}_ratio_{}".format(args.trained_noise, args.ratio))
         else:
             prefix = os.path.join(prefix, "a:{}_w:{}".format(args.abits,args.wbits))
 
@@ -124,8 +122,6 @@ def main():
                     prefix = os.path.join(prefix, '{}_{}_{}').format(args.tn_file, args.noise_type, type)
                 else:
                     prefix = os.path.join(prefix, '{}_{}').format(args.noise_type, type)
-                
-
         else:
             pass
 
@@ -405,7 +401,7 @@ def main_worker(gpu, ngpus_per_node, args):
                                     psum_mode=args.psum_mode, wbit_serial=args.wbit_serial, pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma, \
                                     checkpoint=args.checkpoint, log_file=args.log_file)
                 if args.is_noise and 'hwnoise' in args.nipq_noise:
-                    PQ.hwnoise_initilaize(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
+                    PQ.hwnoise_initialize(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
                                         noise_type=args.noise_type, res_val=args.res_val)
             elif (args.model_mode == 'quant') or (args.model_mode == 'hn_quant'):
                 set_BitSerial_log(model, checkpoint=args.checkpoint, log_file=args.log_file,\
@@ -433,7 +429,7 @@ def main_worker(gpu, ngpus_per_node, args):
                 Q.initialize(model, act=True, weight=True, noise=False, fixed_bit=args.fixed_bit)
 
                 if args.is_noise and 'hwnoise' in args.nipq_noise:
-                    Q.hwnoise_initilaize(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
+                    Q.hwnoise_initialize(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
                                         noise_type=args.noise_type, res_val=args.res_val)
         log_time = time.time()
 
@@ -520,7 +516,7 @@ def main_worker(gpu, ngpus_per_node, args):
         from models.nipq_quantization_module import QuantOps as Q
         Q.initialize(model, act=True, weight=True, fixed_bit=args.fixed_bit)
         if args.is_noise and 'hwnoise' in args.nipq_noise:
-            Q.hwnoise_initilaize(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
+            Q.hwnoise_initialize(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
                                 noise_type=args.noise_type, res_val=args.res_val, max_epoch=(args.epochs - args.ft_epoch))
 
         # TO DO: When adding yolov2 (object detection)
@@ -530,6 +526,11 @@ def main_worker(gpu, ngpus_per_node, args):
 
             bops_total = bops_cal(model) * (2. ** -30) # 1 GigaBitOps = 2 ** 30 BitOps
             print(f"     Bops: {bops_total.item()}GBops")
+    elif args.model_mode == 'quant':
+        if args.is_noise and not args.evaluate:
+            from models.quantized_lsq_modules import hwnoise_initialize
+            hwnoise_initialize(model, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
+                                noise_type=args.noise_type, res_val=args.res_val, max_epoch=(args.epochs - args.ft_epoch))
 
     # Train and val
     start_time = time.time()

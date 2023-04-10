@@ -7,7 +7,7 @@
 
 --epochs        1
 --train-batch   512
---test-batch    128
+--test-batch    200
 --valid-size    0
 
 --dali	        True

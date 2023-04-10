@@ -7,8 +7,8 @@
 # -loc            /home/nameunkang/Project/NIPQ_CiM
 
 # stage1-25 stage2-3
---epochs        28
---ft_epoch      3 
+--epochs        35
+--ft_epoch      5
 --train-batch   1024
 --test-batch    200
 --valid-size    0
@@ -19,8 +19,8 @@
 --warmup_start_multiplier 0.1
 --eta_min       1e-3
 # total epoch (except for warmup lr)
-# T0 = epochs-ft-epoch
---T0            25
+# T0 = epochs-warmup
+--T0            32
 --gamma         0.1
 
 --arch          nipq_resnet18
@@ -41,3 +41,13 @@
 
 --dali          y
 --distributed   y
+
+# noise option
+--is_noise      y
+--nipq_noise    qhwnoise
+--co_noise      0.03
+--noise_type    prop
+--res_val       rel
+
+--cbits         4
+--mapping_mode  ref_a

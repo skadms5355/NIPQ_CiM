@@ -1038,7 +1038,7 @@ def unset_bitserial_log(model):
             print("Finish log unsetting {}, idx: {}".format(name.replace("module.", ""), counter))
             counter += 1
 
-def hwnoise_initilaize(model, weight=False, hwnoise=True, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', max_epoch=-1):
+def hwnoise_initialize(model, weight=False, hwnoise=True, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', max_epoch=-1):
     for name, module in model.named_modules():
         if isinstance(module, (Psum_QConv2d, Psum_QLinear)) and weight and hwnoise:
             module.quant_func.hwnoise = True
@@ -1075,7 +1075,7 @@ def print_ratio(checkpoint, layer_idx, input, weight):
 
 class PsumQuantOps(object):
     psum_initialize = psum_initialize
-    hwnoise_initilaize = hwnoise_initilaize
+    hwnoise_initialize = hwnoise_initialize
     unset_bitserial_log = unset_bitserial_log
     Conv2d = Psum_QConv2d
     Linear = Psum_QLinear
