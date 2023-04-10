@@ -1,10 +1,9 @@
 from re import I
-from torch.autograd import Variable
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
-from torch.nn.parameter import Parameter 
 from numpy import inf
+from .noise_cell import Noise_cell
 from .binarized_modules import *
 from .bitserial_modules import *
 
@@ -140,7 +139,7 @@ class LSQReturnScale(nn.Module):
             return x, s_scale
 
 class QConv(nn.Conv2d):
-    def __init__(self, in_channels, out_channels, wbits=32, kernel_size=3, stride=1, padding=0, groups=1, symmetric=False, bias=True):
+    def __init__(self, in_channels, out_channels, wbits=32, kernel_size=3, stride=1, padding=0, groups=1, symmetric=False, bias=True, hwnoise=False):
         super(QConv, self).__init__(in_channels, out_channels, kernel_size,
                                        stride=stride, padding=padding, groups=groups, bias=bias)
         self.wbits = wbits
@@ -151,11 +150,21 @@ class QConv(nn.Conv2d):
         #self.quant_group = out_channels
         #self.weight_clip_scale = nn.Parameter(torch.zeros(self.quant_group, 1, 1, 1))
         #self.weight_clip_scale.data.fill_(self.boundary)
-        self.quan_w_fn = LSQ(bit=self.wbits, half_range=False, symmetric=symmetric, per_channel=False)
-        #self.quan_w_fn.init_from(self.weight)
+        self.hwnoise = hwnoise
+        self.quan_w_fn = LSQReturnScale(bit=self.wbits, half_range=False, symmetric=symmetric, per_channel=False)
 
+    def hwnoise_init(self, cbits, mapping_mode, co_noise=0.01, noise_type='prop', res_val='rel', max_epoch=-1):
+        w_format = 'state' if res_val == 'abs' or noise_type == 'meas' else 'weight'
+        wbits = nn.Parameter(torch.Tensor(1).fill_(self.wbits), requires_grad=False).round().squeeze()
+        self.noise_cell = Noise_cell(wbits, cbits, mapping_mode, co_noise, noise_type=noise_type, \
+                                    res_val=res_val, w_format=w_format, max_epoch=max_epoch)
+        
     def forward(self, input):
-        output =  F.conv2d(input, self.quan_w_fn(self.weight), bias=self.bias,
+        qweight, scale = self.quan_w_fn(self.weight)
+        if self.hwnoise:
+            qweight = self.noise_cell((qweight / scale).round()) * scale
+
+        output =  F.conv2d(input, qweight, bias=self.bias,
                 stride=self.stride, padding=self.padding, dilation=self.dilation, groups=self.groups)
         return output
 
@@ -175,16 +184,28 @@ class QConv(nn.Conv2d):
         return s.format(**self.__dict__)
 
 class QLinear(nn.Linear):
-    def __init__(self, in_features, out_features, wbits, symmetric=False, bias=False):
+    def __init__(self, in_features, out_features, wbits, symmetric=False, bias=False, hwnoise=False):
         super(QLinear, self).__init__(in_features, out_features, bias=bias)
         self.wbits = wbits
         #self.weight_clip_scale = nn.Parameter(torch.Tensor([self.boundary]))
         #self.weight_clip_scale = nn.Parameter(torch.zeros(self.quant_group, 1, 1, 1))
         #self.weight_clip_scale.data.fill_(self.boundary)
-        self.quan_w_fn = LSQ(bit=self.wbits, half_range=False, symmetric=symmetric, per_channel=False)
+        self.hwnoise = hwnoise
+        self.quan_w_fn = LSQReturnScale(bit=self.wbits, half_range=False, symmetric=symmetric, per_channel=False)
 
+    def hwnoise_init(self, cbits, mapping_mode, co_noise=0.01, noise_type='prop', res_val='rel', max_epoch=-1):
+        w_format = 'state' if res_val == 'abs' or noise_type == 'meas' else 'weight'
+        wbits = nn.Parameter(torch.Tensor(1).fill_(self.wbits), requires_grad=False).round().squeeze()
+        self.noise_cell = Noise_cell(wbits, cbits, mapping_mode, co_noise, noise_type=noise_type, \
+                                    res_val=res_val, w_format=w_format, max_epoch=max_epoch)
     def forward(self, input):
-        output =  F.linear(input, self.quan_w_fn(self.weight), bias=self.bias)
+        qweight, scale = self.quan_w_fn(self.weight)
+        if self.hwnoise:
+            qweight = self.noise_cell((qweight / scale).round()) * scale
+        else: 
+            qweight, _ = self.quan_w_fn(self.weight)
+
+        output =  F.linear(input, qweight, bias=self.bias)
         return output
 
     def extra_repr(self):
@@ -202,6 +223,16 @@ def add_act(abits, bitserial=False):
         return nn.ReLU(inplace=True)
     else:
         return Q_act(abits=abits, bitserial=bitserial)
+
+def hwnoise_initialize(model, hwnoise=True, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', max_epoch=-1):
+    for name, module in model.named_modules():
+        if isinstance(module, (QConv, QLinear)) and hwnoise:
+            module.hwnoise = True
+
+            if noise_type == 'grad':
+                assert max_epoch != -1, "Enter max_epoch in hwnoise_initialize function"
+            if hwnoise:
+                module.hwnoise_init(cbits=cbits, mapping_mode=mapping_mode, co_noise=co_noise, noise_type=noise_type, res_val=res_val, max_epoch=max_epoch)
 
 def quant_or_not(abits):
     if abits == 32:

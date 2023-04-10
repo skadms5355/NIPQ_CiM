@@ -2,6 +2,10 @@ from functools import partial
 import torch
 import torch.optim as optim
 import math
+<<<<<<< HEAD
+=======
+import warnings
+>>>>>>> 640e461d6530dedf6c38edd3d63b724131a6e5eb
 
 from .warmup import warmup
 import warnings
@@ -72,10 +76,15 @@ def set_scheduler(optimizer, args):
         after_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, partial(linear_decay, args.epochs - args.warmup))
     elif args.lr_method == 'lr_exp':
         after_scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, args.gamma)
+<<<<<<< HEAD
     elif args.lr_method == 'lr_cosineanneal':
         after_scheduler = CosineAnnealing(optimizer, args.T0, args.T_mult, eta_min=args.eta_min)
+=======
+>>>>>>> 640e461d6530dedf6c38edd3d63b724131a6e5eb
     elif args.lr_method == 'lr_cosineannealwr':
         after_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, args.T0, args.T_mult, eta_min=args.eta_min)
+    elif args.lr_method == 'lr_cosineanneal':
+        after_scheduler = CosineAnnealing(optimizer, args.T0, args.T_mult, eta_min=args.eta_min)
     else :
         assert False, 'learning rate decay method should be one of step, linear, exp, cosineanneal'
 
@@ -90,8 +99,13 @@ class CosineAnnealing(torch.optim.lr_scheduler._LRScheduler):
     """ Implements a schedule where the first few epochs are linear warmup, and
     then there's cosine annealing after that."""
 
+<<<<<<< HEAD
     def __init__(self, optimizer: torch.optim.Optimizer, T_0: int,
                  T_mult: int = 1, eta_min: float = 0.0, last_epoch: int = -1, verbose: bool = False):
+=======
+    def __init__(self, optimizer: torch.optim.Optimizer, T_0: int, T_mult: int = 1,
+                 eta_min: float = 0.0, last_epoch: int = -1, verbose: bool = False):
+>>>>>>> 640e461d6530dedf6c38edd3d63b724131a6e5eb
         if T_0 <= 0 or not isinstance(T_0, int):
             raise ValueError("Expected positive integer T_0, but got {}".format(T_0))
         if T_mult < 1 or not isinstance(T_mult, int):
@@ -108,6 +122,7 @@ class CosineAnnealing(torch.optim.lr_scheduler._LRScheduler):
             warnings.warn("To get the last learning rate computed by the scheduler, "
                           "please use `get_last_lr()`.", UserWarning)
             
+<<<<<<< HEAD
         # We're in the cosine annealing part. Note that the implementation
         # is different from the paper in that there's no additive part and
         # the "low" LR is not limited by eta_min. Instead, eta_min is
@@ -115,6 +130,9 @@ class CosineAnnealing(torch.optim.lr_scheduler._LRScheduler):
         # designed for SGDR.
         lr_multiplier = self.eta_min + (1.0 - self.eta_min) * (
             1 + math.cos(math.pi * self.T_cur / self.T_i)) / 2
+=======
+        lr_multiplier = self.eta_min + (1.0 - self.eta_min) * (1 + math.cos(math.pi * self.T_cur / self.T_i)) / 2
+>>>>>>> 640e461d6530dedf6c38edd3d63b724131a6e5eb
         assert lr_multiplier >= 0.0
         return [base_lr * lr_multiplier for base_lr in self.base_lrs]
 
@@ -187,4 +205,8 @@ class CosineAnnealing(torch.optim.lr_scheduler._LRScheduler):
                 param_group['lr'] = lr
                 self.print_lr(self.verbose, i, lr, epoch)
 
+<<<<<<< HEAD
         self._last_lr = [group['lr'] for group in self.optimizer.param_groups]
+=======
+        self._last_lr = [group['lr'] for group in self.optimizer.param_groups]
+>>>>>>> 640e461d6530dedf6c38edd3d63b724131a6e5eb

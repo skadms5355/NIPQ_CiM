@@ -23,8 +23,8 @@ parser.add_argument('--pclip', type=str, nargs='+', default=['sigma'],
 parser.add_argument('--co_noise', type=float, nargs='+', default=[0, 0.03, 0.05])
 parser.add_argument('--noise_type', default='prop', type=str,
                     choices=['static', 'grad', 'prop'])
-parser.add_argument('--tnipq', default='qnoise', type=str,
-                    choices=['qnoise', 'qhwnoise'])
+parser.add_argument('--tnipq', default='hwnoise', type=str,
+                    choices=['quant', 'hwnoise', 'qhwnoise'])
 parser.add_argument('--tnoise_type', default='prop', type=str,
                     choices=['static', 'grad', 'prop'])
 parser.add_argument('--tco_noise', type=float, default=0.03)
@@ -52,6 +52,9 @@ if "vgg9" in args.argfile:
         if "psum" in args.argfile:
             arch = "psum_lsq_vgg9"
     check_file = "layer6_hist.pkl"
+elif "psum_alexnet" in args.argfile:
+    arch = "psum_alexnet"
+    check_file = "layer5_hist.pkl"
 elif "resnet18" in args.argfile:
     if "nipq" in args.argfile:
         arch = "nipq_resnet18"
@@ -71,7 +74,9 @@ if args.dataset == 'imagenet':
     if "nipq" in arch:
         pretrained =  './checkpoints/imagenet/nipq/nipq_resnet18/qnoise_fix:4/2023-Apr-03-14-51-48/model_best.pth.tar'
     elif "lsq" in arch:
-        
+        pretrained  = './checkpoints/imagenet/quant/lsq_resnet18/a:4_w:4/2022-Sep-12-01-10-42/model_best.pth.tar'
+    else:
+        assert False, "No pretrained model"
 elif args.dataset == 'pascal':
     per_class = 0
 elif args.dataset == 'cifar10':
@@ -110,11 +115,17 @@ else:
 
             for a_size in arraySize:
                 testlog=True
-                if is_noise:
-                    log_path = os.path.join("checkpoints", args.dataset, "nipq", arch, "eval", "{}_fix:4".format(nipq_noise), mapping_mode, "{}_c:4/{}_type_{}/log_bitserial_info/hist".format(a_size, tn_file, co_noise), check_file)
+                if "nipq" in args.argfile:
+                    if is_noise:
+                        log_path = os.path.join("checkpoints", args.dataset, "nipq", arch, "eval", "{}_fix:4".format(nipq_noise), mapping_mode, "{}_c:4/{}_type_{}/log_bitserial_info/hist".format(a_size, tn_file, co_noise), check_file)
+                    else:
+                        log_path = os.path.join("checkpoints", args.dataset, "nipq", arch, "eval", "{}_fix:4".format(nipq_noise), mapping_mode, "{}_c:4/log_bitserial_info/hist".format(a_size), check_file)
                 else:
-                    log_path = os.path.join("checkpoints", args.dataset, "nipq", arch, "eval", "{}_fix:4".format(nipq_noise), mapping_mode, "{}_c:4/log_bitserial_info/hist".format(a_size), check_file)
-                
+                    if is_noise:
+                        log_path = os.path.join("checkpoints", args.dataset, "quant", arch, "eval/a:4_w:4", mapping_mode, "{}_c:4/{}_type_{}/log_bitserial_info/hist".format(a_size, tn_file, co_noise), check_file)
+                    else:
+                        log_path = os.path.join("checkpoints", args.dataset, "quant", arch, "eval/a:4_w:4", mapping_mode, "{}_c:4/log_bitserial_info/hist".format(a_size), check_file)
+
                 if os.path.isfile(log_path):
                     log_file=False
                 else:

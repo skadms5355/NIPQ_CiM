@@ -11,24 +11,19 @@
 --valid-size    0
 
 --dali	        True
-# --distributed	True
+--distributed	n
 
 --evaluate      y
 --gpu-id        0
 
---arch          psum_resnet18_nipq
---model_mode    nipq
---fixed_bit     4
+--model_mode    quant
+--arch          psum_resnet18_lsq
+--wbits         4
+--abits         4
+--pretrained    ./checkpoints/imagenet/quant/lsq_resnet18/a:4_w:4/2022-Sep-12-01-10-42/model_best.pth.tar
 
-#nipq model 
---pretrained    ./checkpoints/imagenet/nipq/nipq_resnet18/qnoise_fix:4/2023-Apr-04-00-52-33/model_best.pth.tar
-# --pretrained    ./checkpoints/imagenet/nipq/nipq_resnet18/qnoise_fix:4/2023-Apr-03-14-51-48/model_best.pth.tar
-
-# --model_mode    quant
-# --arch          psum_resnet18_lsq
-# --wbits         4
-# --abits         4
-# --pretrained    ./checkpoints/imagenet/quant/lsq_resnet18/a:4_w:4/2022-Sep-12-01-10-42/model_best.pth.tar
+# --model_mode    nipq
+# --fixed_bit       4
 
 --psum_comp     y
 --arraySize     128

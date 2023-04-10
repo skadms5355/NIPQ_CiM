@@ -244,7 +244,7 @@ def initialize(model, act=False, weight=False, noise=True, is_stochastic=True, i
                 module.quant_func.bit.data.fill_(bit)
                 module.quant_func.bit.requires_grad = False
             
-def hwnoise_initilaize(model, weight=False, hwnoise=True, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', max_epoch=-1):
+def hwnoise_initialize(model, weight=False, hwnoise=True, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', max_epoch=-1):
     for name, module in model.named_modules():
         if isinstance(module, (Q_Conv2d, Q_Linear)) and weight and hwnoise:
             module.quant_func.hwnoise = True
@@ -364,7 +364,7 @@ def bit_cal(model):
 
 class QuantOps(object):
     initialize = initialize
-    hwnoise_initilaize = hwnoise_initilaize
+    hwnoise_initialize = hwnoise_initialize
     sample_activation_size = sample_activation_size
     ReLU = Q_ReLU
     Sym = Q_Sym

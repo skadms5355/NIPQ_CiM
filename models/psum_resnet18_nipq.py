@@ -33,7 +33,7 @@ class BasicBlock(nn.Module):
         self.bn2 = nn.BatchNorm2d(planes)
 
         self.downsample = downsample
-
+        
     def forward(self, x):
         identity = x 
 
@@ -79,8 +79,8 @@ class PNIPQ_ResNet(nn.Module):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
-                # nn.AvgPool2d(kernel_size=2, stride=2),
-                conv1x1(self.inplanes, planes * block.expansion, stride=stride),
+                nn.AvgPool2d(kernel_size=2, stride=2),
+                conv1x1(self.inplanes, planes * block.expansion, stride=1),
                 nn.BatchNorm2d(planes * block.expansion),
             )
             
@@ -140,7 +140,7 @@ class PNIPQ_ResNet_cifar10(nn.Module):
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
                 nn.AvgPool2d(kernel_size=2, stride=2),
-                conv1x1(self.inplanes, planes * block.expansion, 32, 0, False, 'zeros', stride=1),
+                conv1x1(self.inplanes, planes * block.expansion, stride=1),
                 nn.BatchNorm2d(planes * block.expansion),
             )
             #if kwargs['downsample'] == 'avgpool':

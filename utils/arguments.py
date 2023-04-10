@@ -94,7 +94,7 @@ def set_arguments():
 
     # Training options
     train_group.add_argument('-tm', '--model_mode', default='baseline', type=str,
-                             choices=['baseline', 'quant', 'hn_quant', 'nipq'],
+                             choices=['baseline', 'quant', 'nipq'],
                              help='training mode to be used. (default: baseline (basic))')
     train_group.add_argument('--epochs', default=90, type=int, metavar='N',
                              help='Number of total epochs to run')
@@ -128,7 +128,7 @@ def set_arguments():
 
     # LR scheduler options
     scheduler_group.add_argument('--lr-method', default='lr_step', type=str,
-                                 choices=['lr_step', 'lr_linear', 'lr_exp', 'lr_cosineanneal'],
+                                 choices=['lr_step', 'lr_linear', 'lr_exp', 'lr_cosineannealwr', 'lr_cosineanneal'],
                                  help='Set learning rate scheduling method.')
     scheduler_group.add_argument('--schedule', nargs='+', default=[150, 225], type=int,
                                  help='Decrease learning rate at these epochs when using step method')
