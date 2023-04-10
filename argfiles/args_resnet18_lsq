@@ -43,5 +43,5 @@
 # noise option
 --is_noise      y
 --co_noise      0.03
---noise_type    prop
+--noise_type    grad
 --res_val       rel
