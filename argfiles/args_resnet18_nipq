@@ -15,12 +15,12 @@
 
 --optimizer     sgd
 --lr-method     lr_cosineanneal
---warmup        3
+--warmup        5
 --warmup_start_multiplier 0.1
 --eta_min       1e-3
 # total epoch (except for warmup lr)
 # T0 = epochs-warmup
---T0            32
+--T0            30
 --gamma         0.1
 
 --arch          nipq_resnet18

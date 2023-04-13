@@ -89,8 +89,8 @@ class ResNet(nn.Module):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
-                nn.AvgPool2d(kernel_size=2, stride=2),
-                conv1x1(self.inplanes, planes * block.expansion, stride=1),
+                # nn.AvgPool2d(kernel_size=2, stride=2),
+                conv1x1(self.inplanes, planes * block.expansion, stride=stride),
                 nn.BatchNorm2d(planes * block.expansion),
             )
             #print(kwargs['downample']

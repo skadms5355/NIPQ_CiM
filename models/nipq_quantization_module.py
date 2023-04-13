@@ -70,6 +70,8 @@ class Quantizer(nn.Module):
         w_format = 'state' if res_val == 'abs' or noise_type == 'meas' else 'weight'
         self.noise_cell = Noise_cell(bit.round().squeeze(), cbits, mapping_mode, co_noise, noise_type=noise_type, \
                                     res_val=res_val, w_format=w_format, max_epoch=max_epoch)
+        self.inf_noise_cell = Noise_cell(bit.round().squeeze(), cbits, mapping_mode, co_noise, noise_type='prop', \
+                                    res_val=res_val, w_format=w_format, max_epoch=max_epoch)
     
     def get_alpha(self):
         return self.alpha
@@ -121,7 +123,7 @@ class Quantizer(nn.Module):
                 # sns.histplot(data=(lsq/alpha).detach().cpu().numpy().ravel())
                 # plt.savefig('./weight_hist.png')
                 # plt.close()
-                lsq = self.noise_cell((lsq / alpha).round(), w_split=serial) * alpha
+                lsq = self.inf_noise_cell((lsq / alpha).round(), w_split=serial) * alpha
                 # fig, ax = plt.subplots(1, 1, figsize=(10, 3))
                 # ax.set_xticks(np.arange(-8, 8, 1))
                 # sns.histplot(data=(lsq/alpha).detach().cpu().numpy().ravel())

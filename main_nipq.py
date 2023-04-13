@@ -314,10 +314,10 @@ def main_worker(gpu, ngpus_per_node, args):
         model_dict = model.state_dict()
         model_keys = model_dict.keys()
         for name, param in load_dict.items():
-            if ('resnet18' in args.arch and 'downsample' in name) and args.pretrained == 'url':
-                name_list = name.split('.')
-                name_list[-2] = str(int(name_list[4])+1)
-                name = ".".join(name_list)
+            # if ('resnet18' in args.arch and 'downsample' in name) and args.pretrained == 'url':
+            #     name_list = name.split('.')
+            #     name_list[-2] = str(int(name_list[4])+1)
+            #     name = ".".join(name_list)
 
             if name in model_keys:
                 model_dict[name] = param

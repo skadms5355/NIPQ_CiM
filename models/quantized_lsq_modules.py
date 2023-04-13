@@ -158,11 +158,16 @@ class QConv(nn.Conv2d):
         wbits = nn.Parameter(torch.Tensor(1).fill_(self.wbits), requires_grad=False).round().squeeze()
         self.noise_cell = Noise_cell(wbits, cbits, mapping_mode, co_noise, noise_type=noise_type, \
                                     res_val=res_val, w_format=w_format, max_epoch=max_epoch)
+        self.inf_noise_cell = Noise_cell(wbits, cbits, mapping_mode, co_noise, noise_type='prop', \
+                                    res_val=res_val, w_format=w_format, max_epoch=max_epoch)
         
     def forward(self, input):
         qweight, scale = self.quan_w_fn(self.weight)
         if self.hwnoise:
-            qweight = self.noise_cell((qweight / scale).round()) * scale
+            if self.training:
+                qweight = self.noise_cell((qweight / scale).round()) * scale
+            else:
+                qweight = self.inf_noise_cell((qweight / scale).round()) * scale
 
         output =  F.conv2d(input, qweight, bias=self.bias,
                 stride=self.stride, padding=self.padding, dilation=self.dilation, groups=self.groups)
