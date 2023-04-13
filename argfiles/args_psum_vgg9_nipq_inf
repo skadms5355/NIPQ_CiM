@@ -8,7 +8,7 @@
 
 --epoch         1
 --train-batch   256
---test-batch    200
+--test-batch    256
 
 --arch          psum_nipq_vgg9
 
@@ -29,14 +29,15 @@
 --wbit-serial   y
 --abit-serial   y
 
---psum_mode     sigma
---pbits         4
---pclipmode     Layer
---pclip         sigma
+# psum mode : fix, sigma, scan
+--psum_mode     fix
+--pbits         6
+--pclipmode     Network
+--pclip         max
 --psigma        3
 
 # noise option
---is_noise      y
+--is_noise      n
 --nipq_noise    qnoise
 --co_noise      0.03
 --noise_type    prop

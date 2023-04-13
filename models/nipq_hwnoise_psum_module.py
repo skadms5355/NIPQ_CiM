@@ -19,6 +19,9 @@ import conv_sweight_cuda
     So, nipq quantization noise + hardware noise are not used.
 """
 
+# accurate mode max thresuld (included)
+MAXThres = 7
+
 # split convolution layer across input channel
 def split_conv(weight, nWL):
     nIC = weight.shape[1]
@@ -88,6 +91,9 @@ class Psum_QConv2d(SplitConv):
         self.pclip = None
         self.psigma = None
 
+        ## for accurate mode (SRAM)
+        self.accurate = False
+
         # for logging
         self.bitserial_log = False
         self.layer_idx = -1
@@ -150,10 +156,11 @@ class Psum_QConv2d(SplitConv):
 
         self.setting_pquant_func(pbits=pbits, center=center, pbound=pbound)
 
-    def print_ratio(self, bits, input, weight):
+    def print_ratio(self, bits, input, weight, graph=False):
         # LSB > MSB 
-        fig, axes = plt.subplots(nrows=2, ncols=4, figsize=(18, 6))
-        ax = axes.flatten()
+        if graph:
+            fig, axes = plt.subplots(nrows=2, ncols=4, figsize=(18, 6))
+            ax = axes.flatten()
         write_file = f'{self.checkpoint}/model_ratio1.txt'
 
         if os.path.isfile(write_file) and (self.layer_idx == 0):
@@ -194,16 +201,16 @@ class Psum_QConv2d(SplitConv):
                     # prepare for the next stage
                     if i < self.split_groups - 1:
                         input_channel += self.group_move_in_channels[i]
-
-                colors=sns.color_palette("husl", bits)
-                sns.histplot(data=(group_i/self.split_groups).cpu().reshape(-1), bins=100, linewidth=0, alpha=0.7, ax=ax[b], color=colors[b], stat="count")
-                sns.histplot(data=(group_w/self.split_groups).cpu().reshape(-1), bins=100, linewidth=0, alpha=0.7, ax=ax[b+4], color=colors[b], stat="count")
-                ax[b].set_title('Input {}'.format(b), fontsize=15, fontdict=dict(weight='bold'))
-                ax[b+4].set_title('Weight {}'.format(b), fontsize=15, fontdict=dict(weight='bold'))
-                ax[b].set_xlabel('Ratio [%]', fontsize=13)
-                ax[b+4].set_xlabel('Ratio [%]', fontsize=13)
-                fig.tight_layout(pad=1.0, h_pad=2)
-                plt.savefig(f'{self.checkpoint}/Ratio_layer{self.layer_idx}.png')
+                if graph:
+                    colors=sns.color_palette("husl", bits)
+                    sns.histplot(data=(group_i/self.split_groups).cpu().reshape(-1), bins=100, linewidth=0, alpha=0.7, ax=ax[b], color=colors[b], stat="count")
+                    sns.histplot(data=(group_w/self.split_groups).cpu().reshape(-1), bins=100, linewidth=0, alpha=0.7, ax=ax[b+4], color=colors[b], stat="count")
+                    ax[b].set_title('Input {}'.format(b), fontsize=15, fontdict=dict(weight='bold'))
+                    ax[b+4].set_title('Weight {}'.format(b), fontsize=15, fontdict=dict(weight='bold'))
+                    ax[b].set_xlabel('Ratio [%]', fontsize=13)
+                    ax[b+4].set_xlabel('Ratio [%]', fontsize=13)
+                    fig.tight_layout(pad=1.0, h_pad=2)
+                    plt.savefig(f'{self.checkpoint}/Ratio_layer{self.layer_idx}.png')
         
     def bitserial_split(self, input, act=True):
         """
@@ -417,55 +424,73 @@ class Psum_QConv2d(SplitConv):
 
     def _ADC_clamp_value(self):
         # get ADC clipping value for hist [Layer or Network hist]
-        if self.pclipmode == 'layer':
-            phist = f'{self.checkpoint}/hist/layer{self.layer_idx}_hist.pkl'
-            # phist = f'./hist/layer{self.layer_idx}_hist.pkl'
-        elif self.pclipmode == 'network':
-            phist = f'{self.checkpoint}/hist/network_hist.pkl'
+        if self.psum_mode == 'sigma':
+            if self.pclipmode == 'layer':
+                phist = f'{self.checkpoint}/hist/layer{self.layer_idx}_hist.pkl'
+                # phist = f'./hist/layer{self.layer_idx}_hist.pkl'
+            elif self.pclipmode == 'network':
+                phist = f'{self.checkpoint}/hist/network_hist.pkl'
 
-        if os.path.isfile(phist):
-            # print(f'Load ADC_hist ({phist})')
-            df_hist = pd.read_pickle(phist)
-            mean, std, min, max = get_statistics_from_hist(df_hist)
-        else:
-            if self.pbits != 32:
-                assert False, "Error: Don't have ADC hist file"
+            if os.path.isfile(phist):
+                # print(f'Load ADC_hist ({phist})')
+                df_hist = pd.read_pickle(phist)
+                mean, std, min, max = get_statistics_from_hist(df_hist)
             else:
-                mean, std, min, max = 0.0, 0.0, 0.0, 0.0
+                if self.pbits != 32:
+                    assert False, "Error: Don't have ADC hist file"
+                else:
+                    mean, std, min, max = 0.0, 0.0, 0.0, 0.0
 
-        # Why abs(mean) is used not mean?? => Asymmetric quantizaion is occured
-        if self.pbits == 32:
-            maxVal = 1
-            minVal = 0
-        else:
-            if self.pclip == 'max':
-                maxVal = max
-                minVal = min
+            # Why abs(mean) is used not mean?? => Asymmetric quantizaion is occured
+            if self.pbits == 32:
+                maxVal = 1
+                minVal = 0
             else:
-                maxVal =  (abs(mean) + self.psigma*std).round() 
-                minVal = (abs(mean) - self.psigma*std).round()
-                if (self.mapping_mode == 'two_com') or (self.mapping_mode =='ref_d') or (self.mapping_mode == 'PN'):
-                    minVal = min if minVal < 0 else minVal
-        
+                if self.pclip == 'max':
+                    maxVal = max
+                    minVal = min
+                else:
+                    maxVal =  (abs(mean) + self.psigma*std).round() 
+                    minVal = (abs(mean) - self.psigma*std).round()
+                    if (self.mapping_mode == 'two_com') or (self.mapping_mode =='ref_d') or (self.mapping_mode == 'PN'):
+                        minVal = min if minVal < 0 else minVal
+        else:
+            if self.mapping_mode == 'two_com':
+                minVal = 0
+                if self.pclip == 'max':
+                    maxVal = self.arraySize
+                elif self.pclip == 'half':
+                    maxVal = int(self.arraySize / 2)
+                elif self.pclip == 'quarter':
+                    maxVal = int(self.arraySize / 4)
+                else:
+                    assert False, 'Do not support this clip range {}'.format(self.pclip)
+            else:
+                assert False, 'Psum mode fix only support two_com mapping mode'
+
         midVal = (maxVal + minVal) / 2
 
         if self.info_print:
-            write_file = f'{self.checkpoint}/Layer_clipping_range.txt'
-            if os.path.isfile(write_file) and (self.layer_idx == 0):
-                option = 'w'
-            else:
-                option = 'a'
-            with open(write_file, option) as file:
-                if self.layer_idx == 0:
-                    file.write(f'{self.pclipmode}-wise Mode Psum quantization \n')
-                    file.write(f'Layer_information  Mean    Std     Min Max Clip_Min    Clip_Max    Mid \n')
-                file.write(f'Layer{self.layer_idx}  {mean}  {std}   {min}   {max}   {minVal}    {maxVal}    {midVal}\n')
+            if self.psum_mode == 'sigma':
+                write_file = f'{self.checkpoint}/Layer_clipping_range.txt'
+                if os.path.isfile(write_file) and (self.layer_idx == 0):
+                    option = 'w'
+                else:
+                    option = 'a'
+                with open(write_file, option) as file:
+                    if self.layer_idx == 0:
+                        file.write(f'{self.pclipmode}-wise Mode Psum quantization \n')
+                        file.write(f'Layer_information  Mean    Std     Min Max Clip_Min    Clip_Max    Mid \n')
+                    file.write(f'Layer{self.layer_idx}  {mean}  {std}   {min}   {max}   {minVal}    {maxVal}    {midVal}\n')
             
             print(f'{self.pclipmode}-wise Mode Psum quantization')
             if self.pbits == 32:
                 print(f'Layer{self.layer_idx} information | pbits {self.pbits}')
             else:
-                print(f'Layer{self.layer_idx} information | pbits {self.pbits} | Mean: {mean} | Std: {std} | Min: {min} | Max: {max} | Clip Min: {minVal} | Clip Max: {maxVal} | Mid: {midVal}')
+                if self.psum_mode == 'sigma':
+                    print(f'Layer{self.layer_idx} information | pbits {self.pbits} | Mean: {mean} | Std: {std} | Min: {min} | Max: {max} | Clip Min: {minVal} | Clip Max: {maxVal} | Mid: {midVal}')
+                elif self.psum_mode == 'fix':
+                    print(f'Layer{self.layer_idx} information | pbits {self.pbits} | Clip Min: {minVal} | Clip Max: {maxVal} | Mid: {midVal}')
             self.info_print = False
 
         return minVal, maxVal, midVal 
@@ -502,14 +527,14 @@ class Psum_QConv2d(SplitConv):
                 weight_chunk = torch.chunk(sweight, wsplit_num, dim=1)
 
                 if w_serial:
-                    w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
+                    w_one = torch.ones(size=weight_chunk[0].size(), device=weight_chunk[0].device)
 
                 if self.info_print:
                     self.print_ratio(bits, input_chunk, weight_chunk)
 
                 psum_scale = w_scale * a_scale
 
-                if self.psum_mode == 'sigma':
+                if self.psum_mode == 'sigma' or 'fix':
                     minVal, maxVal, midVal = self._ADC_clamp_value()
                     self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
                 elif self.psum_mode == 'scan':
@@ -523,17 +548,33 @@ class Psum_QConv2d(SplitConv):
                     if w_serial and self.hwnoise:
                         out_one = std_offset * self._split_forward(input_s, w_one, padded=True, ignore_bias=True, cat_output=False,
                                                     weight_is_split=True, infer_only=True, merge_group=True)
+                    if w_serial and self.accurate:
+                        cnt_input = self._split_forward(input_s, w_one, padded=True, ignore_bias=True, cat_output=False, weight_is_split=True, infer_only=True)
+
                     for wbit, weight_s in enumerate(weight_chunk):
                         out_adc = None
                         out_tmp = self._split_forward(input_s, weight_s, padded=True, ignore_bias=True, cat_output=False,
                                                 weight_is_split=True, infer_only=True)
 
                         a_mag = 2**(abit)
-                        out_adc = psum_quant_merge(out_adc, out_tmp,
-                                                    pbits=self.pbits, step=self.pstep, 
-                                                    half_num_levels=self.phalf_num_levels, 
-                                                    pbound=self.pbound, center=self.center, weight=a_mag,
-                                                    groups=self.split_groups, pzero=self.pzero)
+                        if not self.accurate:
+                            out_adc = psum_quant_merge(out_adc, out_tmp,
+                                                        pbits=self.pbits, step=self.pstep, 
+                                                        half_num_levels=self.phalf_num_levels, 
+                                                        pbound=self.pbound, center=self.center, weight=a_mag,
+                                                        groups=self.split_groups, pzero=self.pzero)
+                        else:
+                            # accurate mode (SRAM)
+                            # out_quant = psum_quant(out_quant)
+                            
+                            for g in range(0, self.split_groups):
+                                in_acc_addr = torch.where(cnt_input[g] <= MAXThres)
+                                # out_quant[g][in_acc_addr] = out_tmp[g][in_acc_addr]
+                                # if g==0:
+                                    # out_adc = out_quant[g]
+                                # else:
+                                    # out_adc += out_quant[g]
+
                         if w_serial:
                             out_adc = 2**(wbit) * (out_adc - out_one) if self.hwnoise else 2**(wbit) * out_adc
                             if wsplit_num == wbit+1:
@@ -615,6 +656,9 @@ class Psum_QLinear(SplitLinear):
         self.pclip = None
         self.psigma = None
 
+        ## for accurate mode (SRAM)
+        self.accurate = False
+
         # for logging
         self.bitserial_log = False
         self.layer_idx = -1
@@ -687,11 +731,12 @@ class Psum_QLinear(SplitLinear):
 
         return output.round_(), scale
     
-    def print_ratio(self, bits, input, weight):
+    def print_ratio(self, bits, input, weight, graph=False):
         # LSB > MSB 
         
-        fig, axes = plt.subplots(nrows=2, ncols=bits, figsize=(18, 6))
-        ax = axes.flatten()
+        if graph:
+            fig, axes = plt.subplots(nrows=2, ncols=bits, figsize=(18, 6))
+            ax = axes.flatten()
         write_file = f'{self.checkpoint}/model_ratio1.txt'
 
         if os.path.isfile(write_file) and (self.layer_idx == 0):
@@ -725,15 +770,16 @@ class Psum_QLinear(SplitLinear):
                         group_i += ratio_i
                     file.write(f'Group_{i}  {ratio_i.mean()}    {ratio_i.min()}     {ratio_i.max()}     {ratio_w.mean()}    {ratio_w.min()}     {ratio_w.max()}\n')
                 
-                colors=sns.color_palette("husl", bits)
-                sns.histplot(data=(group_i/self.split_groups).cpu(), bins=100, linewidth=0, alpha=0.7, ax=ax[b], color=colors[b], stat="count")
-                sns.histplot(data=(group_w/self.split_groups).cpu(), bins=100, linewidth=0, alpha=0.7, ax=ax[b+4], color=colors[b], stat="count")
-                ax[b].set_title('Input {}'.format(b), fontsize=15, fontdict=dict(weight='bold'))
-                ax[b+4].set_title('Weight {}'.format(b), fontsize=15, fontdict=dict(weight='bold'))
-                ax[b].set_xlabel('Ratio [%]', fontsize=13)
-                ax[b+4].set_xlabel('Ratio [%]', fontsize=13)
-                fig.tight_layout(pad=1.0, h_pad=2)
-                plt.savefig(f'{self.checkpoint}/Ratio_layer{self.layer_idx}.png')
+                if graph:
+                    colors=sns.color_palette("husl", bits)
+                    sns.histplot(data=(group_i/self.split_groups).cpu(), bins=100, linewidth=0, alpha=0.7, ax=ax[b], color=colors[b], stat="count")
+                    sns.histplot(data=(group_w/self.split_groups).cpu(), bins=100, linewidth=0, alpha=0.7, ax=ax[b+4], color=colors[b], stat="count")
+                    ax[b].set_title('Input {}'.format(b), fontsize=15, fontdict=dict(weight='bold'))
+                    ax[b+4].set_title('Weight {}'.format(b), fontsize=15, fontdict=dict(weight='bold'))
+                    ax[b].set_xlabel('Ratio [%]', fontsize=13)
+                    ax[b+4].set_xlabel('Ratio [%]', fontsize=13)
+                    fig.tight_layout(pad=1.0, h_pad=2)
+                    plt.savefig(f'{self.checkpoint}/Ratio_layer{self.layer_idx}.png')
 
     def _bitserial_log_forward(self, input):
         print(f'[layer{self.layer_idx}]: bitserial mac log')
@@ -913,55 +959,73 @@ class Psum_QLinear(SplitLinear):
     
     def _ADC_clamp_value(self):
         # get ADC clipping value for hist [Layer or Network hist]
-        if self.pclipmode == 'layer':
-            phist = f'{self.checkpoint}/hist/layer{self.layer_idx}_hist.pkl'
-            # phist = f'./hist/layer{self.layer_idx}_hist.pkl'
-        elif self.pclipmode == 'network':
-            phist = f'{self.checkpoint}/hist/network_hist.pkl'
+        if self.psum_mode == 'sigma':
+            if self.pclipmode == 'layer':
+                phist = f'{self.checkpoint}/hist/layer{self.layer_idx}_hist.pkl'
+                # phist = f'./hist/layer{self.layer_idx}_hist.pkl'
+            elif self.pclipmode == 'network':
+                phist = f'{self.checkpoint}/hist/network_hist.pkl'
 
-        if os.path.isfile(phist):
-            # print(f'Load ADC_hist ({phist})')
-            df_hist = pd.read_pickle(phist)
-            mean, std, min, max = get_statistics_from_hist(df_hist)
-        else:
-            if self.pbits != 32:
-                assert False, "Error: Don't have ADC hist file"
+            if os.path.isfile(phist):
+                # print(f'Load ADC_hist ({phist})')
+                df_hist = pd.read_pickle(phist)
+                mean, std, min, max = get_statistics_from_hist(df_hist)
             else:
-                mean, std, min, max = 0, 0, 0, 0
-            
-        # Why abs(mean) is used not mean?? => Asymmetric quantizaion is occured
-        if self.pbits == 32:
-            maxVal = 1
-            minVal = 0
-        else:
-            if self.pclip == 'max':
-                maxVal = max
-                minVal = min
+                if self.pbits != 32:
+                    assert False, "Error: Don't have ADC hist file"
+                else:
+                    mean, std, min, max = 0, 0, 0, 0
+                
+            # Why abs(mean) is used not mean?? => Asymmetric quantizaion is occured
+            if self.pbits == 32:
+                maxVal = 1
+                minVal = 0
             else:
-                maxVal =  (abs(mean) + self.psigma*std).round() 
-                minVal = (abs(mean) - self.psigma*std).round() 
-                if (self.mapping_mode == 'two_com') or (self.mapping_mode == 'ref_d') or (self.mapping_mode == 'PN'):
-                    minVal = min if minVal < 0 else minVal
-        
+                if self.pclip == 'max':
+                    maxVal = max
+                    minVal = min
+                else:
+                    maxVal =  (abs(mean) + self.psigma*std).round() 
+                    minVal = (abs(mean) - self.psigma*std).round() 
+                    if (self.mapping_mode == 'two_com') or (self.mapping_mode == 'ref_d') or (self.mapping_mode == 'PN'):
+                        minVal = min if minVal < 0 else minVal
+        else:
+            if self.mapping_mode == 'two_com':
+                minVal = 0
+                if self.pclip == 'max':
+                    maxVal = self.arraySize
+                elif self.pclip == 'half':
+                    maxVal = int(self.arraySize / 2)
+                elif self.pclip == 'quarter':
+                    maxVal = int(self.arraySize / 4)
+                else:
+                    assert False, 'Do not support this clip range {}'.format(self.pclip)
+            else:
+                assert False, 'Psum mode fix only support two_com mapping mode'
+
         midVal = (maxVal + minVal) / 2
         
         if self.info_print:
-            write_file = f'{self.checkpoint}/Layer_clipping_range.txt'
-            if os.path.isfile(write_file) and (self.layer_idx == 0):
-                option = 'w'
-            else:
-                option = 'a'
-            with open(write_file, option) as file:
-                if self.layer_idx == 0:
-                    file.write(f'{self.pclipmode}-wise Mode Psum quantization \n')
-                    file.write(f'Layer_information  Mean    Std     Min Max Clip_Min    Clip_Max    Mid \n')
-                file.write(f'Layer{self.layer_idx}  {mean}  {std}   {min}   {max}   {minVal}    {maxVal}    {midVal}\n')
+            if self.psum_mode == 'sigma':
+                write_file = f'{self.checkpoint}/Layer_clipping_range.txt'
+                if os.path.isfile(write_file) and (self.layer_idx == 0):
+                    option = 'w'
+                else:
+                    option = 'a'
+                with open(write_file, option) as file:
+                    if self.layer_idx == 0:
+                        file.write(f'{self.pclipmode}-wise Mode Psum quantization \n')
+                        file.write(f'Layer_information  Mean    Std     Min Max Clip_Min    Clip_Max    Mid \n')
+                    file.write(f'Layer{self.layer_idx}  {mean}  {std}   {min}   {max}   {minVal}    {maxVal}    {midVal}\n')
             
             print(f'{self.pclipmode}-wise Mode Psum quantization')
             if self.pbits == 32:
                 print(f'Layer{self.layer_idx} information | pbits {self.pbits}')
             else:
-                print(f'Layer{self.layer_idx} information | pbits {self.pbits} | Mean: {mean} | Std: {std} | Min: {min} | Max: {max} | Clip Min: {minVal} | Clip Max: {maxVal} | Mid: {midVal}')
+                if self.psum_mode == 'sigma':
+                    print(f'Layer{self.layer_idx} information | pbits {self.pbits} | Mean: {mean} | Std: {std} | Min: {min} | Max: {max} | Clip Min: {minVal} | Clip Max: {maxVal} | Mid: {midVal}')
+                elif self.psum_mode == 'fix':
+                    print(f'Layer{self.layer_idx} information | pbits {self.pbits} | Clip Min: {minVal} | Clip Max: {maxVal} | Mid: {midVal}')
             self.info_print = False
 
         return minVal, maxVal, midVal
@@ -994,12 +1058,12 @@ class Psum_QLinear(SplitLinear):
                     wsplit_num = 1
                 weight_chunk = torch.chunk(sweight, wsplit_num, dim=1)
                 if w_serial:
-                    w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
+                    w_one = torch.ones(size=weight_chunk[0].size(), device=weight_chunk[0].device)
                 
                 if self.info_print:
                     self.print_ratio(bits, input_chunk, weight_chunk)
 
-                if self.psum_mode == 'sigma':
+                if self.psum_mode == 'sigma' or 'fix':
                     minVal, maxVal, midVal = self._ADC_clamp_value()
                     self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
                 elif self.psum_mode == 'scan':
@@ -1013,16 +1077,32 @@ class Psum_QLinear(SplitLinear):
                 for abit, input_s in enumerate(input_chunk):
                     if w_serial and self.hwnoise:
                         out_one = (std_offset) * self._split_forward(input_s, w_one, ignore_bias=True, infer_only=True, merge_group=True)
+                    if w_serial and self.accurate:
+                        cnt_input = self._split_forward(input_s, w_one, ignore_bias=True, cat_output=False, infer_only=True)
+                    
                     for wbit, weight_s in enumerate(weight_chunk):
                         out_adc = None
                         out_tmp = self._split_forward(input_s, weight_s, ignore_bias=True, cat_output=False, infer_only=True)
 
                         a_mag = 2**(abit)
-                        out_adc = psum_quant_merge(out_adc, out_tmp,
+                        if not self.accurate:
+                            out_adc = psum_quant_merge(out_adc, out_tmp,
                                                     pbits=self.pbits, step=self.pstep, 
                                                     half_num_levels=self.phalf_num_levels, 
                                                     pbound=self.pbound, center=self.center, weight=a_mag,
                                                     groups=self.split_groups, pzero=self.pzero)
+                        else:
+                            # accurate mode (SRAM)
+                            # out_quant = psum_quant(out_quant)
+                            
+                            for g in range(0, self.split_groups):
+                                in_acc_addr = torch.where(cnt_input[g] <= MAXThres)
+                                # out_quant[g][in_acc_addr] = out_tmp[g][in_acc_addr]
+                                # if g==0:
+                                #     out_adc = out_quant[g]
+                                # else:
+                                #     out_adc += out_quant[g]
+
                         if w_serial:
                             out_adc = 2**(wbit) * (out_adc - out_one) if self.hwnoise else 2**(wbit) * out_adc
                             if wsplit_num == wbit+1:
@@ -1089,7 +1169,7 @@ def get_statistics_from_hist(df_hist):
 
 def psum_initialize(model, act=True, weight=True, fixed_bit=-1, cbits=4, arraySize=128, mapping_mode='2T2R', psum_mode='sigma',
                     wbit_serial=False, pbits=32, pclipmode='layer', pclip='sigma', psigma=3, pbound=None, center=None,
-                    checkpoint=None, info_print=False, log_file=None):
+                    accurate=False, checkpoint=None, info_print=False, log_file=None):
     counter=0
     for name, module in model.named_modules():
         if isinstance(module, (QuantActs.ReLU, QuantActs.HSwish, QuantActs.Sym)) and act:
@@ -1129,11 +1209,15 @@ def psum_initialize(model, act=True, weight=True, fixed_bit=-1, cbits=4, arraySi
             if psum_mode == 'sigma':
                 module.pclip = pclip
                 module.psigma = psigma
+            elif psum_mode == 'fix':
+                module.pclip = pclip
             elif psum_mode == 'scan':
                 module.setting_pquant_func(pbits, center, pbound)
             else:
                 assert False, "Only two options [sigma, scan]"
             
+            module.accurate = accurate
+
             module.bitserial_log = log_file
             module.layer_idx = counter 
             module.checkpoint = checkpoint

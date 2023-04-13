@@ -505,55 +505,73 @@ class PsumQConv(SplitConv):
 
     def _ADC_clamp_value(self):
         # get ADC clipping value for hist [Layer or Network hist]
-        if self.pclipmode == 'Layer':
-            phist = f'{self.checkpoint}/hist/layer{self.layer_idx}_hist.pkl'
-            # phist = f'./hist/layer{self.layer_idx}_hist.pkl'
-        elif self.pclipmode == 'Network':
-            phist = f'{self.checkpoint}/hist/network_hist.pkl'
+        if self.psum_mode == 'sigma':
+            if self.pclipmode == 'Layer':
+                phist = f'{self.checkpoint}/hist/layer{self.layer_idx}_hist.pkl'
+                # phist = f'./hist/layer{self.layer_idx}_hist.pkl'
+            elif self.pclipmode == 'Network':
+                phist = f'{self.checkpoint}/hist/network_hist.pkl'
 
-        if os.path.isfile(phist):
-            # print(f'Load ADC_hist ({phist})')
-            df_hist = pd.read_pickle(phist)
-            mean, std, min, max = get_statistics_from_hist(df_hist)
-        else:
-            if self.pbits != 32:
-                assert False, "Error: Don't have ADC hist file"
+            if os.path.isfile(phist):
+                # print(f'Load ADC_hist ({phist})')
+                df_hist = pd.read_pickle(phist)
+                mean, std, min, max = get_statistics_from_hist(df_hist)
             else:
-                mean, std, min, max = 0.0, 0.0, 0.0, 0.0
+                if self.pbits != 32:
+                    assert False, "Error: Don't have ADC hist file"
+                else:
+                    mean, std, min, max = 0.0, 0.0, 0.0, 0.0
 
-        # Why abs(mean) is used not mean?? => Asymmetric quantizaion is occured
-        if self.pbits == 32:
-            maxVal = 1
-            minVal = 0
-        else:
-            if self.pclip == 'max':
-                maxVal = max
-                minVal = min
+            # Why abs(mean) is used not mean?? => Asymmetric quantizaion is occured
+            if self.pbits == 32:
+                maxVal = 1
+                minVal = 0
             else:
-                maxVal =  (abs(mean) + self.psigma*std).round() 
-                minVal = (abs(mean) - self.psigma*std).round()
-                if (self.mapping_mode == 'two_com') or (self.mapping_mode =='ref_d') or (self.mapping_mode == 'PN'):
-                    minVal = min if minVal < 0 else minVal
-        
+                if self.pclip == 'max':
+                    maxVal = max
+                    minVal = min
+                else:
+                    maxVal =  (abs(mean) + self.psigma*std).round() 
+                    minVal = (abs(mean) - self.psigma*std).round()
+                    if (self.mapping_mode == 'two_com') or (self.mapping_mode =='ref_d') or (self.mapping_mode == 'PN'):
+                        minVal = min if minVal < 0 else minVal
+        else:
+            if self.mapping_mode == 'two_com':
+                minVal = 0
+                if self.pclip == 'max':
+                    maxVal = self.arraySize
+                elif self.pclip == 'half':
+                    maxVal = int(self.arraySize / 2)
+                elif self.pclip == 'quarter':
+                    maxVal = int(self.arraySize / 4)
+                else:
+                    assert False, 'Do not support this clip range {}'.format(self.pclip)
+            else:
+                assert False, 'Psum mode fix only support two_com mapping mode'
+
         midVal = (maxVal + minVal) / 2
 
         if self.info_print:
-            write_file = f'{self.checkpoint}/Layer_clipping_range.txt'
-            if os.path.isfile(write_file) and (self.layer_idx == 0):
-                option = 'w'
-            else:
-                option = 'a'
-            with open(write_file, option) as file:
-                if self.layer_idx == 0:
-                    file.write(f'{self.pclipmode}-wise Mode Psum quantization \n')
-                    file.write(f'Layer_information  Mean    Std     Min Max Clip_Min    Clip_Max    Mid \n')
-                file.write(f'Layer{self.layer_idx}  {mean}  {std}   {min}   {max}   {minVal}    {maxVal}    {midVal}\n')
+            if self.psum_mode == 'sigma':
+                write_file = f'{self.checkpoint}/Layer_clipping_range.txt'
+                if os.path.isfile(write_file) and (self.layer_idx == 0):
+                    option = 'w'
+                else:
+                    option = 'a'
+                with open(write_file, option) as file:
+                    if self.layer_idx == 0:
+                        file.write(f'{self.pclipmode}-wise Mode Psum quantization \n')
+                        file.write(f'Layer_information  Mean    Std     Min Max Clip_Min    Clip_Max    Mid \n')
+                    file.write(f'Layer{self.layer_idx}  {mean}  {std}   {min}   {max}   {minVal}    {maxVal}    {midVal}\n')
             
             print(f'{self.pclipmode}-wise Mode Psum quantization')
             if self.pbits == 32:
                 print(f'Layer{self.layer_idx} information | pbits {self.pbits}')
             else:
-                print(f'Layer{self.layer_idx} information | pbits {self.pbits} | Mean: {mean} | Std: {std} | Min: {min} | Max: {max} | Clip Min: {minVal} | Clip Max: {maxVal} | Mid: {midVal}')
+                if self.psum_mode == 'sigma':
+                    print(f'Layer{self.layer_idx} information | pbits {self.pbits} | Mean: {mean} | Std: {std} | Min: {min} | Max: {max} | Clip Min: {minVal} | Clip Max: {maxVal} | Mid: {midVal}')
+                elif self.psum_mode == 'fix':
+                    print(f'Layer{self.layer_idx} information | pbits {self.pbits} | Clip Min: {minVal} | Clip Max: {maxVal} | Mid: {midVal}')
             self.info_print = False
 
         return minVal, maxVal, midVal 
@@ -582,7 +600,7 @@ class PsumQConv(SplitConv):
                 else:
                     sinput, a_scale, abits = Bitserial.bitserial_act(input, debug=False) # short_path parameter does not exist
 
-                if self.psum_mode == 'sigma':
+                if self.psum_mode == 'sigma' or 'fix':
                     minVal, maxVal, midVal = self._ADC_clamp_value()
                     self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
                 elif self.psum_mode == 'scan':
@@ -1126,55 +1144,73 @@ class PsumQLinear(SplitLinear):
     
     def _ADC_clamp_value(self):
         # get ADC clipping value for hist [Layer or Network hist]
-        if self.pclipmode == 'Layer':
-            phist = f'{self.checkpoint}/hist/layer{self.layer_idx}_hist.pkl'
-            # phist = f'./hist/layer{self.layer_idx}_hist.pkl'
-        elif self.pclipmode == 'Network':
-            phist = f'{self.checkpoint}/hist/network_hist.pkl'
+        if self.psum_mode == 'sigma':
+            if self.pclipmode == 'Layer':
+                phist = f'{self.checkpoint}/hist/layer{self.layer_idx}_hist.pkl'
+                # phist = f'./hist/layer{self.layer_idx}_hist.pkl'
+            elif self.pclipmode == 'Network':
+                phist = f'{self.checkpoint}/hist/network_hist.pkl'
 
-        if os.path.isfile(phist):
-            # print(f'Load ADC_hist ({phist})')
-            df_hist = pd.read_pickle(phist)
-            mean, std, min, max = get_statistics_from_hist(df_hist)
-        else:
-            if self.pbits != 32:
-                assert False, "Error: Don't have ADC hist file"
+            if os.path.isfile(phist):
+                # print(f'Load ADC_hist ({phist})')
+                df_hist = pd.read_pickle(phist)
+                mean, std, min, max = get_statistics_from_hist(df_hist)
             else:
-                mean, std, min, max = 0, 0, 0, 0
-            
-        # Why abs(mean) is used not mean?? => Asymmetric quantizaion is occured
-        if self.pbits == 32:
-            maxVal = 1
-            minVal = 0
-        else:
-            if self.pclip == 'max':
-                maxVal = max
-                minVal = min
+                if self.pbits != 32:
+                    assert False, "Error: Don't have ADC hist file"
+                else:
+                    mean, std, min, max = 0, 0, 0, 0
+                
+            # Why abs(mean) is used not mean?? => Asymmetric quantizaion is occured
+            if self.pbits == 32:
+                maxVal = 1
+                minVal = 0
             else:
-                maxVal =  (abs(mean) + self.psigma*std).round() 
-                minVal = (abs(mean) - self.psigma*std).round() 
-                if (self.mapping_mode == 'two_com') or (self.mapping_mode == 'ref_d') or (self.mapping_mode == 'PN'):
-                    minVal = min if minVal < 0 else minVal
-        
+                if self.pclip == 'max':
+                    maxVal = max
+                    minVal = min
+                else:
+                    maxVal =  (abs(mean) + self.psigma*std).round() 
+                    minVal = (abs(mean) - self.psigma*std).round() 
+                    if (self.mapping_mode == 'two_com') or (self.mapping_mode == 'ref_d') or (self.mapping_mode == 'PN'):
+                        minVal = min if minVal < 0 else minVal
+        else:
+            if self.mapping_mode == 'two_com':
+                minVal = 0
+                if self.pclip == 'max':
+                    maxVal = self.arraySize
+                elif self.pclip == 'half':
+                    maxVal = int(self.arraySize / 2)
+                elif self.pclip == 'quarter':
+                    maxVal = int(self.arraySize / 4)
+                else:
+                    assert False, 'Do not support this clip range {}'.format(self.pclip)
+            else:
+                assert False, 'Psum mode fix only support two_com mapping mode'
+
         midVal = (maxVal + minVal) / 2
         
         if self.info_print:
-            write_file = f'{self.checkpoint}/Layer_clipping_range.txt'
-            if os.path.isfile(write_file) and (self.layer_idx == 0):
-                option = 'w'
-            else:
-                option = 'a'
-            with open(write_file, option) as file:
-                if self.layer_idx == 0:
-                    file.write(f'{self.pclipmode}-wise Mode Psum quantization \n')
-                    file.write(f'Layer_information  Mean    Std     Min Max Clip_Min    Clip_Max    Mid \n')
-                file.write(f'Layer{self.layer_idx}  {mean}  {std}   {min}   {max}   {minVal}    {maxVal}    {midVal}\n')
+            if self.psum_mode == 'sigma':
+                write_file = f'{self.checkpoint}/Layer_clipping_range.txt'
+                if os.path.isfile(write_file) and (self.layer_idx == 0):
+                    option = 'w'
+                else:
+                    option = 'a'
+                with open(write_file, option) as file:
+                    if self.layer_idx == 0:
+                        file.write(f'{self.pclipmode}-wise Mode Psum quantization \n')
+                        file.write(f'Layer_information  Mean    Std     Min Max Clip_Min    Clip_Max    Mid \n')
+                    file.write(f'Layer{self.layer_idx}  {mean}  {std}   {min}   {max}   {minVal}    {maxVal}    {midVal}\n')
             
             print(f'{self.pclipmode}-wise Mode Psum quantization')
             if self.pbits == 32:
                 print(f'Layer{self.layer_idx} information | pbits {self.pbits}')
             else:
-                print(f'Layer{self.layer_idx} information | pbits {self.pbits} | Mean: {mean} | Std: {std} | Min: {min} | Max: {max} | Clip Min: {minVal} | Clip Max: {maxVal} | Mid: {midVal}')
+                if self.psum_mode == 'sigma':
+                    print(f'Layer{self.layer_idx} information | pbits {self.pbits} | Mean: {mean} | Std: {std} | Min: {min} | Max: {max} | Clip Min: {minVal} | Clip Max: {maxVal} | Mid: {midVal}')
+                elif self.psum_mode == 'fix':
+                    print(f'Layer{self.layer_idx} information | pbits {self.pbits} | Clip Min: {minVal} | Clip Max: {maxVal} | Mid: {midVal}')
             self.info_print = False
 
         return minVal, maxVal, midVal
@@ -1192,7 +1228,7 @@ class PsumQLinear(SplitLinear):
                 sinput, a_scale, abits = Bitserial.bitserial_act(input, debug=False)
                 psum_scale = w_scale * a_scale
 
-                if self.psum_mode == 'sigma':
+                if self.psum_mode == 'sigma' or 'fix':
                     minVal, maxVal, midVal = self._ADC_clamp_value()
                     self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
                 elif self.psum_mode == 'scan':

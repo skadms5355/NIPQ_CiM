@@ -192,7 +192,7 @@ def set_arguments():
     psum_group.add_argument('-p', '--psum_comp', default='False', type=str2bool,
                         help='Psum computation model')
     psum_group.add_argument('--psum_mode', default='sigma', type=str,
-                             choices=['sigma', 'scan'],
+                             choices=['fix', 'sigma', 'scan'],
                              help='psum computation mode')
     psum_group.add_argument('--arraySize', type=int, default=0,
                              metavar='arraySize', help='row count of array for in-memory computing')
@@ -217,12 +217,14 @@ def set_arguments():
                              choices=['Layer', 'Network'],
                              help='Layer-wise or Network-wise for psum quantization (default: layer-wise)')
     psum_group.add_argument('--pclip', default='sigma', type=str,
-                             choices=['sigma', 'max'],
+                             choices=['sigma', 'max', 'half', 'quarter'],
                              help='Clipping range of psum quantization (default: sigma)')
     psum_group.add_argument('--psigma', type=int, default=3,
                             help='Sigma point of clipping range')                         
     psum_group.add_argument('--per_class', default=50, type=int,
                             help='How many watch image(batch) for searching psum distribution mean, std')
+    psum_group.add_argument('--accurate', default='False', type=str2bool, 
+                            help='row_computation when array input is lower than MAXThres')
 
     # noise
     noise_group.add_argument('-n', '--is_noise', default='False', type=str2bool,

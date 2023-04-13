@@ -120,7 +120,6 @@ def main():
                     prefix = os.path.join(prefix, '{}_{}_{}').format(args.tn_file, args.noise_type, type)
                 else:
                     prefix = os.path.join(prefix, '{}_{}').format(args.noise_type, type)
-                
 
         else:
             pass
@@ -396,7 +395,7 @@ def main_worker(gpu, ngpus_per_node, args):
                 from models.nipq_hwnoise_psum_module import PsumQuantOps as PQ
                 PQ.psum_initialize(model, act=True, weight=True, fixed_bit=args.fixed_bit, cbits=args.cbits, arraySize=args.arraySize, mapping_mode=args.mapping_mode, \
                                     psum_mode=args.psum_mode, wbit_serial=args.wbit_serial, pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma, \
-                                    checkpoint=args.checkpoint, log_file=args.log_file)
+                                    accurate=args.accurate, checkpoint=args.checkpoint, info_print=args.info_print, log_file=args.log_file)
                 if args.is_noise and 'hwnoise' in args.nipq_noise:
                     PQ.hwnoise_initilaize(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
                                         noise_type=args.noise_type, res_val=args.res_val)
