@@ -15,6 +15,7 @@ from torch.nn.modules.utils import _pair #YUL: added to use _pair for padding & 
 
 import utils.padding as Pad
 import pquant_group_merge_cuda
+import pquant_cuda
 
 class QuantActFunc(torch.autograd.Function):
     """ Quantized activation functions with torch.autograd extension."""
@@ -510,6 +511,44 @@ def nonlinear(abits, ste='clippedrelu', abit_serial=False, amax=1):
 
 
 ###########################################################################################
+
+
+class QuantPsum(torch.autograd.Function):
+    """ Quantized partial sum function with torch.autograd extension."""
+    @staticmethod
+    @torch.cuda.amp.custom_fwd
+    def forward(ctx, output, input, pbits=32, step=1, half_num_levels=1, 
+                    pbound=None, weight=1, center=0, groups=1, pzero=False, debug=False):
+        """Performs partial sum quantization. (in bitserial layer)
+
+        Args:
+            ctx: A context ctx is used to store input tensor and ste option.
+            input: An input tensor.
+            bound (int): bound of quantization range ([-bound, +bound])
+            pste (str): An option that decides the gradients in the backward pass.
+        Returns:
+            lists (input tensor size) containing quantized input tensor.
+
+        """
+        # ctx.mark_dirty(output)
+        return pquant_cuda.forward(output, input, pbits, step, half_num_levels, weight, center, groups, pzero) 
+
+
+    @staticmethod
+    @torch.cuda.amp.custom_bwd
+    def backward(ctx, grad_output):
+        return grad_output, grad_output, None, None, None, None, None, None, None, None
+    
+def psum_quant(output, input, pbits=32, step=1, half_num_levels=1, pbound=None, weight=1, center=None, groups=1, pzero=False):
+    if center is None:
+        center = 0
+    if output is None:
+        output = []
+        for g in range(groups):
+            output.append(torch.zeros_like(input[0]))
+
+    return QuantPsum.apply(output, input, pbits, step, half_num_levels, pbound, 
+                            weight, center, groups, pzero)
 
 class QuantPsumMerge(torch.autograd.Function):
     """ Quantized partial sum functionsi & merge group with torch.autograd extension."""

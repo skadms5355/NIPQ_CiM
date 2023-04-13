@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import math
 import os
+import copy
 import torch.nn.functional as F
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -9,7 +10,7 @@ import seaborn as sns
 import utils.padding as Pad
 from .bitserial_modules import *
 from .split_modules import *
-from .quantized_basic_modules import psum_quant_merge
+from .quantized_basic_modules import psum_quant_merge, psum_quant
 from .nipq_quantization_module import QuantActs, Quantizer
 # custom kernel
 import conv_sweight_cuda
@@ -458,11 +459,11 @@ class Psum_QConv2d(SplitConv):
             if self.mapping_mode == 'two_com':
                 minVal = 0
                 if self.pclip == 'max':
-                    maxVal = self.arraySize
+                    maxVal = self.arraySize - 1
                 elif self.pclip == 'half':
-                    maxVal = int(self.arraySize / 2)
+                    maxVal = int(self.arraySize / 2) - 1
                 elif self.pclip == 'quarter':
-                    maxVal = int(self.arraySize / 4)
+                    maxVal = int(self.arraySize / 4) - 1 
                 else:
                     assert False, 'Do not support this clip range {}'.format(self.pclip)
             else:
@@ -545,19 +546,19 @@ class Psum_QConv2d(SplitConv):
                     assert False, 'This script does not support {self.psum_mode}'
 
                 for abit, input_s in enumerate(input_chunk):
+                    a_mag = 2**(abit)
                     if w_serial and self.hwnoise:
                         out_one = std_offset * self._split_forward(input_s, w_one, padded=True, ignore_bias=True, cat_output=False,
                                                     weight_is_split=True, infer_only=True, merge_group=True)
                     if w_serial and self.accurate:
-                        cnt_input = self._split_forward(input_s, w_one, padded=True, ignore_bias=True, cat_output=False, weight_is_split=True, infer_only=True)
+                        cnt_input = self._split_forward(input_s / a_mag, w_one, padded=True, ignore_bias=True, cat_output=False, weight_is_split=True, infer_only=True)
 
                     for wbit, weight_s in enumerate(weight_chunk):
-                        out_adc = None
                         out_tmp = self._split_forward(input_s, weight_s, padded=True, ignore_bias=True, cat_output=False,
                                                 weight_is_split=True, infer_only=True)
 
-                        a_mag = 2**(abit)
                         if not self.accurate:
+                            out_adc = None
                             out_adc = psum_quant_merge(out_adc, out_tmp,
                                                         pbits=self.pbits, step=self.pstep, 
                                                         half_num_levels=self.phalf_num_levels, 
@@ -565,15 +566,20 @@ class Psum_QConv2d(SplitConv):
                                                         groups=self.split_groups, pzero=self.pzero)
                         else:
                             # accurate mode (SRAM)
-                            # out_quant = psum_quant(out_quant)
+                            out_quant = None
+                            out_quant = psum_quant(out_quant, out_tmp,
+                                                        pbits=self.pbits, step=self.pstep, 
+                                                        half_num_levels=self.phalf_num_levels, 
+                                                        pbound=self.pbound, center=self.center, weight=a_mag,
+                                                        groups=self.split_groups, pzero=self.pzero)
                             
                             for g in range(0, self.split_groups):
-                                in_acc_addr = torch.where(cnt_input[g] <= MAXThres)
-                                # out_quant[g][in_acc_addr] = out_tmp[g][in_acc_addr]
-                                # if g==0:
-                                    # out_adc = out_quant[g]
-                                # else:
-                                    # out_adc += out_quant[g]
+                                accin_addr = torch.where(cnt_input[g] <= MAXThres)
+                                out_quant[g][accin_addr] = out_tmp[g][accin_addr]
+                                if g==0:
+                                    out_adc = out_quant[g]
+                                else:
+                                    out_adc += out_quant[g]
 
                         if w_serial:
                             out_adc = 2**(wbit) * (out_adc - out_one) if self.hwnoise else 2**(wbit) * out_adc
@@ -993,11 +999,11 @@ class Psum_QLinear(SplitLinear):
             if self.mapping_mode == 'two_com':
                 minVal = 0
                 if self.pclip == 'max':
-                    maxVal = self.arraySize
+                    maxVal = self.arraySize - 1
                 elif self.pclip == 'half':
-                    maxVal = int(self.arraySize / 2)
+                    maxVal = int(self.arraySize / 2) - 1
                 elif self.pclip == 'quarter':
-                    maxVal = int(self.arraySize / 4)
+                    maxVal = int(self.arraySize / 4) - 1
                 else:
                     assert False, 'Do not support this clip range {}'.format(self.pclip)
             else:
@@ -1075,16 +1081,16 @@ class Psum_QLinear(SplitLinear):
 
                 # to compare output data
                 for abit, input_s in enumerate(input_chunk):
+                    a_mag = 2**(abit)
                     if w_serial and self.hwnoise:
                         out_one = (std_offset) * self._split_forward(input_s, w_one, ignore_bias=True, infer_only=True, merge_group=True)
                     if w_serial and self.accurate:
-                        cnt_input = self._split_forward(input_s, w_one, ignore_bias=True, cat_output=False, infer_only=True)
+                        cnt_input = self._split_forward(input_s/a_mag, w_one, ignore_bias=True, cat_output=False, infer_only=True)
                     
                     for wbit, weight_s in enumerate(weight_chunk):
                         out_adc = None
                         out_tmp = self._split_forward(input_s, weight_s, ignore_bias=True, cat_output=False, infer_only=True)
 
-                        a_mag = 2**(abit)
                         if not self.accurate:
                             out_adc = psum_quant_merge(out_adc, out_tmp,
                                                     pbits=self.pbits, step=self.pstep, 
@@ -1093,15 +1099,20 @@ class Psum_QLinear(SplitLinear):
                                                     groups=self.split_groups, pzero=self.pzero)
                         else:
                             # accurate mode (SRAM)
-                            # out_quant = psum_quant(out_quant)
+                            out_quant = None
+                            out_quant = psum_quant(out_quant, out_tmp,
+                                                    pbits=self.pbits, step=self.pstep, 
+                                                    half_num_levels=self.phalf_num_levels, 
+                                                    pbound=self.pbound, center=self.center, weight=a_mag,
+                                                    groups=self.split_groups, pzero=self.pzero)
                             
                             for g in range(0, self.split_groups):
-                                in_acc_addr = torch.where(cnt_input[g] <= MAXThres)
-                                # out_quant[g][in_acc_addr] = out_tmp[g][in_acc_addr]
-                                # if g==0:
-                                #     out_adc = out_quant[g]
-                                # else:
-                                #     out_adc += out_quant[g]
+                                accin_addr = torch.where(cnt_input[g] <= MAXThres)
+                                out_quant[g][accin_addr] = out_tmp[g][accin_addr]
+                                if g==0:
+                                    out_adc = out_quant[g]
+                                else:
+                                    out_adc += out_quant[g]
 
                         if w_serial:
                             out_adc = 2**(wbit) * (out_adc - out_one) if self.hwnoise else 2**(wbit) * out_adc
