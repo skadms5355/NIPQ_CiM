@@ -29,4 +29,4 @@
 --weight-decay  1e-5
 --dropout	    0.0
 
---pretrained    ./checkpoints/cifar10/a:32_w:32/2022-Apr-01-16-22-01/model_best.pth.tar
+# --pretrained    ./checkpoints/cifar10/a:32_w:32/2022-Apr-01-16-22-01/model_best.pth.tar

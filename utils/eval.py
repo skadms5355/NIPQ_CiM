@@ -222,7 +222,7 @@ def train(train_loader, model, teacher, criterion, optimizer, scheduler, scaler,
         else:
             loss.backward()
             optimizer.step()
-
+            
         # Loss are not averaged in DDP: they are kept individually, BUT gradients are reduced during loss.backward().
         # But we average the loss for all gpus and print them.
         if args.distributed:

@@ -63,7 +63,9 @@ class Quantizer(nn.Module):
 
     def lsq_init(self, x, bit):
         Qp = 2 ** (bit.detach() - 1) - 1 if self.sym else 2 ** bit.detach() - 1
-        self.alpha.data[0] = (x.detach().abs().mean() * 2 / (Qp ** 0.5))
+        alpha = (x.detach().abs().mean() * 2 / (Qp ** 0.5))
+        self.alpha.data.fill_(np.log(np.exp(alpha.item())-1))  # softplus initialization 
+        # self.alpha.data[0] = (x.detach().abs().mean() * 2 / (Qp ** 0.5))
     
     def hwnoise_init(self, cbits, mapping_mode, co_noise=0.01, noise_type='prop', res_val='rel', max_epoch=-1):
         bit = 2 + torch.sigmoid(self.bit)*12
@@ -102,13 +104,15 @@ class Quantizer(nn.Module):
             self.lsq_init(x, bit.round())
             self.init_state.fill_(1)
         
-        # alpha = F.softplus(self.alpha)
-        alpha = self.alpha # LSQ version 
+        alpha = F.softplus(self.alpha)
         lsq, Qn, Qp = self.lsq_forward(x+offset, bit.round(), alpha, sym)
 
         if is_training and noise:
-            x = (x + offset) / alpha + qnoise_make.apply(x)
+            with torch.no_grad():  
+                noise = torch.rand_like(x) - 0.5
+            x = (x + offset) / alpha + noise
             x = torch.clamp(x, Qn, Qp) 
+
             if hwnoise:
                 x = self.noise_cell(x, float_comp=True, w_split=serial)
             return x * alpha - offset
@@ -131,7 +135,23 @@ class Quantizer(nn.Module):
                 # import pdb; pdb.set_trace()
             return lsq - offset
 
+        ## eh noise modeling         
+        if is_training and noise:     
+            data = (x + offset) / alpha
+            c1 = data >= Qp
+            c2 = data <= Qn    
+            delta = 1
+            
+            with torch.no_grad():                
+                diff = (lsq - data) / delta 
+                sel = diff[torch.logical_not(torch.logical_or(c1, c2))]
+                hist = torch.histc(sel, bins=N_BIN, min=-0.5, max=0.5)    
+                
+                noise = torch.multinomial(hist, data.numel(), True) + torch.rand_like(data.view(-1))
+                noise = (noise / N_BIN - 0.5).view(data.shape)
 
+            return  torch.where(c1, Qp, torch.where(c2, Qn, data + noise * delta)) * alpha - offset
+    
 class Q_ReLU(nn.Module):
     def __init__(self):
         super(Q_ReLU, self).__init__()
@@ -188,7 +208,7 @@ class Q_Conv2d(nn.Conv2d):
     def forward(self, x):
         if self.act_func is not None:
             x = self.act_func(x)
-        
+
         return F.conv2d(x, self._weight_quant(), self.bias,
                         self.stride, self.padding, self.dilation, self.groups)
     
@@ -362,7 +382,6 @@ def bit_cal(model):
         wu_bit = (loss_bit_wu / numel_w).item()
     
     return a_bit, au_bit, w_bit, wu_bit
-    
 
 class QuantOps(object):
     initialize = initialize
