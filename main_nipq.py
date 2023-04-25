@@ -560,7 +560,6 @@ def main_worker(gpu, ngpus_per_node, args):
                                 bit = np.log(bit/(1-bit))
                                 module.quant_func.bit.data.fill_(bit)
                                 changed_bit = 2+12/(1+np.exp(-bit))
-                                print("Change fixed precision to {}".format(changed_bit))
 
         # TODO (VINN): if anyone can find a better way to caculate lr with glorot scaling, please do.
         # The way to do it without glr is scheduler.get_lr()
