@@ -1,5 +1,7 @@
 import torch
 import torch.nn as nn
+from scipy.interpolate import interp1d
+from scipy.stats import rv_continuous
 import math
 
 class Noise_cell(nn.Module):
@@ -46,6 +48,8 @@ class Noise_cell(nn.Module):
                 self.G_std = torch.tensor([self.co_noise * self.G[i] for i in range(self.clevel)])
             elif self.noise_type == 'meas':
                 self.delta_G = self.G[-1] - self.G[0]
+            elif self.noise_type == 'kde':
+                self.kde_init()
             else:
                 assert False, 'In the {} mode, the {} noise type is not supported, you have to choose static or prop'.format(self.res_val, self.noise_type)
         else:
@@ -70,6 +74,28 @@ class Noise_cell(nn.Module):
             else:
                 assert False, 'This file does not support that cbits are lower than wbits'
     
+    def kde_init(self):
+        ## hynix reram data to convert continuous data
+        import matplotlib.pyplot as plt
+        import pandas as pd 
+        import numpy as np
+        df = pd.read_csv('/mnt/nfs/nameunkang/Project/NIPQ_CiM/data/ReRAM/Hynix_data_case1.csv')
+        df_test = df.iloc[:, 0:2].dropna(axis=0)
+        state = df_test.to_numpy().transpose()
+        # x = np.linspace(np.floor(state[0].min()), np.ceil(state[0].max()), num=1000)
+        x = np.linspace(state[0].min(), state[0].max(), num=1000, endpoint=False)
+        # pdf = interp1d(state[0], state[1], kind='quadratic', bounds_error=False, fill_value=0)
+        pdf = interp1d(state[0], state[1], kind='quadratic')
+
+        class PDF(rv_continuous):
+            def _pdf(self, x):
+                return pdf(x)
+
+        n_sample = 1000
+        samples = PDF().rvs(size=n_sample)
+        import pdb; pdb.set_trace()
+        
+
     def grad_epoch_list(self, max_epoch):
         self.clvl_list = [int(math.floor(max_epoch/self.clevel.item())) for _ in range(int(self.clevel.item()))]
         for idx in range(int(max_epoch - self.clvl_list[0]*self.clevel.item())):
@@ -178,3 +204,5 @@ class Noise_cell(nn.Module):
                     output = x + (self.G_std[0]**2 * torch.randn_like(x, device=x.device))
                 
         return output
+
+

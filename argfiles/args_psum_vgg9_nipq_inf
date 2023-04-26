@@ -23,9 +23,9 @@
 --pretrained    ./checkpoints/cifar10/nipq/nipq_vgg9/qnoise_fix:4/2023-Feb-22-14-31-20/model_best.pth.tar
 
 --psum_comp     y
---arraySize     256
---cbits         1
---mapping_mode  two_com
+--arraySize     128
+--cbits         4
+--mapping_mode  2T2R
 --wbit-serial   y
 --abit-serial   y
 
@@ -37,10 +37,10 @@
 
 # noise option
 --is_noise      y
---nipq_noise    qnoise
---co_noise      0.03
---noise_type    prop
---res_val       rel
+--nipq_noise    hwnoise
+# --co_noise      0.03
+--noise_type    kde
+--res_val       abs
 
 # for class_split
 --class-split   y
