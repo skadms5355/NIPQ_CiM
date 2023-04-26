@@ -22,9 +22,9 @@ parser.add_argument('--psum_mode', default='fix', type=str,
                     choices=['fix', 'sigma'])
 parser.add_argument('--pclip', type=str, nargs='+', default=['sigma'],
                     help='pclip list')
-parser.add_argument('--co_noise', type=float, nargs='+', default=[0, 0.03, 0.05])
+parser.add_argument('--co_noise', type=float, nargs='+')
 parser.add_argument('--noise_type', default='prop', type=str,
-                    choices=['static', 'grad', 'prop'])
+                    choices=['static', 'grad', 'prop', 'adc'])
 parser.add_argument('--tnipq', default='hwnoise', type=str,
                     choices=['quant', 'hwnoise', 'qhwnoise'])
 parser.add_argument('--tnoise_type', default='prop', type=str,
@@ -143,17 +143,23 @@ else:
                 for pbit in pbits_list:
                     for pclip in pclip_list:
                         if is_noise:
-                            print(f'this operation is pbits {pbit}, arraySize {a_size}, per_class {per_class}, testlog_reset {testlog} log_file {log_file} co_noise {co_noise}')
+                            print(f'this operation is pbits {pbit}, pclip {pclip}, arraySize {a_size}, per_class {per_class}, accurate mode {args.accurate}, testlog_reset {testlog} log_file {log_file} co_noise {co_noise}')
                             if noise_type == "qhwnoise":
                                 os.system('python main_nipq.py  --argfile {} --gpu-id {} --psum_comp {} --arraySize {} --mapping_mode {} \
                                             --pbits {} --per_class {} --testlog_reset {} --log_file {} --pretrained {} \
                                             --is_noise y --tn_file {} --nipq_noise {} --co_noise {} --noise_type {}'
                                             .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, tn_file, nipq_noise, co_noise, noise_type))
                             else:
-                                os.system('python main_nipq.py  --argfile {} --gpu-id {} --psum_comp {} --arraySize {} --mapping_mode {} \
-                                            --pbits {} --per_class {} --testlog_reset {} --log_file {} --pretrained {} \
-                                            --is_noise y --nipq_noise {} --co_noise {} --noise_type {}'
-                                            .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, nipq_noise, co_noise, noise_type))
+                                if args.accurate:
+                                    os.system('python main_nipq.py  --argfile {} --gpu-id {} --psum_comp {} --arraySize {} --mapping_mode {} \
+                                                --pbits {} --psum_mode {} --pclip {} --per_class {} --testlog_reset {} --log_file {} --pretrained {} \
+                                                --is_noise y --nipq_noise {} --co_noise {} --noise_type {} --accurate y'
+                                                .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, args.psum_mode, pclip, per_class, testlog, log_file, pretrained, nipq_noise, co_noise, noise_type))
+                                else:
+                                    os.system('python main_nipq.py  --argfile {} --gpu-id {} --psum_comp {} --arraySize {} --mapping_mode {} \
+                                                --pbits {} --psum_mode {} --pclip {} --per_class {} --testlog_reset {} --log_file {} --pretrained {} \
+                                                --is_noise y --nipq_noise {} --co_noise {} --noise_type {}'
+                                                .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, args.psum_mode, pclip, per_class, testlog, log_file, pretrained, nipq_noise, co_noise, noise_type))
                         else:
                             print(f'this operation is pbits {pbit}, pclip {pclip}, arraySize {a_size}, per_class {per_class}, accurate mode {args.accurate}, testlog_reset {testlog} log_file {log_file}')
                             if args.accurate:

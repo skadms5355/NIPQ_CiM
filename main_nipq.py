@@ -379,7 +379,7 @@ def main_worker(gpu, ngpus_per_node, args):
     if args.rank % ngpus_per_node == 0:
         # Resume and initializing logger
         if args.evaluate:
-            report_path = os.path.join(str(pathlib.Path().resolve()), ((args.checkpoint.replace('checkpoints', 'report')).replace('eval/', '')).replace('/log_bitserial_info', '').replace(f'type_{args.co_noise}', 'type'))
+            report_path = os.path.join(str(pathlib.Path().resolve()), ((args.checkpoint.replace('checkpoints', 'report')).replace('eval/', '')).replace('/log_bitserial_info', ''))
             graph_path = os.path.join(str(pathlib.Path().resolve()), 'graph', args.dataset, f'Psum_{args.arch}', args.mapping_mode, args.psum_mode, 'class_{}'.format(args.per_class))
             if not args.psum_comp:
                 report_path = '/'.join(report_path.split('/')[:-1]) # time folder remove 
@@ -395,7 +395,7 @@ def main_worker(gpu, ngpus_per_node, args):
                 from models.nipq_hwnoise_psum_module import PsumQuantOps as PQ
                 PQ.psum_initialize(model, act=True, weight=True, fixed_bit=args.fixed_bit, cbits=args.cbits, arraySize=args.arraySize, mapping_mode=args.mapping_mode, \
                                     psum_mode=args.psum_mode, wbit_serial=args.wbit_serial, pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma, \
-                                    accurate=args.accurate, checkpoint=args.checkpoint, info_print=args.info_print, log_file=args.log_file)
+                                    channels=True, accurate=args.accurate, checkpoint=args.checkpoint, info_print=args.info_print, log_file=args.log_file)
                 if args.is_noise and 'hwnoise' in args.nipq_noise:
                     PQ.hwnoise_initilaize(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
                                         noise_type=args.noise_type, res_val=args.res_val)
@@ -474,6 +474,7 @@ def main_worker(gpu, ngpus_per_node, args):
             "psum_mode":        args.psum_mode if args.psum_comp else "No_psum",
             "pclipmode":        args.pclipmode if args.psum_comp else "No_psum", 
             "pclip":            args.pclip if args.psum_comp else "No_psum",
+            "accurate_mode":    args.accurate,
             "coefficient_noise":  args.co_noise if args.is_noise else "No_noise",
             "res_val":          args.res_val if args.is_noise else "No_noise",
             "Valid Top1":       top1['valid'],

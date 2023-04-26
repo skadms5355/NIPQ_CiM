@@ -33,7 +33,7 @@
 --psum_mode     fix
 --pbits         6
 --pclipmode     Network
---pclip         max
+--pclip         quarter
 --psigma        3
 
 # noise option

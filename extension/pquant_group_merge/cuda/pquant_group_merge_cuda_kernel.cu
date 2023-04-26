@@ -32,12 +32,14 @@ inline __device__ scalar_t psum_quantization(scalar_t data,
         } else {
             //data = data + 0.5;
             data = roundf( data );
+            // data = floorf(data);
             data = (data > half_num_levels)? half_num_levels : data;
             data = (data < 1 - half_num_levels)? 1 - half_num_levels : data;
             //data = data - 0.5;
         }
     } else {
         data = roundf( data );
+        // data = floorf(data);
         data = (data > 2 * half_num_levels - 1)? 2 * half_num_levels - 1 : data;
         data = (data < zero)? zero : data;
     }

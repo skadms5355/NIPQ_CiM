@@ -135,6 +135,10 @@ class PsumQConv(SplitConv):
             # get pquant step size
             self.pstep = 2 * self.pbound / ((2.**self.pbits) - 1)
 
+            # integer step size for SRAM
+            if self.pstep != int(self.pstep):
+                self.pstep = np.floor(self.pstep)
+
         if (self.mapping_mode == 'two_com') or (self.mapping_mode == 'ref_d') or (self.mapping_mode == 'PN'):
             self.pzero = False
         else:
@@ -593,6 +597,15 @@ class PsumQConv(SplitConv):
             qweight = self.noise_cell(qweight/w_scale)
 
         if self.wbit_serial:
+
+            output = None
+
+            # operation keep for backprop
+            ## no considered clamp range
+            if self.training:
+                output = F.conv2d(input, qweight, bias=None,
+                                stride=self.stride, dilation=self.dilation, groups=self.groups)
+                
             with torch.no_grad():
                 if short_path is None:
                     sinput, a_scale, abits = Bitserial.bitserial_act(input, debug=False) # short_path parameter does not exist
@@ -683,12 +696,12 @@ class PsumQConv(SplitConv):
                     # output_real = F.conv2d(input_s, qweight, bias=self.bias,
                     #                         stride=self.stride, dilation=self.dilation, groups=self.groups)
                     # import pdb; pdb.set_trace()
-                    output = out_wsum if abit == 0 else output+out_wsum
+                    out_inf = out_wsum if abit == 0 else out_inf+out_wsum
 
-                # restore output's scale
-                output = output * psum_scale
+                # restore out_inf's scale
+                out_inf = out_inf * psum_scale
 
-                # restore output's shift
+                # restore out_inf's shift
                 if a_shift is not None:
                     weight_sum = torch.sum(weight, (3, 2, 1))
                     shift = weight_sum * a_shift
@@ -696,7 +709,13 @@ class PsumQConv(SplitConv):
                     psum_shift = torch.unsqueeze(psum_shift, 2)
                     psum_shift = torch.unsqueeze(psum_shift, 2)
 
-                    output = output + psum_shift
+                    out_inf = out_inf + psum_shift
+
+                ## set output
+                if self.training:
+                    output.copy_(out_inf)
+                else:
+                    output = out_inf
         else:
             abit_serial = Bitserial.abit_serial()
             if not abit_serial:
@@ -827,6 +846,10 @@ class PsumQLinear(SplitLinear):
             self.pbound = pbound
             # get pquant step size
             self.pstep = 2 * self.pbound / ((2.**self.pbits) - 1)
+
+            # integer step size for SRAM
+            if self.pstep != int(self.pstep):
+                self.pstep = np.floor(self.pstep)
 
         if (self.mapping_mode == 'two_com') or (self.mapping_mode == 'ref_d') or (self.mapping_mode == 'PN'):
             self.pzero = False
@@ -1224,6 +1247,13 @@ class PsumQLinear(SplitLinear):
             qweight = self.noise_cell(qweight/w_scale)
 
         if self.wbit_serial:
+
+            output = None
+
+            # operation keep for backprop
+            if self.training:
+                output = F.linear(input, qweight, bias=None)
+
             with torch.no_grad():
                 sinput, a_scale, abits = Bitserial.bitserial_act(input, debug=False)
                 psum_scale = w_scale * a_scale
@@ -1286,22 +1316,6 @@ class PsumQLinear(SplitLinear):
                                                     pbound=self.pbound, center=self.center, weight=out_mag/multi_scale,
                                                     groups=self.split_groups, pzero=self.pzero)
 
-                        # output_set = list(set(out_adc.cpu().numpy().ravel()))
-                        # print(sorted(output_set))
-                        # out_t = torch.cat(out_tmp, dim=1)
-                        # out_array = out_t*multi_scale/out_mag
-                        # temp_o = fp(out_array, pbits=self.pbits, maxVal=maxVal, minVal=minVal)*out_mag/multi_scale # restore magnitude
-                        # out_set = list(set(temp_o.cpu().numpy().ravel()))
-                        # print(sorted(out_set))
-                        # import pdb; pdb.set_trace()
-                        # # # split output merge
-                        # output_chunk = out_adc.chunk(self.split_groups, dim=1) 
-                        # for g in range(0, self.split_groups):
-                        #     if g==0:
-                        #         out_adc = output_chunk[g]
-                        #     else:
-                        #         out_adc += output_chunk[g]
-
                         # weight output summation
                         if self.mapping_mode == 'two_com':
                             if wsplit_num == wbit+1:
@@ -1317,10 +1331,17 @@ class PsumQLinear(SplitLinear):
                     if self.is_noise and not (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
                         out_one = (-G_min/delta_G) * self._split_forward(input_s, w_one, ignore_bias=True, infer_only=True, merge_group=True)
                         out_wsum -= out_one
-                    output = out_wsum if abit == 0 else output+out_wsum
+                    out_inf = out_wsum if abit == 0 else out_inf+out_wsum
 
-                # restore output's scale
-                output = output * psum_scale
+                # restore out_inf's scale
+                out_inf = out_inf * psum_scale
+
+                # set output
+                if self.training:
+                    output.copy_(out_inf)
+                else:
+                    output = out_inf
+
         else:
             abit_serial = Bitserial.abit_serial()
             if not abit_serial:

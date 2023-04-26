@@ -24,21 +24,25 @@ inline __device__ scalar_t psum_quantization(scalar_t data,
     // STEP2. scale the data
     data = data / scaled_step;
 
+    scalar_t zero = 0;
+
     // STEP3. quantize the data
     if (pzero) {
-        data = roundf( data );
-        data = (data > half_num_levels)? half_num_levels : data;
-        data = (data < -1 * half_num_levels)? -1 * half_num_levels : data;
-    } else {
         if ( pbits == 1) {
             data = (data >= 0)? 1 : -1;
         } else {
             //data = data + 0.5;
             data = roundf( data );
+            // data = floorf( data );
             data = (data > half_num_levels)? half_num_levels : data;
             data = (data < 1 - half_num_levels)? 1 - half_num_levels : data;
             //data = data - 0.5;
         }
+    } else {
+        data = roundf( data );
+        // data = floorf(data);
+        data = (data > 2 * half_num_levels - 1)? 2 * half_num_levels - 1 : data;
+        data = (data < zero)? zero : data;
     }
     
     // STEP4. scale/center back the data

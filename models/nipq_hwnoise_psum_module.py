@@ -29,7 +29,7 @@ def split_conv(weight, nWL):
     nWH = weight.shape[2]*weight.shape[3]
     nMem = int(math.ceil(nIC/math.floor(nWL/nWH)))
     nIC_list = [int(math.floor(nIC/nMem)) for _ in range(nMem)]
-    for idx in range((nIC-nIC_list[0]*nMem)):
+    for idx in range(nMem-1, nMem-(nIC-nIC_list[0]*nMem)-1, -1):
         nIC_list[idx] += 1
 
     return nIC_list
@@ -55,6 +55,14 @@ def calculate_groups(arraySize, fan_in):
 
     return groups
 
+def calculate_groups_channels(arraySize, channels, kernel):
+    if arraySize > 0:
+        # groups
+        groups = int(np.ceil(channels / np.floor(arraySize / (kernel**2))))
+    else:
+        groups = 1
+
+    return groups
 class Psum_QConv2d(SplitConv):
     """
         Quant(Nipq) Conv + Psum quantization
@@ -75,6 +83,7 @@ class Psum_QConv2d(SplitConv):
         self.quant_func = Quantizer(sym=True, noise=False, offset=0, is_stochastic=True, is_discretize=True)
         self.bits = self.quant_func.get_bit()
         self.hwnoise = False
+        self.noise_cell = None
 
         ## for psum quantization
         self.mapping_mode = '2T2R' # Array mapping method [2T2R, ref_a]]
@@ -101,23 +110,30 @@ class Psum_QConv2d(SplitConv):
         self.checkpoint = None
         self.info_print = True
 
-    def model_split_groups(self, arraySize):
+    def model_split_groups(self, arraySize, channels=False):
+        self.split_channels = channels
         self.arraySize = arraySize
-        self.split_groups = calculate_groups(arraySize, self.fan_in)
-        if self.fan_in % self.split_groups != 0:
-            raise ValueError('fan_in must be divisible by groups')
-        self.group_fan_in = int(self.fan_in / self.split_groups)
-        self.group_in_channels = int(np.ceil(self.in_channels / self.split_groups))
-        residual = self.group_fan_in % self.kSpatial
-        if residual != 0:
-            if self.kSpatial % residual != 0:
-                self.group_in_channels += 1
-        ## log move group for masking & group convolution
-        self.group_move_in_channels = torch.zeros(self.split_groups-1, dtype=torch.int)
-        group_in_offset = torch.zeros(self.split_groups, dtype=torch.int).to(self.weight.device)
-        self.register_buffer('group_in_offset', group_in_offset)
-        ## get group conv info
-        self._group_move_offset()
+        if channels:
+            self.split_groups = calculate_groups_channels(arraySize, self.in_channels, self.kernel_size[0])
+            self.nIC_list = split_conv(self.weight, arraySize)
+            self.group_in_channels = self.nIC_list[-1]
+            self.group_move_in_channels = self.nIC_list[:-1]
+        else:
+            self.split_groups = calculate_groups(arraySize, self.fan_in)
+            if self.fan_in % self.split_groups != 0:
+                raise ValueError('fan_in must be divisible by groups')
+            self.group_fan_in = int(self.fan_in / self.split_groups)
+            self.group_in_channels = int(np.ceil(self.in_channels / self.split_groups))
+            residual = self.group_fan_in % self.kSpatial
+            if residual != 0:
+                if self.kSpatial % residual != 0:
+                    self.group_in_channels += 1
+            ## log move group for masking & group convolution
+            self.group_move_in_channels = torch.zeros(self.split_groups-1, dtype=torch.int)
+            group_in_offset = torch.zeros(self.split_groups, dtype=torch.int).to(self.weight.device)
+            self.register_buffer('group_in_offset', group_in_offset)
+            ## get group conv info
+            self._group_move_offset()
 
         # sweight
         sweight = torch.Tensor(self.out_channels*self.split_groups, self.group_in_channels, self.kernel_size[0], self.kernel_size[1]).to(self.weight.device)
@@ -131,6 +147,10 @@ class Psum_QConv2d(SplitConv):
             self.pbound = pbound
             # get pquant step size
             self.pstep = 2 * self.pbound / ((2.**self.pbits) - 1)
+
+            # integer step size for SRAM
+            if self.pstep != int(self.pstep):
+                self.pstep = np.floor(self.pstep)
 
         if (self.mapping_mode == 'two_com') or (self.mapping_mode == 'ref_d') or (self.mapping_mode == 'PN'):
             self.pzero = False
@@ -156,6 +176,12 @@ class Psum_QConv2d(SplitConv):
             self.wbit_serial = wbit_serial
 
         self.setting_pquant_func(pbits=pbits, center=center, pbound=pbound)
+
+    def hwnoise_adc(self, co_noise=0, noise_type='adc'):
+        # [To do] measured ADC noise 
+        self.noise_type = noise_type
+        self.co_noise = co_noise
+        # self.noise_adc = torch.rand()
 
     def print_ratio(self, bits, input, weight, graph=False):
         # LSB > MSB 
@@ -271,7 +297,7 @@ class Psum_QConv2d(SplitConv):
             if w_serial:
                 sweight, _ = self.bitserial_split(self.sweight, act=False) 
                 sweight = torch.where(sweight>0, 1., 0.)
-                if self.hwnoise:
+                if self.hwnoise and (self.noise_type == 'cell'):
                     sweight = self.quant_func.noise_cell(sweight)
                     std_offset = self.quant_func.noise_cell.get_offset()
                 wsplit_num = int(self.bits / self.cbits)
@@ -289,7 +315,7 @@ class Psum_QConv2d(SplitConv):
             for abit, input_s in enumerate(input_chunk):
                 abitplane_hist = f'{self.checkpoint}/hist/layer{self.layer_idx}_a:{abit}_hist.pkl'
                 a_hist_dict = {}
-                if w_serial and self.hwnoise:
+                if w_serial and self.hwnoise and (self.noise_type == 'cell'):
                     out_one = std_offset * self._split_forward(input_s, w_one, padded=True, ignore_bias=True,
                                                 weight_is_split=True, infer_only=True, merge_group=True)
                 for wbit, weight_s in enumerate(weight_chunk):
@@ -345,7 +371,7 @@ class Psum_QConv2d(SplitConv):
                             out_tmp += output_chunk[g]
                     
                     if w_serial:
-                        out_tmp = 2**(wbit)*(out_tmp - out_one) if self.hwnoise else 2**(wbit)*(out_tmp)
+                        out_tmp = 2**(wbit)*(out_tmp - out_one) if self.hwnoise (self.noise_type == 'cell') else 2**(wbit)*(out_tmp)
                         if wsplit_num == wbit+1:
                             out_wsum -= out_tmp
                         else:
@@ -514,11 +540,24 @@ class Psum_QConv2d(SplitConv):
 
                 ### in-mem computation mimic (split conv & psum quant/merge)
                 input_chunk = torch.chunk(sinput, bits, dim=1)
-                self.sweight = conv_sweight_cuda.forward(self.sweight, qweight/w_scale, self.group_in_offset, self.split_groups)
+                if self.split_channels:
+                    split = torch.split((qweight/w_scale), self.nIC_list, dim=1)
+                    split_w = split[-1]
+                    for i in range(self.split_groups-2, -1, -1):
+                        if self.nIC_list[i] != self.group_in_channels:
+                            zero = torch.zeros(size=(split[i].shape[0], self.group_in_channels - split[i].shape[1], split[i].shape[2], split[i].shape[3]), device=split[i].device)
+                            sexpand = torch.cat([split[i], zero], dim=1)
+                            split_w = torch.cat([sexpand, split_w], dim=0)
+                            continue
+                        split_w = torch.cat([split[i], split_w], dim=0)
+                    self.sweight = split_w
+                else:
+                    self.sweight = conv_sweight_cuda.forward(self.sweight, qweight/w_scale, self.group_in_offset, self.split_groups)
+                
                 if w_serial:
                     sweight, _ = self.bitserial_split(self.sweight, act=False) 
                     sweight = torch.where(sweight>0, 1., 0.)
-                    if self.hwnoise:
+                    if self.hwnoise and (self.noise_type == 'cell'):
                         sweight = self.quant_func.noise_cell(sweight)
                         std_offset = self.quant_func.noise_cell.get_offset()
                     wsplit_num = int(self.bits / self.cbits)
@@ -547,7 +586,7 @@ class Psum_QConv2d(SplitConv):
 
                 for abit, input_s in enumerate(input_chunk):
                     a_mag = 2**(abit)
-                    if w_serial and self.hwnoise:
+                    if w_serial and self.hwnoise and (self.noise_type == 'cell'):
                         out_one = std_offset * self._split_forward(input_s, w_one, padded=True, ignore_bias=True, cat_output=False,
                                                     weight_is_split=True, infer_only=True, merge_group=True)
                     if w_serial and self.accurate:
@@ -556,6 +595,11 @@ class Psum_QConv2d(SplitConv):
                     for wbit, weight_s in enumerate(weight_chunk):
                         out_tmp = self._split_forward(input_s, weight_s, padded=True, ignore_bias=True, cat_output=False,
                                                 weight_is_split=True, infer_only=True)
+                        
+                        if self.hwnoise and (self.noise_type == 'adc'):
+                            for g in range(0, self.split_groups):
+                                noise_adc = self.co_noise * torch.randn_like(out_tmp[g], device=out_tmp[g].device)
+                                out_tmp[g] = out_tmp[g].add_(noise_adc)
 
                         if not self.accurate:
                             out_adc = None
@@ -582,7 +626,7 @@ class Psum_QConv2d(SplitConv):
                                     out_adc += out_quant[g]
 
                         if w_serial:
-                            out_adc = 2**(wbit) * (out_adc - out_one) if self.hwnoise else 2**(wbit) * out_adc
+                            out_adc = 2**(wbit) * (out_adc - out_one) if self.hwnoise and (self.noise_type == 'cell') else 2**(wbit) * out_adc
                             if wsplit_num == wbit+1:
                                 out_wsum -= out_adc
                             else:
@@ -642,6 +686,7 @@ class Psum_QLinear(SplitLinear):
         super(Psum_QLinear, self).__init__(*args, **kargs)
         self.act_func = act_func
         self.hwnoise = False
+        self.noise_type = None
 
         self.quant_func = Quantizer(sym=True, noise=False, offset=0, is_stochastic=True, is_discretize=True)
         self.bits = self.quant_func.get_bit()
@@ -671,7 +716,7 @@ class Psum_QLinear(SplitLinear):
         self.checkpoint = None
         self.info_print = True
 
-    def model_split_groups(self, arraySize=0):
+    def model_split_groups(self, arraySize=0, channels=False):
         self.arraySize = arraySize
         self.split_groups = calculate_groups(arraySize, self.in_features)
         if self.in_features % self.split_groups != 0:
@@ -686,6 +731,10 @@ class Psum_QLinear(SplitLinear):
             self.pbound = pbound
             # get pquant step size
             self.pstep = 2 * self.pbound / ((2.**self.pbits) - 1)
+
+            # integer step size for SRAM
+            if self.pstep != int(self.pstep):
+                self.pstep = np.floor(self.pstep)
 
         if (self.mapping_mode == 'two_com') or (self.mapping_mode == 'ref_d') or (self.mapping_mode == 'PN'):
             self.pzero = False
@@ -736,6 +785,12 @@ class Psum_QLinear(SplitLinear):
         # output.mul_(bitserial_step) ## for preventing overflow
 
         return output.round_(), scale
+
+    def hwnoise_adc(self, co_noise=0, noise_type='adc'):
+        # [To do] measured ADC noise 
+        self.noise_type = noise_type
+        self.co_noise = co_noise
+        # self.noise_adc = torch.rand()
     
     def print_ratio(self, bits, input, weight, graph=False):
         # LSB > MSB 
@@ -813,7 +868,7 @@ class Psum_QLinear(SplitLinear):
         if w_serial:
             sweight, _ = self.bitserial_split(qweight/w_scale, act=False) 
             sweight = torch.where(sweight>0, 1., 0.)
-            if self.hwnoise:
+            if self.hwnoise and (self.noise_type == 'cell'):
                 sweight = self.quant_func.noise_cell(sweight)
                 std_offset = self.quant_func.noise_cell.get_offset()
             wsplit_num = int(self.bits / self.cbits)
@@ -831,7 +886,7 @@ class Psum_QLinear(SplitLinear):
         for abit, input_s in enumerate(input_chunk):
             abitplane_hist = f'{self.checkpoint}/hist/layer{self.layer_idx}_a:{abit}_hist.pkl'
             a_hist_dict = {}
-            if w_serial and self.hwnoise:
+            if w_serial and self.hwnoise and (self.noise_type == 'cell'):
                 out_one = (std_offset) * self._split_forward(input_s, w_one, ignore_bias=True, infer_only=True, merge_group=True)
             for wbit, weight_s in enumerate(weight_chunk):
                 wabitplane_hist = f'{self.checkpoint}/hist/layer{self.layer_idx}_w:{wbit}_a:{abit}_hist.pkl'
@@ -886,7 +941,7 @@ class Psum_QLinear(SplitLinear):
                         out_tmp += output_chunk[g]
 
                 if w_serial:
-                    out_tmp = 2**(wbit)* (out_tmp-out_one) if self.hwnoise else 2**(wbit) * out_tmp
+                    out_tmp = 2**(wbit)* (out_tmp-out_one) if self.hwnoise and (self.noise_type == 'cell') else 2**(wbit) * out_tmp
                     if wsplit_num == wbit+1:
                         out_wsum -= out_tmp
                     else:
@@ -1055,7 +1110,7 @@ class Psum_QLinear(SplitLinear):
                 if w_serial:
                     sweight, _ = self.bitserial_split(qweight/w_scale, act=False) 
                     sweight = torch.where(sweight>0, 1., 0.)
-                    if self.hwnoise:
+                    if self.hwnoise and (self.noise_type == 'cell'):
                         sweight = self.quant_func.noise_cell(sweight)
                         std_offset = self.quant_func.noise_cell.get_offset()
                     wsplit_num = int(self.bits / self.cbits)
@@ -1082,7 +1137,7 @@ class Psum_QLinear(SplitLinear):
                 # to compare output data
                 for abit, input_s in enumerate(input_chunk):
                     a_mag = 2**(abit)
-                    if w_serial and self.hwnoise:
+                    if w_serial and self.hwnoise and (self.noise_type == 'cell'):
                         out_one = (std_offset) * self._split_forward(input_s, w_one, ignore_bias=True, infer_only=True, merge_group=True)
                     if w_serial and self.accurate:
                         cnt_input = self._split_forward(input_s/a_mag, w_one, ignore_bias=True, cat_output=False, infer_only=True)
@@ -1090,6 +1145,11 @@ class Psum_QLinear(SplitLinear):
                     for wbit, weight_s in enumerate(weight_chunk):
                         out_adc = None
                         out_tmp = self._split_forward(input_s, weight_s, ignore_bias=True, cat_output=False, infer_only=True)
+
+                        if self.hwnoise and (self.noise_type == 'adc'):
+                            for g in range(0, self.split_groups):
+                                noise_adc = self.co_noise * torch.randn_like(out_tmp[g], device=out_tmp[g].device)
+                                out_tmp[g] = out_tmp[g].add_(noise_adc)
 
                         if not self.accurate:
                             out_adc = psum_quant_merge(out_adc, out_tmp,
@@ -1115,7 +1175,7 @@ class Psum_QLinear(SplitLinear):
                                     out_adc += out_quant[g]
 
                         if w_serial:
-                            out_adc = 2**(wbit) * (out_adc - out_one) if self.hwnoise else 2**(wbit) * out_adc
+                            out_adc = 2**(wbit) * (out_adc - out_one) if self.hwnoise and (self.noise_type == 'cell') else 2**(wbit) * out_adc
                             if wsplit_num == wbit+1:
                                 out_wsum -= out_adc
                             else:
@@ -1180,7 +1240,7 @@ def get_statistics_from_hist(df_hist):
 
 def psum_initialize(model, act=True, weight=True, fixed_bit=-1, cbits=4, arraySize=128, mapping_mode='2T2R', psum_mode='sigma',
                     wbit_serial=False, pbits=32, pclipmode='layer', pclip='sigma', psigma=3, pbound=None, center=None,
-                    accurate=False, checkpoint=None, info_print=False, log_file=None):
+                    channels=False, accurate=False, checkpoint=None, info_print=False, log_file=None):
     counter=0
     for name, module in model.named_modules():
         if isinstance(module, (QuantActs.ReLU, QuantActs.HSwish, QuantActs.Sym)) and act:
@@ -1212,7 +1272,7 @@ def psum_initialize(model, act=True, weight=True, fixed_bit=-1, cbits=4, arraySi
             
             module.cbits = cbits
             module.wbit_serial = wbit_serial
-            module.model_split_groups(arraySize)
+            module.model_split_groups(arraySize, channels=channels)
             module.mapping_mode = mapping_mode
             module.pbits = pbits
             module.pclipmode = pclipmode.lower()
@@ -1266,13 +1326,18 @@ def set_bound_layer(model, pquant_idx, pbits, pbound, center):
 def hwnoise_initilaize(model, weight=False, hwnoise=True, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', max_epoch=-1):
     for name, module in model.named_modules():
         if isinstance(module, (Psum_QConv2d, Psum_QLinear)) and weight and hwnoise:
-            module.quant_func.hwnoise = True
             module.hwnoise = True
+            if not noise_type.lower() == 'adc':
+                module.noise_type = 'cell'
+                module.quant_func.hwnoise = True
 
-            if noise_type == 'grad':
-                assert max_epoch != -1, "Enter max_epoch in hwnoise_initialize function"
-            if hwnoise:
-                module.quant_func.hwnoise_init(cbits=cbits, mapping_mode=mapping_mode, co_noise=co_noise, noise_type=noise_type, res_val=res_val, max_epoch=max_epoch)
+                if noise_type == 'grad':
+                    assert max_epoch != -1, "Enter max_epoch in hwnoise_initialize function"
+                if hwnoise:
+                    module.quant_func.hwnoise_init(cbits=cbits, mapping_mode=mapping_mode, co_noise=co_noise, noise_type=noise_type, res_val=res_val, max_epoch=max_epoch)
+            else:
+                module.noise_type = 'adc'
+                module.hwnoise_adc(co_noise=co_noise)
 
 class PsumQuantOps(object):
     psum_initialize = psum_initialize

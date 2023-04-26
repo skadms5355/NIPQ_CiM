@@ -241,7 +241,7 @@ def set_arguments():
     noise_group.add_argument('--ratio', type=int, default=100,
                             help='Ratio of Gmax/Gmin (default: 100)')   
     noise_group.add_argument('--noise_type', default='prop', type=str, 
-                            choices=['static', 'grad', 'prop', 'meas'],
+                            choices=['static', 'grad', 'prop', 'meas', 'adc'],
                             help='Std type of conductance noise (default: static std)')   
     noise_group.add_argument('--meas_type', default='reram', type=str, 
                             choices=['reram', 'mram', 'sram'],
