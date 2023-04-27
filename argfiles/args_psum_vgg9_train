@@ -1,4 +1,4 @@
-# model : psum_vgg9
+# model : vgg9
 # dataset : cifar10
 # This is a argfile for training vgg9 model.
 
@@ -6,19 +6,31 @@
 --augment	    y  
 --log_file      n
 
---epoch         1
+# only stage 2 (total)
+--epochs        20
 --train-batch   256
---test-batch    200
+--test-batch    256
 
 --arch          psum_lsq_vgg9
 
---evaluate      y
+# --evaluate      y
 --gpu-id	    0
-# --amp           y
 
---model_mode    quant
+--optimizer     sgd
+--lr-method     lr_cosineanneal
+--warmup        3
+--warmup_start_multiplier 0.1
+--T0            17
+--gamma         0.1
+
+--lr            0.0001
+--weight-decay  1e-5
+
+--model_mode    psum_quant
 --wbits         4
 --abits         4
+# --fixed_bit       4
+
 --pretrained    ./checkpoints/cifar10/quant/lsq_vgg9/a:4_w:4/2022-Apr-01-18-57-49/model_best.pth.tar
 # --pretrained    ./checkpoints/cifar10/a:32_w:32/2022-Apr-01-16-22-01/model_best.pth.tar
 # --pretrained    ./checkpoints/cifar10/nipq/nipq_vgg9/qnoise_fix:4/2023-Feb-22-14-31-20/model_best.pth.tar
@@ -27,14 +39,14 @@
 --arraySize     256
 --cbits         1
 --mapping_mode  two_com
---abit-serial   y
 --wbit-serial   y
+--abit-serial   y
 
 # psum mode : fix, sigma, scan
 --psum_mode     fix
---pbits         6
+--pbits         4
 --pclipmode     Network
---pclip         quarter
+--pclip         max
 --psigma        3
 
 # noise option

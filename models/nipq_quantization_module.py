@@ -63,7 +63,9 @@ class Quantizer(nn.Module):
 
     def lsq_init(self, x, bit):
         Qp = 2 ** (bit.detach() - 1) - 1 if self.sym else 2 ** bit.detach() - 1
-        self.alpha.data[0] = (x.detach().abs().mean() * 2 / (Qp ** 0.5))
+        alpha = (x.detach().abs().mean() * 2 / (Qp ** 0.5))
+        self.alpha.data.fill_(np.log(np.exp(alpha.item())-1))  # softplus initialization 
+        # self.alpha.data[0] = (x.detach().abs().mean() * 2 / (Qp ** 0.5))
     
     def hwnoise_init(self, cbits, mapping_mode, co_noise=0.01, noise_type='prop', res_val='rel', max_epoch=-1):
         bit = 2 + torch.sigmoid(self.bit)*12
@@ -100,8 +102,8 @@ class Quantizer(nn.Module):
             self.lsq_init(x, bit.round())
             self.init_state.fill_(1)
         
-        # alpha = F.softplus(self.alpha)
-        alpha = self.alpha # LSQ version 
+        alpha = F.softplus(self.alpha)
+        # alpha = self.alpha # LSQ version 
         lsq, Qn, Qp = self.lsq_forward(x+offset, bit.round(), alpha, sym)
 
         if is_training and noise:

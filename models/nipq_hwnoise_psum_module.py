@@ -63,6 +63,7 @@ def calculate_groups_channels(arraySize, channels, kernel):
         groups = 1
 
     return groups
+
 class Psum_QConv2d(SplitConv):
     """
         Quant(Nipq) Conv + Psum quantization
@@ -534,6 +535,15 @@ class Psum_QConv2d(SplitConv):
         qweight = self.quant_func(self.weight, self.training, serial=w_serial)
 
         if self.wbit_serial:
+            
+            output = None
+
+            # operation keep for backprop
+            ## no considered clamp range
+            if self.training:
+                output = F.conv2d(input, qweight, bias=None,
+                                stride=self.stride, dilation=self.dilation, groups=self.groups)
+                
             with torch.no_grad():
                 w_scale = self.quant_func.get_alpha()
                 sinput, a_scale = self.bitserial_split(input)
@@ -633,10 +643,16 @@ class Psum_QConv2d(SplitConv):
                                 out_wsum = out_adc if wbit == 0 else out_wsum + out_adc
                         else:
                             out_wsum = out_adc
-                    output = out_wsum if abit == 0 else output+out_wsum
+                    out_inf = out_wsum if abit == 0 else out_inf+out_wsum
 
-                # restore output's scale
-                output = output * psum_scale
+                # restore out_inf's scale
+                out_inf = out_inf * psum_scale
+
+                ## set output
+                if self.training:
+                    output.copy_(out_inf)
+                else:
+                    output = out_inf
         else:
             # no serial computation with psum computation
             output = self._split_forward(input, qweight, padded=True, ignore_bias=True, merge_group=True)
@@ -1099,6 +1115,13 @@ class Psum_QLinear(SplitLinear):
         qweight = self.quant_func(self.weight, self.training, serial=w_serial)
 
         if self.wbit_serial:
+
+            output = None
+
+            # operation keep for backprop
+            if self.training:
+                output = F.linear(input, qweight, bias=None)
+
             with torch.no_grad():
                 w_scale = self.quant_func.get_alpha()
                 sinput, a_scale = self.bitserial_split(input)
@@ -1143,7 +1166,6 @@ class Psum_QLinear(SplitLinear):
                         cnt_input = self._split_forward(input_s/a_mag, w_one, ignore_bias=True, cat_output=False, infer_only=True)
                     
                     for wbit, weight_s in enumerate(weight_chunk):
-                        out_adc = None
                         out_tmp = self._split_forward(input_s, weight_s, ignore_bias=True, cat_output=False, infer_only=True)
 
                         if self.hwnoise and (self.noise_type == 'adc'):
@@ -1152,6 +1174,7 @@ class Psum_QLinear(SplitLinear):
                                 out_tmp[g] = out_tmp[g].add_(noise_adc)
 
                         if not self.accurate:
+                            out_adc = None
                             out_adc = psum_quant_merge(out_adc, out_tmp,
                                                     pbits=self.pbits, step=self.pstep, 
                                                     half_num_levels=self.phalf_num_levels, 
@@ -1183,10 +1206,16 @@ class Psum_QLinear(SplitLinear):
                         else:
                             out_wsum = out_adc
 
-                    output = out_wsum if abit == 0 else output+out_wsum
+                    out_inf = out_wsum if abit == 0 else out_inf+out_wsum
 
-                # restore output's scale
-                output = output * psum_scale
+                # restore out_inf's scale
+                out_inf = out_inf * psum_scale
+
+                # set output
+                if self.training:
+                    output.copy_(out_inf)
+                else:
+                    output = out_inf
         else:
             # no serial compuatation with psum computation 
             self.pbits = 32

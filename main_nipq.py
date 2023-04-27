@@ -96,7 +96,7 @@ def main():
             prefix = os.path.join(prefix, "eval")
         
 
-        if args.model_mode == 'nipq':
+        if 'nipq' in args.model_mode:
             prefix = os.path.join(prefix, "{}_fix:{}".format(args.nipq_noise, args.fixed_bit))
         elif args.model_mode == 'hn_quant':
             prefix = os.path.join(prefix, "a:{}_w:{}".format(args.abits, args.wbits), "trained_noise_{}_ratio_{}".format(args.trained_noise, args.ratio))
@@ -130,7 +130,7 @@ def main():
             prefix_bak = prefix
             prefix = os.path.join(args.local, prefix_bak)
 
-        if args.psum_comp:
+        if args.psum_comp and not 'psum' in args.model_mode:
             args.checkpoint = os.path.join(prefix, "log_bitserial_info")
             if not os.path.exists(args.checkpoint):
                 os.makedirs(args.checkpoint)
@@ -319,6 +319,7 @@ def main_worker(gpu, ngpus_per_node, args):
         #             model_dict[name] = param
 
         model.load_state_dict(model_dict)
+
         if not args.psum_comp and test_loader is not None:
             loss['test'], top1['test'], top5['test'] = eval.test(test_loader, model, criterion, 0, args)
             if args.rank == 0:
@@ -400,10 +401,11 @@ def main_worker(gpu, ngpus_per_node, args):
                     PQ.hwnoise_initilaize(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
                                         noise_type=args.noise_type, res_val=args.res_val)
             elif (args.model_mode == 'quant') or (args.model_mode == 'hn_quant'):
-                set_BitSerial_log(model, checkpoint=args.checkpoint, log_file=args.log_file,\
-                    pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma, graph_path=graph_path)
+                set_BitSerial_log(model, checkpoint=args.checkpoint, log_file=args.log_file, accurate=args.accurate, info_print=args.info_print, \
+                    arraySize=args.arraySize, pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma,channels=True)
                 if args.is_noise:
-                    set_Noise_injection(model, co_noise=args.co_noise, ratio=args.ratio)
+                    set_Noise_injection(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
+                                        noise_type=args.noise_type, res_val=args.res_val)
             else:
                 assert False, "This mode is not supported psum computation"
 
@@ -522,6 +524,26 @@ def main_worker(gpu, ngpus_per_node, args):
 
         bops_total = bops_cal(model) * (2. ** -30) # 1 GigaBitOps = 2 ** 30 BitOps
         print(f"     Bops: {bops_total.item()}GBops")
+    elif args.model_mode == 'psum_nipq':
+        from models.nipq_hwnoise_psum_module import PsumQuantOps as PQ
+        PQ.psum_initialize(model, act=True, weight=True, fixed_bit=args.fixed_bit, cbits=args.cbits, arraySize=args.arraySize, mapping_mode=args.mapping_mode, \
+                            psum_mode=args.psum_mode, wbit_serial=args.wbit_serial, pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma, \
+                            channels=True, accurate=args.accurate, checkpoint=args.checkpoint, info_print=args.info_print, log_file=args.log_file)
+        if args.is_noise and 'hwnoise' in args.nipq_noise:
+            PQ.hwnoise_initilaize(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
+                                noise_type=args.noise_type, res_val=args.res_val)
+    elif args.model_mode == 'psum_quant':
+        set_BitSerial_log(model, checkpoint=args.checkpoint, log_file=args.log_file, accurate=args.accurate, info_print=args.info_print, \
+                    arraySize=args.arraySize, pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma, channels=True)
+        if args.is_noise:
+            set_Noise_injection(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
+                                noise_type=args.noise_type, res_val=args.res_val)
+            
+        print("Accuracy before psum training with {} bits".format(args.pbits))
+
+        loss['test'], top1['test'], top5['test'] = eval.test(test_loader, model, criterion, 0, args)
+        if args.rank == 0:
+            print(f"Test loss: {loss['test']:<10.6f} Test top1: {top1['test']:<7.4f} Test top5: {top5['test']:<7.4f}")
 
     # Train and val
     start_time = time.time()

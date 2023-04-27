@@ -9,11 +9,15 @@ import pandas as pd
 from .noise_cell import Noise_cell
 import utils.padding as Pad
 from .quantized_lsq_modules import *
-from .quantized_basic_modules import psum_quant_merge
+from .quantized_basic_modules import psum_quant_merge, psum_quant
 from .bitserial_modules import *
 from .split_modules import *
 # custom kernel
 import conv_sweight_cuda
+
+
+# accurate mode max threshold (included)
+MAXThres = 7 
 
 # split convolution across input channel
 def split_conv(weight, nWL):
@@ -21,7 +25,7 @@ def split_conv(weight, nWL):
     nWH = weight.shape[2]*weight.shape[3]
     nMem = int(math.ceil(nIC/math.floor(nWL/nWH)))
     nIC_list = [int(math.floor(nIC/nMem)) for _ in range(nMem)]
-    for idx in range((nIC-nIC_list[0]*nMem)):
+    for idx in range(nMem-1, nMem-(nIC-nIC_list[0]*nMem)-1, -1):
         nIC_list[idx] += 1
 
     return nIC_list
@@ -41,6 +45,15 @@ def calculate_groups(arraySize, fan_in):
         groups = int(np.ceil(fan_in / arraySize))
         while fan_in % groups != 0:
             groups += 1
+    else:
+        groups = 1
+
+    return groups
+
+def calculate_groups_channels(arraySize, channels, kernel):
+    if arraySize > 0:
+        # groups
+        groups = int(np.ceil(channels / np.floor(arraySize / (kernel**2))))
     else:
         groups = 1
 
@@ -73,28 +86,6 @@ class PsumQConv(SplitConv):
 
         self.quan_w_fn = LSQReturnScale(bit=self.wbits, half_range=False, symmetric=symmetric, per_channel=False)
 
-        # for split
-        # self.split_nIC = split_conv(self.weight, arraySize)
-        self.split_groups = calculate_groups(arraySize, self.fan_in)
-        if self.fan_in % self.split_groups != 0:
-            raise ValueError('fan_in must be divisible by groups')
-        self.group_fan_in = int(self.fan_in / self.split_groups)
-        self.group_in_channels = int(np.ceil(in_channels / self.split_groups))
-        residual = self.group_fan_in % self.kSpatial
-        if residual != 0:
-            if self.kSpatial % residual != 0:
-                self.group_in_channels += 1
-        ## log move group for masking & group convolution
-        self.group_move_in_channels = torch.zeros(self.split_groups-1, dtype=torch.int)
-        group_in_offset = torch.zeros(self.split_groups, dtype=torch.int)
-        self.register_buffer('group_in_offset', group_in_offset)
-        ## get group conv info
-        self._group_move_offset()
-        
-        # sweight
-        sweight = torch.Tensor(self.out_channels*self.split_groups, self.group_in_channels, kernel_size, kernel_size)
-        self.register_buffer('sweight', sweight)
-
         # for psum quantization
         self.mapping_mode = mapping_mode # Array mapping method [none, 2T2R, two_com, ref_d]]
         self.arraySize = arraySize
@@ -120,11 +111,43 @@ class PsumQConv(SplitConv):
         self.ratio = 100
         self.w_format = 'weight'
 
+        ## for accurate mode (SRAM)
+        self.accurate = False
+
         # for logging
         self.bitserial_log = False
         self.layer_idx = -1
         self.checkpoint = None
         self.info_print = True
+
+    def model_split_groups(self, arraySize, channels=False):
+        self.split_channels = channels
+        self.arraySize = arraySize
+        if channels:
+            self.split_groups = calculate_groups_channels(arraySize, self.in_channels, self.kernel_size[0])
+            self.nIC_list = split_conv(self.weight, arraySize)
+            self.group_in_channels = self.nIC_list[-1]
+            self.group_move_in_channels = self.nIC_list[:-1]
+        else:
+            self.split_groups = calculate_groups(arraySize, self.fan_in)
+            if self.fan_in % self.split_groups != 0:
+                raise ValueError('fan_in must be divisible by groups')
+            self.group_fan_in = int(self.fan_in / self.split_groups)
+            self.group_in_channels = int(np.ceil(self.in_channels / self.split_groups))
+            residual = self.group_fan_in % self.kSpatial
+            if residual != 0:
+                if self.kSpatial % residual != 0:
+                    self.group_in_channels += 1
+            ## log move group for masking & group convolution
+            self.group_move_in_channels = torch.zeros(self.split_groups-1, dtype=torch.int)
+            group_in_offset = torch.zeros(self.split_groups, dtype=torch.int).to(self.weight.device)
+            self.register_buffer('group_in_offset', group_in_offset)
+            ## get group conv info
+            self._group_move_offset()
+
+        # sweight
+        sweight = torch.Tensor(self.out_channels*self.split_groups, self.group_in_channels, self.kernel_size[0], self.kernel_size[1]).to(self.weight.device)
+        self.register_buffer('sweight', sweight)
 
     def setting_pquant_func(self, pbits=None, center=[], pbound=None):
         # setting options for pquant func
@@ -189,13 +212,12 @@ class PsumQConv(SplitConv):
     def _weight_bitserial(self, weight, w_scale, cbits=4):
         weight_uint = weight / w_scale
         if self.mapping_mode == "two_com":
-            signed_w = (2**(self.wbits-1))*torch.where(weight_uint<0, 1.0, 0.0)
-            value_w = torch.where(weight_uint<0, 2**(self.wbits-1) - abs(weight_uint), weight_uint)
             if cbits == 1:
-                weight_serial = bitserial_func(value_w, (self.wbits-1))
-                output = torch.cat((weight_serial, signed_w), 1)
+                output = bitserial_func(weight_uint, self.wbits)
                 split_num = self.wbits
             elif cbits > 1:
+                signed_w = (2**(self.wbits-1))*torch.where(weight_uint<0, 1.0, 0.0)
+                value_w = torch.where(weight_uint<0, 2**(self.wbits-1) - abs(weight_uint), weight_uint)
                 output = torch.cat((value_w, signed_w), 1)
                 split_num = 2
             else:
@@ -260,7 +282,8 @@ class PsumQConv(SplitConv):
         out_mag = int(w_mag * (2**abit))
         return out_mag, multi_scale
     
-    def _cell_noise_init(self, cbits, mapping_mode, co_noise=0.01, noise_type='prop', res_val='rel', w_format="weight", max_epoch=-1):
+    def _cell_noise_init(self, cbits, mapping_mode, co_noise=0.01, noise_type='prop', res_val='rel',  max_epoch=-1):
+        w_format = 'state' if res_val == 'abs' or noise_type == 'meas' else 'weight'
         self.w_format =w_format
         wbits = Parameter(torch.Tensor(1).fill_(self.wbits), requires_grad=False).round().squeeze()
         self.noise_cell = Noise_cell(wbits, cbits, mapping_mode, co_noise, noise_type, res_val=res_val, w_format=self.w_format)
@@ -543,11 +566,11 @@ class PsumQConv(SplitConv):
             if self.mapping_mode == 'two_com':
                 minVal = 0
                 if self.pclip == 'max':
-                    maxVal = self.arraySize
+                    maxVal = self.arraySize - 1 
                 elif self.pclip == 'half':
-                    maxVal = int(self.arraySize / 2)
+                    maxVal = int(self.arraySize / 2) - 1
                 elif self.pclip == 'quarter':
-                    maxVal = int(self.arraySize / 4)
+                    maxVal = int(self.arraySize / 4) - 1
                 else:
                     assert False, 'Do not support this clip range {}'.format(self.pclip)
             else:
@@ -593,8 +616,12 @@ class PsumQConv(SplitConv):
             weight = self.weight
         qweight, w_scale = self.quan_w_fn(weight)
 
+        # SRAM BPBS check
+        w_serial = True if self.cbits==1 and self.mapping_mode == 'two_com' else False
+
         if self.is_noise and self.w_format == "weight":
-            qweight = self.noise_cell(qweight/w_scale)
+            # [TODO] delta_G is divided in noise injection situation for psum retraining
+            qweight = self.noise_cell(qweight/w_scale) 
 
         if self.wbit_serial:
 
@@ -617,8 +644,6 @@ class PsumQConv(SplitConv):
                     minVal, maxVal, midVal = self._ADC_clamp_value()
                     self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
                 elif self.psum_mode == 'scan':
-                    if self.info_print:
-                        self.info_print = False
                     if self.pbits == 32:
                         maxVal = 1
                         minVal = 0
@@ -628,12 +653,29 @@ class PsumQConv(SplitConv):
 
                 ### in-mem computation mimic (split conv & psum quant/merge)
                 input_chunk = torch.chunk(sinput, abits, dim=1)
-                self.sweight = conv_sweight_cuda.forward(self.sweight, qweight, self.group_in_offset, self.split_groups)
+
+                if self.split_channels:
+                    split = torch.split(qweight, self.nIC_list, dim=1)
+                    split_w = split[-1]
+                    for i in range(self.split_groups-2, -1, -1):
+                        if self.nIC_list[i] != self.group_in_channels:
+                            zero = torch.zeros(size=(split[i].shape[0], self.group_in_channels - split[i].shape[1], split[i].shape[2], split[i].shape[3]), device=split[i].device)
+                            sexpand = torch.cat([split[i], zero], dim=1)
+                            split_w = torch.cat([sexpand, split_w], dim=0)
+                            continue
+                        split_w = torch.cat([split[i], split_w], dim=0)
+                    self.sweight = split_w
+                else:
+                    self.sweight = conv_sweight_cuda.forward(self.sweight, qweight, self.group_in_offset, self.split_groups)
+                
                 if self.is_noise and self.w_format=="weight":
                     sweight, wsplit_num = self._weight_bitserial(self.sweight, 1, cbits=self.cbits)
                 else:
                     sweight, wsplit_num = self._weight_bitserial(self.sweight, w_scale, cbits=self.cbits)
                 weight_chunk = torch.chunk(sweight, wsplit_num, dim=1)
+
+                if w_serial:
+                    w_one = torch.ones(size=weight_chunk[0].size(), device=weight_chunk[0].device)
 
                 ### Cell noise injection + Cell conductance value change
                 if self.is_noise and self.w_format == "state":
@@ -652,19 +694,25 @@ class PsumQConv(SplitConv):
 
                 out_adc = None
                 for abit, input_s in enumerate(input_chunk):
+                    a_mag = 2**(abit)
+
+                    # input number counting for SRAM accurate mode
+                    if w_serial and self.accurate:
+                        cnt_input = self._split_forward(input_s / a_mag, w_one, padded=True, ignore_bias=True, cat_output=False, weight_is_split=True, infer_only=True)
+
                     for wbit, weight_s in enumerate(weight_chunk):
                         out_tmp = self._split_forward(input_s, weight_s, padded=True, ignore_bias=True, cat_output=cat_output,
                                                 weight_is_split=True, infer_only=True)
                         
-                        if self.is_noise and self.w_format=="state":
+                        # [TODO] Inject ADC noise here
+
+                        if cat_output:
                             if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
                                 if wbit == 0:
                                     temp = out_tmp
                                     continue
                                 else:
-                                    out_tmp = (temp - out_tmp) / delta_G
-
-                                    # out_tmp = list(map(lambda x: x/delta_G, temp))
+                                    out_tmp = (temp - out_tmp) / delta_G                                   # out_tmp = list(map(lambda x: x/delta_G, temp))
                             else:
                                 out_tmp /= delta_G
 
@@ -672,11 +720,29 @@ class PsumQConv(SplitConv):
                             out_tmp = list(map(lambda x: x.contiguous(), out_tmp))
 
                         out_mag, multi_scale = self._output_magnitude(abit, wbit, wsplit_num)
-                        out_adc = psum_quant_merge(out_adc, out_tmp,
-                                                    pbits=self.pbits, step=self.pstep, 
-                                                    half_num_levels=self.phalf_num_levels, 
-                                                    pbound=self.pbound, center=self.center, weight=out_mag/multi_scale,
-                                                    groups=self.split_groups, pzero=self.pzero)
+                        if not self.accurate:
+                            out_adc = None
+                            out_adc = psum_quant_merge(out_adc, out_tmp,
+                                                        pbits=self.pbits, step=self.pstep, 
+                                                        half_num_levels=self.phalf_num_levels, 
+                                                        pbound=self.pbound, center=self.center, weight=out_mag/multi_scale,
+                                                        groups=self.split_groups, pzero=self.pzero)
+                        else:
+                            # Accurate mode (SRAM)
+                            out_quant = None
+                            out_quant = psum_quant(out_quant, out_tmp,
+                                                        pbits=self.pbits, step=self.pstep, 
+                                                        half_num_levels=self.phalf_num_levels, 
+                                                        pbound=self.pbound, center=self.center, weight=out_mag/multi_scale,
+                                                        groups=self.split_groups, pzero=self.pzero)
+                            
+                            for g in range(0, self.split_groups):
+                                accin_addr = torch.where(cnt_input[g] <= MAXThres)
+                                out_quant[g][accin_addr] = out_tmp[g][accin_addr]
+                                if g==0:
+                                    out_adc = out_quant[g]
+                                else:
+                                    out_adc += out_quant[g]
 
                         # weight output summation
                         if self.mapping_mode == 'two_com':
@@ -688,8 +754,8 @@ class PsumQConv(SplitConv):
                             out_wsum = out_adc if wbit == 0 else out_wsum - out_adc
                         else:
                             out_wsum = out_adc if wbit == 0 else out_wsum + out_adc
-                        out_adc = None
-                    if self.is_noise and not (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
+
+                    if self.is_noise and self.noise_type == 'meas' and not (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
                         out_one = (-G_min/delta_G) * self._split_forward(input_s, w_one, padded=True, ignore_bias=True, cat_output=False,
                                                 weight_is_split=True, infer_only=True, merge_group=True)
                         out_wsum -= out_one
@@ -806,13 +872,6 @@ class PsumQLinear(SplitLinear):
 
         self.quan_w_fn = LSQReturnScale(bit=self.wbits, half_range=False, symmetric=symmetric, per_channel=False)
 
-        # for split
-        # self.split_nIF = split_linear(self.weight, arraySize)
-        self.split_groups = calculate_groups(arraySize, in_features)
-        if in_features % self.split_groups != 0:
-            raise ValueError('in_features must be divisible by groups')
-        self.group_in_features = int(in_features / self.split_groups)
-
         # for psum quantization
         self.mapping_mode = mapping_mode # Array mapping method [none, 2T2R, two_com, ref_d]
         self.cbits = cbits # Cell bits [multi, binary]
@@ -832,11 +891,21 @@ class PsumQLinear(SplitLinear):
         self.is_noise = is_noise
         self.w_format = 'weight'
 
+        ## for accurate mode (SRAM)
+        self.accurate = False
+
         # for logging
         self.bitserial_log = False
         self.layer_idx = -1
         self.checkpoint = None
         self.info_print = True
+    
+    def model_split_groups(self, arraySize=0, channels=False):
+        self.arraySize = arraySize
+        self.split_groups = calculate_groups(arraySize, self.in_features)
+        if self.in_features % self.split_groups != 0:
+            raise ValueError('in_features must be divisible by groups')
+        self.group_in_features = int(self.in_features / self.split_groups)
     
     def setting_pquant_func(self, pbits=None, center=[], pbound=None):
         # setting options for pquant func
@@ -879,13 +948,12 @@ class PsumQLinear(SplitLinear):
     def _weight_bitserial(self, weight, w_scale, cbits=4):
         weight_uint = weight / w_scale
         if self.mapping_mode == "two_com":
-            signed_w = (2**(self.wbits-1))*torch.where(weight_uint<0, 1.0, 0.0)
-            value_w = torch.where(weight_uint<0, 2**(self.wbits-1) - abs(weight_uint), weight_uint)
             if cbits == 1:
-                weight_serial = bitserial_func(value_w, (self.wbits-1))
-                output = torch.cat((weight_serial, signed_w), 1)
+                output = bitserial_func(weight_uint, self.wbits)
                 split_num = self.wbits
             elif cbits > 1:
+                signed_w = (2**(self.wbits-1))*torch.where(weight_uint<0, 1.0, 0.0)
+                value_w = torch.where(weight_uint<0, 2**(self.wbits-1) - abs(weight_uint), weight_uint)
                 output = torch.cat((value_w, signed_w), 1)
                 split_num = 2
             else:
@@ -951,6 +1019,7 @@ class PsumQLinear(SplitLinear):
         return out_mag, multi_scale
 
     def _cell_noise_init(self, cbits, mapping_mode, co_noise=0.01, noise_type='prop', res_val='rel', w_format="weight", max_epoch=-1):
+        w_format = 'state' if res_val == 'abs' or noise_type == 'meas' else 'weight'
         self.w_format = w_format
         wbits = Parameter(torch.Tensor(1).fill_(self.wbits), requires_grad=False).round().squeeze()
         self.noise_cell = Noise_cell(wbits, cbits, mapping_mode, co_noise, noise_type, res_val=res_val, w_format=self.w_format)
@@ -1243,7 +1312,11 @@ class PsumQLinear(SplitLinear):
         # get quantization parameter and input bitserial 
         qweight, w_scale = self.quan_w_fn(self.weight)
 
+        # SRAM BPBS check
+        w_serial = True if self.cbits==1 and self.mapping_mode == 'two_com' else False
+
         if self.is_noise and self.w_format == "weight":
+            # [TODO] delta_G is divided in noise injection situation for psum retraining
             qweight = self.noise_cell(qweight/w_scale)
 
         if self.wbit_serial:
@@ -1268,11 +1341,16 @@ class PsumQLinear(SplitLinear):
 
                 ### in-mem computation mimic (split conv & psum quant/merge)
                 input_chunk = torch.chunk(sinput, abits, dim=1)
+
                 if self.is_noise and self.w_format=="weight":
                     sweight, wsplit_num = self._weight_bitserial(qweight, 1, cbits=self.cbits)
                 else:
                     sweight, wsplit_num = self._weight_bitserial(qweight, w_scale, cbits=self.cbits)
                 weight_chunk = torch.chunk(sweight, wsplit_num, dim=1)
+
+                # input 1 counting for accuracte mode (SRAM)
+                if w_serial:
+                    w_one = torch.ones(size=weight_chunk[0].size(), device=weight_chunk[0].device)
 
                 ### Cell noise injection + Cell conductance value change
                 if self.is_noise and self.w_format == "state":
@@ -1285,13 +1363,18 @@ class PsumQLinear(SplitLinear):
                 else:
                     cat_output = False
                     delta_G = 1
-                    
 
-                out_adc = None
+
                 for abit, input_s in enumerate(input_chunk):
+                    if w_serial and self.accurate:
+                        a_mag = 2**(abit)
+                        cnt_input = self._split_forward(input_s/a_mag, w_one, ignore_bias=True, cat_output=False, infer_only=True)
+                    
                     for wbit, weight_s in enumerate(weight_chunk):
                         out_tmp = self._split_forward(input_s, weight_s, ignore_bias=True, cat_output=cat_output, infer_only=True)
                         # out_tmp = F.linear(input_s[:,nIF_cnt:nIF_cnt+self.split_nIF[idx]], weight_s, bias=None)
+
+                        ## [TODO] Inject ADC noise here
 
                         if self.is_noise and self.w_format=="state":
                             if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
@@ -1307,14 +1390,32 @@ class PsumQLinear(SplitLinear):
                                 # out_tmp = list(map(lambda x: x/delta_G, out_tmp))
                             out_tmp = torch.chunk(out_tmp, self.split_groups, dim=1)
                             out_tmp = list(map(lambda x: x.contiguous(), out_tmp))
+                        
 
                         out_mag, multi_scale = self._output_magnitude(abit, wbit, wsplit_num)
-
-                        out_adc = psum_quant_merge(out_adc, out_tmp,
+                        if not self.accurate:
+                            out_adc = None
+                            out_adc = psum_quant_merge(out_adc, out_tmp,
+                                                        pbits=self.pbits, step=self.pstep, 
+                                                        half_num_levels=self.phalf_num_levels, 
+                                                        pbound=self.pbound, center=self.center, weight=out_mag/multi_scale,
+                                                        groups=self.split_groups, pzero=self.pzero)
+                        else:
+                            # accurate mode (SRAM)
+                            out_quant = None
+                            out_quant = psum_quant(out_quant, out_tmp,
                                                     pbits=self.pbits, step=self.pstep, 
                                                     half_num_levels=self.phalf_num_levels, 
                                                     pbound=self.pbound, center=self.center, weight=out_mag/multi_scale,
                                                     groups=self.split_groups, pzero=self.pzero)
+                            
+                            for g in range(0, self.split_groups):
+                                accin_addr = torch.where(cnt_input[g] <= MAXThres)
+                                out_quant[g][accin_addr] = out_tmp[g][accin_addr]
+                                if g==0:
+                                    out_adc = out_quant[g]
+                                else:
+                                    out_adc += out_quant[g]
 
                         # weight output summation
                         if self.mapping_mode == 'two_com':
@@ -1394,19 +1495,22 @@ def get_statistics_from_hist(df_hist):
 
     return [mean_val, std_val, min_val, max_val] 
 
-def set_BitSerial_log(model, pbits, pclipmode, pclip=None, psigma=None, checkpoint=None, pquant_idx=None, pbound=None, center=None, log_file=False):
+def set_BitSerial_log(model, arraySize, pbits, pclipmode, pclip=None, psigma=None, checkpoint=None, pquant_idx=None, pbound=None, center=None, channels=False, accurate=False, info_print=False, log_file=False):
     print("start setting Bitserial layers log bitplane info")
     counter = 0
     for m in model.modules():
         if type(m).__name__ in ['PsumQConv' , 'PsumQLinear']:
             m.layer_idx = counter
+            m.model_split_groups(arraySize, channels=channels)
             if (pquant_idx is None) or (counter == pquant_idx):
+                m.accurate = accurate
                 m.bitserial_log = log_file
                 m.checkpoint = checkpoint
                 m.pclipmode = pclipmode
                 m.setting_pquant_func(pbits, center, pbound)
                 m.pclip = pclip
                 m.psigma = psigma
+                m.info_print = info_print
                 print("finish setting {}, idx: {}".format(type(m).__name__, counter))
             counter += 1
 
@@ -1434,7 +1538,7 @@ def set_bitserial_layer(model, pquant_idx, abit_serial=True, wbit_serial=None, p
             counter += 1
     print("finish setting bitserial layer ")
 
-def set_Noise_injection(model, weight=False, hwnoise=True, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', w_format='weight', max_epoch=-1):
+def set_Noise_injection(model, weight=False, hwnoise=True, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', max_epoch=-1):
     for name, module in model.named_modules():
         if isinstance(module, (PsumQConv, PsumQLinear)) and weight and hwnoise:
             module.is_noise = True
@@ -1442,7 +1546,7 @@ def set_Noise_injection(model, weight=False, hwnoise=True, cbits=4, mapping_mode
             if noise_type == 'grad':
                 assert max_epoch != -1, "Enter max_epoch in hwnoise_initialize function"
             if hwnoise:
-                module._cell_noise_init(cbits=cbits, mapping_mode=mapping_mode, co_noise=co_noise, noise_type=noise_type, res_val=res_val, w_format=w_format, max_epoch=max_epoch)
+                module._cell_noise_init(cbits=cbits, mapping_mode=mapping_mode, co_noise=co_noise, noise_type=noise_type, res_val=res_val, max_epoch=max_epoch)
 
 def count_ArrayMaxV(wbits, cbits, mapping_mode, arraySize):
     if mapping_mode == '2T2R':
