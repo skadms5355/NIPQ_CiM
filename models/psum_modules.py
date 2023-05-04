@@ -257,16 +257,12 @@ class PsumQConv(SplitConv):
         return out_mag, multi_scale
     
     def _cell_noise_init(self, cbits, mapping_mode, co_noise=0.01, noise_type='prop', res_val='rel', w_format="weight", max_epoch=-1):
-        self.w_format =w_format
-        wbits = Parameter(torch.Tensor(1).fill_(self.wbits), requires_grad=False).round().squeeze()
-        self.noise_cell = Noise_cell(wbits, cbits, mapping_mode, co_noise, noise_type, res_val=res_val, w_format=self.w_format)
-    
-    def _cell_noise_inject(self, weight_list):
-        weight_cond = []
-        for w, weight in enumerate(weight_list):
-            weight_cond.append(2**w * self.noise_cell(weight/2**w))
-        
-        return weight_cond
+        self.w_format = 'state' if res_val == 'abs' or noise_type == 'meas' else 'weight'
+        # wbits = Parameter(torch.Tensor(1).fill_(self.wbits), requires_grad=False).round().squeeze()
+        # for inference 
+        if not (noise_type == 'prop' or 'interp'):
+            noise_type = 'prop'
+        self.noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val=res_val, w_format=self.w_format)
     
     def _bitserial_log_forward(self, input, weight=None, short_path=None):
         print(f'[layer{self.layer_idx}]: bitserial mac log')
@@ -317,17 +313,19 @@ class PsumQConv(SplitConv):
             weight_chunk = torch.chunk(sweight, wsplit_num, dim=1)
 
             ### Cell noise injection + Cell conductance value change
-            if self.is_noise:
-                if self.w_format == "state":
-                    # weight_chunk_debug= weight_chunk
-                    # print(set(weight_chunk_debug[0].cpu().detach().numpy().ravel()))
-                    weight_chunk = self._cell_noise_inject(weight_chunk)
-                    delta_G = self.noise_cell.get_deltaG()
-                    if not (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
-                        delta_G, G_min = self.noise_cell.get_deltaG(G_min=True)
-                        w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
+            if self.is_noise and self.w_format == "state":
+                # weight_chunk_debug= weight_chunk
+                # print(set(weight_chunk_debug[0].cpu().detach().numpy().ravel()))
+                sweight = self.noise_cell(sweight)
+                weight_chunk = torch.chunk(sweight, wsplit_num, dim=1)
+                if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
+                    weight_chunk = [weight_chunk[0] - weight_chunk[1]]
+                    wsplit_num = 1
                 else:
-                    delta_G = 1
+                    delta_G, G_min = self.noise_cell.get_deltaG(G_min=True)
+                    w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
+            else:
+                weight_chunk = torch.chunk(sweight, wsplit_num, dim=1)
 
             # in-memory computing parameter computing
             psum_scale = w_scale * a_scale 
@@ -343,15 +341,6 @@ class PsumQConv(SplitConv):
                                                     weight_is_split=True, infer_only=True)
                     # out_tmp = F.conv2d(input_s[:,nIC_cnt:nIC_cnt+self.split_nIC[idx],:,:], weight_s, bias=self.bias,
                     #             stride=self.stride, dilation=self.dilation, groups=self.groups)
-                    if self.is_noise and self.w_format=="state":
-                        if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
-                            if wbit == 0:
-                                temp = out_tmp
-                                continue
-                            else:
-                                out_tmp = (temp - out_tmp) / delta_G
-                        else:
-                            out_tmp /= delta_G
 
                     out_mag, multi_scale = self._output_magnitude(abit, wbit, wsplit_num)
                     out_array = out_tmp.round()*multi_scale/out_mag
@@ -597,19 +586,21 @@ class PsumQConv(SplitConv):
                     sweight, wsplit_num = self._weight_bitserial(self.sweight, 1, cbits=self.cbits)
                 else:
                     sweight, wsplit_num = self._weight_bitserial(self.sweight, w_scale, cbits=self.cbits)
-                weight_chunk = torch.chunk(sweight, wsplit_num, dim=1)
 
                 ### Cell noise injection + Cell conductance value change
                 if self.is_noise and self.w_format == "state":
-                    weight_chunk = self._cell_noise_inject(weight_chunk)
-                    delta_G = self.noise_cell.get_deltaG()
-                    cat_output = True
-                    if not (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
+                    # weight_chunk = self._cell_noise_inject(weight_chunk)
+                    ## [TO DO] two_com sweight magnitude computation 
+                    sweight = self.noise_cell(sweight)
+                    weight_chunk = torch.chunk(sweight, wsplit_num, dim=1)
+                    if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
+                        weight_chunk = [weight_chunk[0] - weight_chunk[1]]
+                        wsplit_num = 1
+                    else:
                         delta_G, G_min = self.noise_cell.get_deltaG(G_min=True)
                         w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
                 else:
-                    cat_output = False
-                    delta_G = 1
+                    weight_chunk = torch.chunk(sweight, wsplit_num, dim=1)
 
                 # parameter computing
                 psum_scale = w_scale * a_scale
@@ -617,23 +608,8 @@ class PsumQConv(SplitConv):
                 out_adc = None
                 for abit, input_s in enumerate(input_chunk):
                     for wbit, weight_s in enumerate(weight_chunk):
-                        out_tmp = self._split_forward(input_s, weight_s, padded=True, ignore_bias=True, cat_output=cat_output,
+                        out_tmp = self._split_forward(input_s, weight_s, padded=True, ignore_bias=True, cat_output=False,
                                                 weight_is_split=True, infer_only=True)
-                        
-                        if self.is_noise and self.w_format=="state":
-                            if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
-                                if wbit == 0:
-                                    temp = out_tmp
-                                    continue
-                                else:
-                                    out_tmp = (temp - out_tmp) / delta_G
-
-                                    # out_tmp = list(map(lambda x: x/delta_G, temp))
-                            else:
-                                out_tmp /= delta_G
-
-                            out_tmp = torch.chunk(out_tmp, self.split_groups, dim=1)
-                            out_tmp = list(map(lambda x: x.contiguous(), out_tmp))
 
                         out_mag, multi_scale = self._output_magnitude(abit, wbit, wsplit_num)
                         out_adc = psum_quant_merge(out_adc, out_tmp,
@@ -905,16 +881,12 @@ class PsumQLinear(SplitLinear):
         return out_mag, multi_scale
 
     def _cell_noise_init(self, cbits, mapping_mode, co_noise=0.01, noise_type='prop', res_val='rel', w_format="weight", max_epoch=-1):
-        self.w_format = w_format
-        wbits = Parameter(torch.Tensor(1).fill_(self.wbits), requires_grad=False).round().squeeze()
-        self.noise_cell = Noise_cell(wbits, cbits, mapping_mode, co_noise, noise_type, res_val=res_val, w_format=self.w_format)
-    
-    def _cell_noise_inject(self, weight_list):
-        weight_cond = []
-        for w, weight in enumerate(weight_list):
-            weight_cond.append(2**w * self.noise_cell(weight/2**w))
-        
-        return weight_cond
+        self.w_format = 'state' if res_val == 'abs' or noise_type == 'meas' else 'weight'
+        # wbits = Parameter(torch.Tensor(1).fill_(self.wbits), requires_grad=False).round().squeeze()
+        # for inference 
+        if not (noise_type == 'prop' or 'interp'):
+            noise_type = 'prop'
+        self.noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val=res_val, w_format=self.w_format)
     
     def _bitserial_log_forward(self, input):
         print(f'[layer{self.layer_idx}]: bitserial mac log')
@@ -950,17 +922,20 @@ class PsumQLinear(SplitLinear):
         weight_chunk = torch.chunk(sweight, wsplit_num, dim=1)
 
         ### Cell conductance value change + Cell noise injection 
-        if self.is_noise:
-            if self.w_format == "state":
-                # weight_chunk_debug= weight_chunk
-                # print(set(weight_chunk_debug[0].cpu().detach().numpy().ravel()))
-                weight_chunk = self._cell_noise_inject(weight_chunk)
-                delta_G = self.noise_cell.get_deltaG()
-                if not (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
-                        delta_G, G_min = self.noise_cell.get_deltaG(G_min=True)
-                        w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
+        if self.is_noise and self.w_format == "state":
+            # weight_chunk = self._cell_noise_inject(weight_chunk)
+            ## [TO DO] two_com sweight magnitude computation 
+            sweight = self.noise_cell(sweight)
+            weight_chunk = torch.chunk(sweight, wsplit_num, dim=1)
+            if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
+                weight_chunk = [weight_chunk[0] - weight_chunk[1]]
+                wsplit_num = 1
             else:
-                delta_G = 1
+                delta_G, G_min = self.noise_cell.get_deltaG(G_min=True)
+                w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
+        else:
+            weight_chunk = torch.chunk(sweight, wsplit_num, dim=1)
+
 
         out_tmp = None
         for abit, input_s in enumerate(input_chunk):
@@ -971,17 +946,6 @@ class PsumQLinear(SplitLinear):
                 wa_hist_dict = {}
                 out_tmp = self._split_forward(input_s, weight_s, ignore_bias=True, infer_only=True)
                 # out_tmp = F.linear(input_s[:,nIF_cnt:nIF_cnt+self.split_nIF[idx]], weight_s, bias=None)
-
-                # noise operation
-                if self.is_noise and self.w_format=="state":
-                    if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
-                        if wbit == 0:
-                            temp = out_tmp
-                            continue
-                        else:
-                            out_tmp = (temp - out_tmp) / delta_G
-                    else:
-                        out_tmp /= delta_G
 
                 out_mag, multi_scale = self._output_magnitude(abit, wbit, wsplit_num)
                 out_array = out_tmp.round()*multi_scale/out_mag
@@ -1205,37 +1169,23 @@ class PsumQLinear(SplitLinear):
 
                 ### Cell noise injection + Cell conductance value change
                 if self.is_noise and self.w_format == "state":
-                    weight_chunk = self._cell_noise_inject(weight_chunk)
-                    delta_G = self.noise_cell.get_deltaG()
-                    cat_output = True
-                    if not (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
+                    sweight = self.noise_cell(sweight)
+                    weight_chunk = torch.chunk(sweight, wsplit_num, dim=1)
+                    if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
+                        weight_chunk = [weight_chunk[0] - weight_chunk[1]]
+                        wsplit_num = 1
+                    else:
                         delta_G, G_min = self.noise_cell.get_deltaG(G_min=True)
                         w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
                 else:
-                    cat_output = False
-                    delta_G = 1
+                    weight_chunk = torch.chunk(sweight, wsplit_num, dim=1)
                     
 
                 out_adc = None
                 for abit, input_s in enumerate(input_chunk):
                     for wbit, weight_s in enumerate(weight_chunk):
-                        out_tmp = self._split_forward(input_s, weight_s, ignore_bias=True, cat_output=cat_output, infer_only=True)
+                        out_tmp = self._split_forward(input_s, weight_s, ignore_bias=True, cat_output=False, infer_only=True)
                         # out_tmp = F.linear(input_s[:,nIF_cnt:nIF_cnt+self.split_nIF[idx]], weight_s, bias=None)
-
-                        if self.is_noise and self.w_format=="state":
-                            if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
-                                if wbit == 0:
-                                    temp = out_tmp
-                                    continue
-                                else:
-                                    out_tmp = (temp - out_tmp) / delta_G
-                                    # temp = [temp - out_tmp for (temp, out_tmp) in zip(temp, out_tmp)]
-                                    # out_tmp = list(map(lambda x: x/delta_G, temp))
-                            else:
-                                out_tmp /= delta_G 
-                                # out_tmp = list(map(lambda x: x/delta_G, out_tmp))
-                            out_tmp = torch.chunk(out_tmp, self.split_groups, dim=1)
-                            out_tmp = list(map(lambda x: x.contiguous(), out_tmp))
 
                         out_mag, multi_scale = self._output_magnitude(abit, wbit, wsplit_num)
 

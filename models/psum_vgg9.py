@@ -66,7 +66,7 @@ class PLSQ_vgg9(nn.Module):
         super(PLSQ_vgg9, self).__init__()
 
         self.features = nn.Sequential(
-            QConv(3, 128, wbits=32, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.Conv2d(3, 128, kernel_size=3, stride=1, padding=1, bias=False),
             nn.BatchNorm2d(128),
             add_act(abits=kwargs['abits'], bitserial=kwargs['abit_serial']),
 
@@ -124,7 +124,7 @@ class PLSQ_vgg9(nn.Module):
             add_act(abits=32), 
 
             nn.Dropout(kwargs['drop']),
-            QLinear(1024, kwargs['num_classes'], wbits=32, bias=True),
+            nn.Linear(1024, kwargs['num_classes'], bias=True),
             nn.BatchNorm1d(kwargs['num_classes']),
         )
 

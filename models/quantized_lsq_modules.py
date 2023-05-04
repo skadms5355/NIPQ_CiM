@@ -155,21 +155,52 @@ class QConv(nn.Conv2d):
 
     def hwnoise_init(self, cbits, mapping_mode, co_noise=0.01, noise_type='prop', res_val='rel', max_epoch=-1):
         w_format = 'state' if res_val == 'abs' or noise_type == 'meas' else 'weight'
-        wbits = nn.Parameter(torch.Tensor(1).fill_(self.wbits), requires_grad=False).round().squeeze()
-        self.noise_cell = Noise_cell(wbits, cbits, mapping_mode, co_noise, noise_type=noise_type, \
+        self.noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type=noise_type, \
                                     res_val=res_val, w_format=w_format, max_epoch=max_epoch)
-        self.inf_noise_cell = Noise_cell(wbits, cbits, mapping_mode, co_noise, noise_type='prop', \
+        self.mapping_mode = mapping_mode
+        self.w_format = w_format
+        self.noise_type = noise_type
+        if noise_type == 'interp':
+            w_format = 'state'
+            res_val = 'abs'
+        elif not (noise_type == 'prop' or 'interp'):
+            noise_type = 'prop'
+        self.inf_noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type=noise_type, \
                                     res_val=res_val, w_format=w_format, max_epoch=max_epoch)
-        
+
     def forward(self, input):
         qweight, scale = self.quan_w_fn(self.weight)
-        if self.hwnoise:
-            if self.training:
-                qweight = self.noise_cell((qweight / scale).round()) * scale
-            else:
-                qweight = self.inf_noise_cell((qweight / scale).round()) * scale
 
-        output =  F.conv2d(input, qweight, bias=self.bias,
+        with torch.no_grad():
+            if self.hwnoise:
+                if self.training:
+                    if self.noise_type == "interp" and self.w_format == 'abs':
+                        pqweight = torch.where(qweight>0, qweight, 0)
+                        nqweight = torch.where(qweight<0, abs(qweight), 0)
+                        cat_weight = torch.cat([pqweight, nqweight])
+                        cat_weight = self.inf_noise_cell((cat_weight / scale).round()) * scale
+                        split_weight = torch.chunk(cat_weight, 2)
+                        qweight_noise = split_weight[0] - split_weight[1]
+                    else:
+                        qweight_noise = self.noise_cell((qweight / scale).round()) * scale
+                else:
+                    if self.noise_type == "interp":
+                        if self.mapping_mode == '2T2R':
+                            pqweight = torch.where(qweight>0, qweight, 0)
+                            nqweight = torch.where(qweight<0, abs(qweight), 0)
+                            cat_weight = torch.cat([pqweight, nqweight])
+                            cat_weight = self.inf_noise_cell((cat_weight / scale).round()) * scale
+                            split_weight = torch.chunk(cat_weight, 2)
+                            qweight_noise = split_weight[0] - split_weight[1]
+                        else:
+                            assert False, "Only support 2T2R mapping mode"
+                    else:
+                        qweight_noise = self.inf_noise_cell((qweight / scale).round()) * scale
+
+                if self.training:
+                    qweight.copy_(qweight_noise)
+
+        output = F.conv2d(input, qweight, bias=self.bias,
                 stride=self.stride, padding=self.padding, dilation=self.dilation, groups=self.groups)
         return output
 
@@ -200,15 +231,50 @@ class QLinear(nn.Linear):
 
     def hwnoise_init(self, cbits, mapping_mode, co_noise=0.01, noise_type='prop', res_val='rel', max_epoch=-1):
         w_format = 'state' if res_val == 'abs' or noise_type == 'meas' else 'weight'
-        wbits = nn.Parameter(torch.Tensor(1).fill_(self.wbits), requires_grad=False).round().squeeze()
-        self.noise_cell = Noise_cell(wbits, cbits, mapping_mode, co_noise, noise_type=noise_type, \
+        self.noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type=noise_type, \
                                     res_val=res_val, w_format=w_format, max_epoch=max_epoch)
+        self.mapping_mode = mapping_mode
+        self.w_format = w_format
+        self.noise_type = noise_type
+        if noise_type == 'interp':
+            w_format = 'state'
+            res_val = 'abs'
+        elif not (noise_type == 'prop' or 'interp'):
+            noise_type = 'prop'
+        self.inf_noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type=noise_type, \
+                                    res_val=res_val, w_format=w_format, max_epoch=max_epoch)
+        
     def forward(self, input):
         qweight, scale = self.quan_w_fn(self.weight)
-        if self.hwnoise:
-            qweight = self.noise_cell((qweight / scale).round()) * scale
-        else: 
-            qweight, _ = self.quan_w_fn(self.weight)
+
+        with torch.no_grad():
+            if self.hwnoise:
+                if self.training:
+                    if self.noise_type == "interp" and self.w_format == 'abs':
+                        pqweight = torch.where(qweight>0, qweight, 0)
+                        nqweight = torch.where(qweight<0, abs(qweight), 0)
+                        cat_weight = torch.cat([pqweight, nqweight])
+                        cat_weight = self.inf_noise_cell((cat_weight / scale).round()) * scale
+                        split_weight = torch.chunk(cat_weight, 2)
+                        qweight_noise = split_weight[0] - split_weight[1]
+                    else:
+                        qweight_noise = self.noise_cell((qweight / scale).round()) * scale
+                else:
+                    if self.noise_type == "interp":
+                        if self.mapping_mode == '2T2R':
+                            pqweight = torch.where(qweight>0, qweight, 0)
+                            nqweight = torch.where(qweight<0, abs(qweight), 0)
+                            cat_weight = torch.cat([pqweight, nqweight])
+                            cat_weight = self.inf_noise_cell((cat_weight / scale).round()) * scale
+                            split_weight = torch.chunk(cat_weight, 2)
+                            qweight_noise = split_weight[0] - split_weight[1]
+                        else:
+                            assert False, "Only support 2T2R mapping mode"
+                    else:
+                        qweight_noise = self.inf_noise_cell((qweight / scale).round()) * scale
+
+                if self.training:
+                    qweight.copy_(qweight_noise)
 
         output =  F.linear(input, qweight, bias=self.bias)
         return output

@@ -1,14 +1,24 @@
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import unicode_literals
 from __future__ import print_function
 
 import os
 import time
-import random
-import warnings
+import datetime
+import socket
 import numpy as np
 import pandas as pd
-import socket
-import datetime
+import random
+import warnings
+import copy
+import math
 import pathlib
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torch.optim.lr_scheduler as lr_scheduler
+import torch.backends.cudnn as cudnn
 
 import models
 import argparse
@@ -17,11 +27,10 @@ from utils.arguments import set_arguments, check_arguments
 args = set_arguments()
 
 from utils import data_loader, initialize, logging, misc, tensorboard, eval
-from utils.misc import ForkedPdb
 from utils.schedule_train import set_optimizer, set_scheduler
 
-from utils.preproc_bi_real_net import CrossEntropyLabelSmooth	# for Bi-real-net
 from models.psum_modules import set_BitSerial_log, set_Noise_injection, unset_BitSerial_log
+from models.nipq_quantization_module import bops_cal
 
 warnings.simplefilter("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", "Corrupt EXIF data", UserWarning)
@@ -38,8 +47,12 @@ assert torch.cuda.is_available(), "check if cuda is avaliable"
 
 torch.autograd.set_detect_anomaly(True)
 
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
+
+
 def PickUnusedPort():
-    
+
     '''Picks unused port in the current node'''
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.bind(('localhost', 0))
@@ -47,7 +60,6 @@ def PickUnusedPort():
     s.close()
 
     return port
-
 
 def SetRandomSeed(seed=None):
     '''Sets random seed for all torch methods'''
@@ -59,7 +71,6 @@ def SetRandomSeed(seed=None):
     torch.cuda.manual_seed_all(seed)
 
     return seed
-
 
 def main():
     check_arguments(args)
@@ -83,19 +94,18 @@ def main():
         args.dist_url = f"tcp://127.0.0.1:{PickUnusedPort()}"
         print(f"Binding to processes using : {args.dist_url}")
 
-
     if args.checkpoint is None:
         prefix = os.path.join("checkpoints", args.dataset, args.model_mode, args.arch)
 
         if args.evaluate:
             prefix = os.path.join(prefix, "eval")
-        
+
 
         if args.model_mode == 'nipq':
             prefix = os.path.join(prefix, "{}_fix:{}".format(args.nipq_noise, args.fixed_bit))
         else:
             prefix = os.path.join(prefix, "a:{}_w:{}".format(args.abits,args.wbits))
-        
+
         if args.mapping_mode != 'none':
 
             if args.arraySize > 0 and args.psum_comp: # inference with psum comp
@@ -104,10 +114,15 @@ def main():
                 prefix = os.path.join(prefix, args.mapping_mode, "no_psum_c:{}".format(args.cbits))
 
             if args.is_noise:
-                if args.tn_file is not None:
-                    prefix = os.path.join(prefix, '{}_{}_type_{}').format(args.tn_file, args.noise_type, args.co_noise)
+                if args.noise_type == 'meas':
+                    type = '{}'.format(args.meas_type)
                 else:
-                    prefix = os.path.join(prefix, '{}_type_{}').format(args.noise_type, args.co_noise)
+                    type = 'type_{}'.format(args.co_noise)
+
+                if args.tn_file is not None:
+                    prefix = os.path.join(prefix, '{}_{}_{}').format(args.tn_file, args.noise_type, type)
+                else:
+                    prefix = os.path.join(prefix, '{}_{}').format(args.noise_type, type)
         else:
             pass
 
@@ -130,10 +145,13 @@ def main():
                     os.makedirs(args.checkpoint)
                     os.makedirs(os.path.join(args.checkpoint, 'hist'))
         else:
-            args.checkpoint = misc.mkdir_now(prefix)
-    else: 
+            if not args.evaluate:
+                args.checkpoint = misc.mkdir_now(prefix)
+            else:
+                args.checkpoint = os.path.join(prefix)
+    else:
         os.makedirs(args.checkpoint, exist_ok=True)
-    print(f"==> Save everything in \n {args.checkpoint}")
+    print(f"==> Save everything in \n {args.checkpoint}")\
 
     misc.lndir_p(args.checkpoint, args.link)
 
@@ -149,8 +167,6 @@ def main():
         dest_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), prefix_bak)
         misc.copy_folder(args.checkpoint, dest_path)
 
-
-# gpu numbers vary from 0 to (ngpus_per_node - 1)
 def main_worker(gpu, ngpus_per_node, args):
 
     # initialize parameters for results
@@ -189,7 +205,6 @@ def main_worker(gpu, ngpus_per_node, args):
         print(f"gpu: {args.gpu_id}, current_device: {torch.cuda.current_device()}, "
               f"train_batch_total: {args.train_batch}, workers_total: {args.workers}")
 
-
     # Set data loader
     cudnn.benchmark = True
     #cudnn.deterministic = True
@@ -198,11 +213,17 @@ def main_worker(gpu, ngpus_per_node, args):
     # Load teacher model if required
     if args.teacher is not None:
         print("==> Loading teacher model...")
-        assert os.path.exists(args.teacher), 'Error: no teacher model found!'
-        state = torch.load(args.teacher, map_location=lambda storage, loc: storage.cuda(args.gpu))
-        teacher = models.__dict__[state['args_dict']['arch']](**state['args_dict'])
-#        for p in teacher.parameters():
-#            p.requires_grad = False
+        if args.dataset == 'imagenet':
+            if args.teacher=='resnet18':
+                from torchvision.models import resnet18
+                teacher = resnet18(weights='DEFAULT')
+        else:
+            assert os.path.exists(args.teacher), 'Error: no teacher model found!'
+            state = torch.load(args.teacher, map_location=lambda storage, loc: storage.cuda(args.gpu))
+            teacher = models.__dict__[state['args_dict']['arch']](**state['args_dict'])
+
+        # for p in teacher.parameters():
+        #     p.requires_grad = False
     else:
         teacher = None
 
@@ -211,11 +232,9 @@ def main_worker(gpu, ngpus_per_node, args):
     args_dict = vars(args)
     model = models.__dict__[args.arch](**args_dict)
 
-        
     # initialize weights
     modules_to_init = ['Conv2d', 'BinConv', 'Linear', 'BinLinear', \
             'QConv', 'QLinear', 'QuantConv', 'QuantLinear', \
-            'Q_Conv2d', 'Q_Linear', \
             'PsumQConv', 'PsumQLinear']
     bn_modules_to_init = ['BatchNorm1d', 'BatchNorm2d']
     for m in model.modules():
@@ -223,7 +242,7 @@ def main_worker(gpu, ngpus_per_node, args):
             initialize.init_weight(m, method=args.init_method, dist=args.init_dist, mode=args.init_fan)
             # print('Layer {} has been initialized.'.format(type(m).__name__))
         if type(m).__name__ in bn_modules_to_init:
-            if args.bn_bias != 0.0:    
+            if args.bn_bias != 0.0:
                 # print(f"Initializing BN bias to {args.bn_bias}")
                 torch.nn.init.constant_(m.bias, args.bn_bias)
                 #print('Layer {} has been initialized.'.format(type(m).__name__))
@@ -242,13 +261,12 @@ def main_worker(gpu, ngpus_per_node, args):
     other_parameters = list(filter(lambda p: id(p) not in weight_parameters_id, all_parameters))
 
     optimizer = set_optimizer(model, other_parameters, weight_parameters, args)
-    
+
     # Initialize scaler if amp is used.
     if args.amp:
         scaler = torch.cuda.amp.GradScaler(enabled=args.amp)
     else:
         scaler = None
-
 
     # Initialize scheduler. This is done after the amp initialize to avoid warning.
     # Refer to Issues: https://discuss.pytorch.org/t/cyclic-learning-rate-how-to-use/53796
@@ -262,7 +280,6 @@ def main_worker(gpu, ngpus_per_node, args):
     else:
         model = torch.nn.DataParallel(model).to("cuda")
 
-
     # Wrap the teacher model with DDP if exist
     if teacher is not None:
         if args.distributed:
@@ -271,7 +288,9 @@ def main_worker(gpu, ngpus_per_node, args):
                 teacher.to("cuda"), device_ids=[args.gpu], output_device=args.gpu)
         else:
             teacher = torch.nn.DataParallel(teacher).to("cuda")
-        teacher.load_state_dict(state['state_dict'])
+
+        if not args.dataset == 'imagenet':
+            teacher.load_state_dict(state['state_dict'])
 
     # Print model information
     if args.rank == 0:
@@ -280,24 +299,38 @@ def main_worker(gpu, ngpus_per_node, args):
         print('---------- model ----------')
         print(model)
 
-        ## TODO (VINN): We want to take quantization into account!
-        total_parameters = sum(p.numel() for p in model.parameters())/1000000.0
-        print(f"    Total params: {total_parameters:.2f}M")
-
-
     # Load pre-trained model if enabled
     if args.pretrained:
         if args.rank == 0:
             print('==> Get pre-trained model..')
-        assert os.path.exists(args.pretrained), 'Error: no pre-trained model found!'
 
-        load_dict = torch.load(args.pretrained, map_location=lambda storage, loc: storage.cuda(args.gpu))['state_dict']
+        if args.pretrained == 'url':
+            model_urls = {
+                        'resnet18': 'https://download.pytorch.org/models/resnet18-5c106cde.pth',
+                    }
+            if 'resnet18' in args.arch:
+                load_dict = torch.hub.load_state_dict_from_url(model_urls['resnet18'], progress=False)
+            load_dict = dict(zip(['module.'+key for key in load_dict.keys()], load_dict.values()))
+        else:
+            assert os.path.exists(args.pretrained), 'Error: no pre-trained model found!'
+            load_dict = torch.load(args.pretrained, map_location=lambda storage, loc: storage.cuda(args.gpu))['state_dict']
+
         model_dict = model.state_dict()
         model_keys = model_dict.keys()
         for name, param in load_dict.items():
+            # if ('resnet18' in args.arch and 'downsample' in name) and args.pretrained == 'url':
+            #     name_list = name.split('.')
+            #     name_list[-2] = str(int(name_list[4])+1)
+            #     name = ".".join(name_list)
+
             if name in model_keys:
                 model_dict[name] = param
+
         model.load_state_dict(model_dict)
+        if not args.psum_comp and test_loader is not None and not args.evaluate:
+            loss['test'], top1['test'], top5['test'] = eval.test(test_loader, model, criterion, 0, args)
+            if args.rank == 0:
+                print(f"Test loss: {loss['test']:<10.6f} Test top1: {top1['test']:<7.4f} Test top5: {top5['test']:<7.4f}")
 
     # Overwrite arguments from reading checkpoint's arg_dict
     # Load from checkpoint if resume is enabled.
@@ -343,7 +376,6 @@ def main_worker(gpu, ngpus_per_node, args):
             for key, value in args_dict.items():
                 f.write(f"{key:<20}: {value}\n")
 
-
     title = args.dataset + '-' + args.arch
     logger = logging.Logger(os.path.join(args.checkpoint, 'log.txt'), title=title)
 
@@ -357,31 +389,58 @@ def main_worker(gpu, ngpus_per_node, args):
         if args.evaluate:
             report_path = os.path.join(str(pathlib.Path().resolve()), ((args.checkpoint.replace('checkpoints', 'report')).replace('eval/', '')).replace('/log_bitserial_info', ''))
             graph_path = os.path.join(str(pathlib.Path().resolve()), 'graph', args.dataset, f'Psum_{args.arch}', args.mapping_mode, args.psum_mode, 'class_{}'.format(args.per_class))
+            if not args.psum_comp:
+                report_path = '/'.join(report_path.split('/')[:-1]) # time folder remove
             os.makedirs(report_path, exist_ok=True)
             report_file = os.path.join(report_path, 'model_report.pkl')
 
 
     start_time=time.time()
-    log_time = start_time
-    if args.is_noise:
-        set_Noise_injection(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
-                                        noise_type=args.noise_type, res_val=args.res_val, w_format="state")
-    
-    if args.psum_comp:
-
-        set_BitSerial_log(model, checkpoint=args.checkpoint, log_file=args.log_file,\
-            pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma)
-
-        if args.log_file:
-            if args.class_split:
-                eval.log_test(valid_loader, model, args)
-            else:
-                eval.log_test(train_loader, model, args)
-
-            unset_BitSerial_log(model)
-            log_time = time.time()
 
     if args.evaluate:
+        if args.psum_comp:
+            if args.model_mode == 'nipq':
+                from models.nipq_hwnoise_psum_module import PsumQuantOps as PQ
+                PQ.psum_initialize(model, act=True, weight=True, fixed_bit=args.fixed_bit, cbits=args.cbits, arraySize=args.arraySize, mapping_mode=args.mapping_mode, \
+                                    psum_mode=args.psum_mode, wbit_serial=args.wbit_serial, pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma, \
+                                    checkpoint=args.checkpoint, log_file=args.log_file)
+                if args.is_noise and 'hwnoise' in args.nipq_noise:
+                    PQ.hwnoise_initialize(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
+                                        noise_type=args.noise_type, res_val=args.res_val)
+            elif (args.model_mode == 'quant') or (args.model_mode == 'hn_quant'):
+                set_BitSerial_log(model, checkpoint=args.checkpoint, log_file=args.log_file,\
+                    pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma)
+                if args.is_noise:
+                    set_Noise_injection(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
+                                        noise_type=args.noise_type, res_val=args.res_val)
+            else:
+                assert False, "This mode is not supported psum computation"
+
+            if args.log_file:
+                if args.class_split:
+                    eval.log_test(valid_loader, model, args)
+                else:
+                    eval.log_test(train_loader, model, args)
+
+            if args.model_mode == 'nipq':
+                PQ.unset_bitserial_log(model)
+            elif (args.model_mode == 'quant') or (args.model_mode == 'hn_quant'):
+                unset_BitSerial_log(model)
+
+        else:
+            if args.model_mode == 'nipq':
+                from models.nipq_quantization_module import QuantOps as Q
+                Q.initialize(model, act=True, weight=True, noise=False, fixed_bit=args.fixed_bit)
+
+                if args.is_noise and 'hwnoise' in args.nipq_noise:
+                    Q.hwnoise_initialize(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
+                                        noise_type=args.noise_type, res_val=args.res_val)
+            elif args.model_mode == 'quant':
+                if args.is_noise:
+                    from models.quantized_lsq_modules import hwnoise_initialize
+                    hwnoise_initialize(model, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
+                                        noise_type=args.noise_type, res_val=args.res_val, max_epoch=(args.epochs - args.ft_epoch))
+        log_time = time.time()
 
         if args.rank == 0:
             print('\nEvaluation only')
@@ -405,7 +464,7 @@ def main_worker(gpu, ngpus_per_node, args):
 
         if args.rank == 0:
             end=time.time()
-            print('\nPsum Parameter Search Total time : {total_time}s'.format(
+            print('\nEvaluation Total time : {total_time}s'.format(
                         total_time=end-start_time))
 
             # log evaluation result
@@ -417,26 +476,28 @@ def main_worker(gpu, ngpus_per_node, args):
             else:
                 df = pd.DataFrame()
 
-        df = df.append({
-            "dataset":          args.dataset,
-            "Network":          args.arch,
-            "Mapping_mode":     args.mapping_mode,
-            "arraySize":        args.arraySize,
-            'cell bits':        args.cbits,
-            "per_class":        args.per_class,
-            "pbits":            args.pbits,
-            "psum_mode":        args.psum_mode,
-            "pclipmode":        args.pclipmode,
-            "pclip":            args.pclip,
-            "noise":            args.is_noise,
-            "coefficient noise":  args.co_noise,
-            "Test Top1":        top1['test'],
-            "Test Top5":        top5['test'],
-            "Log time":         log_time-start_time,
-            "Total Time":       end-start_time
-            }, ignore_index=True)
-        df.to_pickle(report_file)
-        df.to_csv(report_path+'/accuracy_report.txt', sep = '\t', index = False)
+            df = df.append({
+                "dataset":          args.dataset,
+                "Network":          args.arch,
+                "Mapping_mode":     args.mapping_mode,
+                "arraySize":        args.arraySize if args.psum_comp else "No_psum",
+                'cell bits':        args.cbits if args.psum_comp else "No_psum",
+                "per_class":        args.per_class if args.psum_comp else "No_psum",
+                "pbits":            args.pbits if args.psum_comp else "No_psum",
+                "psum_mode":        args.psum_mode if args.psum_comp else "No_psum",
+                "pclipmode":        args.pclipmode if args.psum_comp else "No_psum",
+                "pclip":            args.pclip if args.psum_comp else "No_psum",
+                "coefficient_noise":  args.co_noise if args.is_noise else "No_noise",
+                "res_val":          args.res_val if args.is_noise else "No_noise",
+                "Valid Top1":       top1['valid'],
+                "Test Top1":        top1['test'],
+                "Test Top5":        top5['test'],
+                "Log time":         log_time-start_time,
+                "Total Time":       end-start_time
+                }, ignore_index=True)
+            df.to_pickle(report_file)
+            df.to_csv(report_path+'/accuracy_report.txt', sep = '\t', index = False) # last result remain
+            df.to_csv(args.checkpoint+'/log.txt', sep = '\t', index = False) # results log (time)
 
         return
 
@@ -459,13 +520,58 @@ def main_worker(gpu, ngpus_per_node, args):
         if args.dali:
             test_loader.reset()
 
-    # Train and val
-    start_time=time.time()
-    for epoch in range(start_epoch, args.epochs):
-        # np.random.seed(args.manualSeed+epoch)
+    # initialize in the nipq mode with fixed_bit
+    if args.model_mode == 'nipq':
+        from models.nipq_quantization_module import QuantOps as Q
+        Q.initialize(model, act=True, weight=True, fixed_bit=8)
+        # bit_epoch_step = math.floor((args.epochs-args.ft_epoch)/(8-args.fixed_bit+1))
+        bit_epoch_step = 3
+        bit_epoch = bit_epoch_step
+        bit_cnt = 0
+        if args.is_noise and 'hwnoise' in args.nipq_noise:
+            Q.hwnoise_initialize(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
+                                noise_type=args.noise_type, res_val=args.res_val, max_epoch=(args.epochs - args.ft_epoch))
 
+        # TO DO: When adding yolov2 (object detection)
+        if args.rank == 0:
+            img = torch.Tensor(1, 3, 224, 224) if args.dataset =='imagenet' else torch.Tensor(1, 3, 32, 32)  # only two option imagenet
+            Q.sample_activation_size(model, img)
+
+            bops_total = bops_cal(model) * (2. ** -30) # 1 GigaBitOps = 2 ** 30 BitOps
+            print(f"     Bops: {bops_total.item()}GBops")
+    elif args.model_mode == 'quant':
+        if args.is_noise and not args.evaluate:
+            from models.quantized_lsq_modules import hwnoise_initialize
+            hwnoise_initialize(model, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
+                                noise_type=args.noise_type, res_val=args.res_val, max_epoch=(args.epochs - args.ft_epoch))
+
+    # Train and val
+    start_time = time.time()
+    for epoch in range(start_epoch, args.epochs):
         if not args.dali and args.distributed:
             train_sampler.set_epoch(epoch)
+
+        if args.model_mode == 'nipq':
+            if epoch == (args.epochs - args.ft_epoch):
+                # BN tuning options
+                Q.initialize(model, act=True, weight=True, noise=False, fixed_bit=args.fixed_bit)
+
+                for name, module in model.named_modules():
+                    if isinstance(module, (Q.ReLU, Q.Sym, Q.HSwish, Q.Conv2d, Q.Linear)):
+                        module.quant_func.bit.requires_grad = False
+            else:
+                if epoch == bit_epoch and (0 < epoch < (args.epochs - args.ft_epoch)) and (args.fixed_bit != 8 - bit_cnt):
+                    # NIPQ fixed precision increase gradually
+                    bit_epoch_step += 1
+                    bit_epoch += bit_epoch_step 
+                    bit_cnt += 1
+                    for name, module in model.named_modules():
+                        if isinstance(module, (Q.ReLU, Q.Sym, Q.HSwish, Q.Conv2d, Q.Linear)):
+                            bit = (8-bit_cnt+0.00001 -2 ) / 12
+                            bit = np.log(bit/(1-bit))
+                            module.quant_func.bit.data.fill_(bit)
+                            changed_bit = 2+12/(1+np.exp(-bit))
+                    print("Change the bit precision to {}".format(changed_bit))
 
         # TODO (VINN): if anyone can find a better way to caculate lr with glorot scaling, please do.
         # The way to do it without glr is scheduler.get_lr()
@@ -482,7 +588,7 @@ def main_worker(gpu, ngpus_per_node, args):
 
         # log train loss and accuracy on tensorboard
         writer.log_scalars('train', {'loss': loss['train'], 'top1': top1['train'], 'top5': top5['train']}, epoch)
-        
+
         # steo firward the scheduler.
         scheduler.step()
 
@@ -509,7 +615,7 @@ def main_worker(gpu, ngpus_per_node, args):
             logger.append([
                 current_lr, loss['train'], loss['valid'], loss['test'],
                 top1['train'], top5['train'], top1['valid'], top5['valid'], top1['test'], top5['test']])
-            
+
             if valid_loader is not None:
                 logging.save_checkpoint(
                     {
@@ -538,7 +644,7 @@ def main_worker(gpu, ngpus_per_node, args):
                         'after_scheduler':          after_scheduler.state_dict(),
                     },
                     is_best_test_top1, checkpoint=args.checkpoint)
-        
+
             print("Training end time per one epoch: {}s, {}s".format(str(datetime.timedelta(seconds=(time.time()-start_time))), time.time()-start_time))
         # log test/valid loss and accuracy on tensorboard
         if loss['valid']:
@@ -553,6 +659,8 @@ def main_worker(gpu, ngpus_per_node, args):
                 valid_loader.reset()
             if test_loader is not None:
                 test_loader.reset()
+
+
 
     writer.close() # closing the tensorboard summarywriter.
     logger.close()
@@ -588,8 +696,9 @@ def main_worker(gpu, ngpus_per_node, args):
 
     if args.distributed:
         dist.destroy_process_group()
-    
+
     if args.rank == 0:
         print("Training end time: ", str(datetime.timedelta(seconds=(time.time()-start_time))))
+
 if __name__ == '__main__':
     main()
