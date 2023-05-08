@@ -149,6 +149,8 @@ def main():
                 args.checkpoint = misc.mkdir_now(prefix)
             else:
                 args.checkpoint = os.path.join(prefix)
+                if not os.path.exists(args.checkpoint):
+                    os.makedirs(args.checkpoint)    
     else:
         os.makedirs(args.checkpoint, exist_ok=True)
     print(f"==> Save everything in \n {args.checkpoint}")\
@@ -408,7 +410,7 @@ def main_worker(gpu, ngpus_per_node, args):
                     PQ.hwnoise_initialize(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
                                         noise_type=args.noise_type, res_val=args.res_val)
             elif (args.model_mode == 'quant') or (args.model_mode == 'hn_quant'):
-                set_BitSerial_log(model, checkpoint=args.checkpoint, log_file=args.log_file,\
+                set_BitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, log_file=args.log_file,\
                     pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma)
                 if args.is_noise:
                     set_Noise_injection(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
@@ -523,9 +525,9 @@ def main_worker(gpu, ngpus_per_node, args):
     # initialize in the nipq mode with fixed_bit
     if args.model_mode == 'nipq':
         from models.nipq_quantization_module import QuantOps as Q
-        Q.initialize(model, act=True, weight=True, fixed_bit=8)
+        Q.initialize(model, act=True, weight=True, fixed_bit=args.fixed_bit)
         # bit_epoch_step = math.floor((args.epochs-args.ft_epoch)/(8-args.fixed_bit+1))
-        bit_epoch_step = 3
+        bit_epoch_step = 1
         bit_epoch = bit_epoch_step
         bit_cnt = 0
         if args.is_noise and 'hwnoise' in args.nipq_noise:
@@ -559,19 +561,19 @@ def main_worker(gpu, ngpus_per_node, args):
                 for name, module in model.named_modules():
                     if isinstance(module, (Q.ReLU, Q.Sym, Q.HSwish, Q.Conv2d, Q.Linear)):
                         module.quant_func.bit.requires_grad = False
-            else:
-                if epoch == bit_epoch and (0 < epoch < (args.epochs - args.ft_epoch)) and (args.fixed_bit != 8 - bit_cnt):
-                    # NIPQ fixed precision increase gradually
-                    bit_epoch_step += 1
-                    bit_epoch += bit_epoch_step 
-                    bit_cnt += 1
-                    for name, module in model.named_modules():
-                        if isinstance(module, (Q.ReLU, Q.Sym, Q.HSwish, Q.Conv2d, Q.Linear)):
-                            bit = (8-bit_cnt+0.00001 -2 ) / 12
-                            bit = np.log(bit/(1-bit))
-                            module.quant_func.bit.data.fill_(bit)
-                            changed_bit = 2+12/(1+np.exp(-bit))
-                    print("Change the bit precision to {}".format(changed_bit))
+            # else:
+            #     if epoch == bit_epoch and (0 < epoch < (args.epochs - args.ft_epoch)) and (args.fixed_bit != 8 - bit_cnt):
+            #         # NIPQ fixed precision increase gradually
+            #         # bit_epoch_step += 1
+            #         bit_epoch += bit_epoch_step 
+            #         bit_cnt += 1
+            #         for name, module in model.named_modules():
+            #             if isinstance(module, (Q.ReLU, Q.Sym, Q.HSwish, Q.Conv2d, Q.Linear)):
+            #                 bit = (8-bit_cnt+0.00001 -2 ) / 12
+            #                 bit = np.log(bit/(1-bit))
+            #                 module.quant_func.bit.data.fill_(bit)
+            #                 changed_bit = 2+12/(1+np.exp(-bit))
+            #         print("Change the bit precision to {}".format(changed_bit))
 
         # TODO (VINN): if anyone can find a better way to caculate lr with glorot scaling, please do.
         # The way to do it without glr is scheduler.get_lr()

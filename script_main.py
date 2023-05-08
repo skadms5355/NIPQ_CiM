@@ -81,7 +81,11 @@ elif args.dataset == 'pascal':
     per_class = 0
 elif args.dataset == 'cifar10':
     per_class = 500
-    pretrained = './checkpoints/cifar10/nipq/nipq_vgg9/qnoise_fix:4/2023-Feb-22-14-31-20/model_best.pth.tar'
+    if "nipq" in arch:
+        pretrained = './checkpoints/cifar10/nipq/nipq_vgg9/qnoise_fix:4/2023-Feb-22-14-31-20/model_best.pth.tar'
+    else:
+        pretrained = './checkpoints/cifar10/quant/lsq_vgg9/a:4_w:4/2022-Apr-01-18-57-49/model_best.pth.tar'
+
 
 
 

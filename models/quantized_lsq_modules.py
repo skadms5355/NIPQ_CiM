@@ -174,10 +174,10 @@ class QConv(nn.Conv2d):
         with torch.no_grad():
             if self.hwnoise:
                 if self.training:
-                    if self.noise_type == "interp" and self.w_format == 'abs':
+                    if self.noise_type == "interp" and self.w_format == 'state':
                         pqweight = torch.where(qweight>0, qweight, 0)
                         nqweight = torch.where(qweight<0, abs(qweight), 0)
-                        cat_weight = torch.cat([pqweight, nqweight])
+                        cat_weight = torch.cat((pqweight, nqweight))
                         cat_weight = self.inf_noise_cell((cat_weight / scale).round()) * scale
                         split_weight = torch.chunk(cat_weight, 2)
                         qweight_noise = split_weight[0] - split_weight[1]
@@ -188,7 +188,7 @@ class QConv(nn.Conv2d):
                         if self.mapping_mode == '2T2R':
                             pqweight = torch.where(qweight>0, qweight, 0)
                             nqweight = torch.where(qweight<0, abs(qweight), 0)
-                            cat_weight = torch.cat([pqweight, nqweight])
+                            cat_weight = torch.cat((pqweight, nqweight))
                             cat_weight = self.inf_noise_cell((cat_weight / scale).round()) * scale
                             split_weight = torch.chunk(cat_weight, 2)
                             qweight_noise = split_weight[0] - split_weight[1]
@@ -199,6 +199,8 @@ class QConv(nn.Conv2d):
 
                 if self.training:
                     qweight.copy_(qweight_noise)
+                else:
+                    qweight = qweight_noise
 
         output = F.conv2d(input, qweight, bias=self.bias,
                 stride=self.stride, padding=self.padding, dilation=self.dilation, groups=self.groups)
@@ -250,10 +252,10 @@ class QLinear(nn.Linear):
         with torch.no_grad():
             if self.hwnoise:
                 if self.training:
-                    if self.noise_type == "interp" and self.w_format == 'abs':
+                    if self.noise_type == "interp" and self.w_format == 'state':
                         pqweight = torch.where(qweight>0, qweight, 0)
                         nqweight = torch.where(qweight<0, abs(qweight), 0)
-                        cat_weight = torch.cat([pqweight, nqweight])
+                        cat_weight = torch.cat((pqweight, nqweight))
                         cat_weight = self.inf_noise_cell((cat_weight / scale).round()) * scale
                         split_weight = torch.chunk(cat_weight, 2)
                         qweight_noise = split_weight[0] - split_weight[1]
@@ -264,7 +266,7 @@ class QLinear(nn.Linear):
                         if self.mapping_mode == '2T2R':
                             pqweight = torch.where(qweight>0, qweight, 0)
                             nqweight = torch.where(qweight<0, abs(qweight), 0)
-                            cat_weight = torch.cat([pqweight, nqweight])
+                            cat_weight = torch.cat((pqweight, nqweight))
                             cat_weight = self.inf_noise_cell((cat_weight / scale).round()) * scale
                             split_weight = torch.chunk(cat_weight, 2)
                             qweight_noise = split_weight[0] - split_weight[1]
@@ -275,6 +277,8 @@ class QLinear(nn.Linear):
 
                 if self.training:
                     qweight.copy_(qweight_noise)
+                else:
+                    qweight = qweight_noise
 
         output =  F.linear(input, qweight, bias=self.bias)
         return output

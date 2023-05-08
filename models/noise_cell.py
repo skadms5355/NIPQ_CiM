@@ -103,6 +103,7 @@ class Noise_cell(nn.Module):
             df = pd.read_csv('/mnt/nfs/nameunkang/Project/NIPQ_CiM/data/ReRAM/Hynix_data_case2.csv')
         else:
             assert False, "Check co_noise parameter, You only select two option (1, 2) in {}".format(self.noise_type)
+        
         self.max_state = df.iloc[:, 0::2].max().to_numpy()
         self.min_state = df.iloc[:, 0::2].min().to_numpy()
         if 'ref' in self.mapping_mode:
@@ -126,11 +127,14 @@ class Noise_cell(nn.Module):
         # fig, ax = plt.subplots(nrows=2, figsize=(20, 12))
         # ax1 = ax[0].twinx()
 
+        rseed = torch.randint(0, 32765, (1,))
+        np.random.seed(rseed)
+        
         for c in range(self.clevel):
             if torch.where(x==c)[0].shape[0] != 0:
                 index = torch.where(x==c)
                 samples = torch.tensor(self.rv[c].rvs(size=x[index].numel()), dtype=x.dtype, device=x.device)
-                
+
                 while torch.any(np.floor(self.min_state[c]) > samples) or torch.any(np.ceil(self.max_state[c]) < samples):
                     if torch.any(np.floor(self.min_state[c]) > samples):
                         min_index = torch.where(self.min_state[c] > samples)
@@ -142,9 +146,12 @@ class Noise_cell(nn.Module):
 
                 x[index] = samples
 
-        #     else:
-        #         index = torch.where(x==c)
-        #         samples = torch.tensor(self.rv[c].rvs(size=x[index].numel()), dtype=x.dtype, device=x.device)
+            if torch.any(x<0):
+                import pdb; pdb.set_trace()
+
+            # else:
+            #     index = torch.where(x==c)
+            #     samples = torch.tensor(self.rv[c].rvs(size=x[index].numel()), dtype=x.dtype, device=x.device)
 
         #     sns.histplot(samples.cpu().numpy(), ax=ax[0], bins=200, alpha=0.2, element='step', fill=True, stat='density')
         #     # import pdb; pdb.set_trace()
@@ -313,6 +320,7 @@ class Noise_cell(nn.Module):
                     output = torch.where(output<0, output[output>0].min(), output).to(x.device)
                 elif noise_type == 'prop' or noise_type == 'meas':
                     output = torch.normal(self.G[x_idx], self.G_std[x_idx]).to(x.device)
+                    # Need G_std setting! 
                 elif noise_type == 'interp':
                     output = self.interp_sample(x)
                 assert torch.all(output > 0), "Do not set negative cell value"
