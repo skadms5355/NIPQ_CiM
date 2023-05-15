@@ -69,6 +69,7 @@ class Psum_QConv2d(SplitConv):
         self.quant_func = Quantizer(sym=True, noise=False, offset=0, is_stochastic=True, is_discretize=True)
         self.bits = self.quant_func.get_bit()
         self.hwnoise = False
+        self.noise_type = None
 
         ## for psum quantization
         self.mapping_mode = '2T2R' # Array mapping method [2T2R, ref_a]]
@@ -420,7 +421,11 @@ class Psum_QConv2d(SplitConv):
 
         # get quantization parameter and input bitserial 
         bits = self.bits
-        w_serial = True if self.cbits==1 and self.mapping_mode == 'two_com' else False
+        if (self.mapping_mode == 'two_com') or (self.noise_type == 'interp'):
+            w_serial = True 
+        else:
+            w_serial = False
+
         qweight = self.quant_func(self.weight, self.training, serial=w_serial)
 
         if self.wbit_serial:
@@ -432,12 +437,17 @@ class Psum_QConv2d(SplitConv):
                 input_chunk = torch.chunk(sinput, bits, dim=1)
                 self.sweight = conv_sweight_cuda.forward(self.sweight, qweight/w_scale, self.group_in_offset, self.split_groups)
                 if w_serial:
-                    sweight, _ = self.bitserial_split(self.sweight, act=False) 
-                    sweight = torch.where(sweight>0, 1., 0.)
-                    if self.hwnoise:
-                        sweight = self.quant_func.noise_cell(sweight)
-                        std_offset = self.quant_func.noise_cell.get_offset()
-                    wsplit_num = int(self.bits / self.cbits)
+                    # if self.noise_type=='interp':
+                        
+                    if self.mapping_mode == "two_com":
+                        ## [TODO] other cbits consideration in two's complement
+                        sweight, _ = self.bitserial_split(self.sweight, act=False) 
+                        sweight = torch.where(sweight>0, 1., 0.)
+                        if self.hwnoise:
+                            sweight = self.quant_func.noise_cell(sweight)
+                            std_offset = self.quant_func.noise_cell.get_offset()
+                        wsplit_num = int(self.bits / self.cbits)
+                    
                 else:
                     sweight = self.sweight
                     wsplit_num = 1
@@ -1043,6 +1053,7 @@ def hwnoise_initialize(model, weight=False, hwnoise=True, cbits=4, mapping_mode=
         if isinstance(module, (Psum_QConv2d, Psum_QLinear)) and weight and hwnoise:
             module.quant_func.hwnoise = True
             module.hwnoise = True
+            module.noise_type = noise_type
 
             if noise_type == 'grad':
                 assert max_epoch != -1, "Enter max_epoch in hwnoise_initialize function"

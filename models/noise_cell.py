@@ -296,7 +296,7 @@ class Noise_cell(nn.Module):
 
     def get_offset(self):
         return self.std_offset
-
+    
     def forward(self, x, float_comp=False, w_split=True):
         noise_type = self.noise_type
         res_val = self.res_val
@@ -344,10 +344,8 @@ class Noise_cell(nn.Module):
                         x_cell = x+2**(self.wbits-1) if self.mapping_mode == 'ref_a' else abs(x)
                         output = x + torch.normal(0, self.G_std[x_cell.detach().cpu().numpy()]).to(x.device)
                 elif noise_type == 'interp':
-                    x_cell = (x+2**(self.wbits-1) if self.mapping_mode == 'ref_a' else abs(x)).detach().cpu().numpy()
+                    x_cell = x.detach().cpu().numpy()
                     output =  torch.normal(self.G[x_cell], self.G_std[x_cell]).to(x.device).type(x.dtype)
-                    # import pdb; pdb.set_trace()
-                    output = torch.where(x < 0, -1 * output, output)
                 else:
                     output = x + (self.G_std[0]**2 * torch.randn_like(x, device=x.device))
                 

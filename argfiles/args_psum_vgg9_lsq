@@ -20,12 +20,14 @@
 --wbits         4
 --abits         4
 
-# --pretrained    ./checkpoints/cifar10/quant/lsq_vgg9/a:4_w:4/2022-Apr-01-18-57-49/model_best.pth.tar
+--pretrained    ./checkpoints/cifar10/quant/lsq_vgg9/a:4_w:4/2022-Apr-01-18-57-49/model_best.pth.tar
 
 # Noise-aware training
 # Hynix Case 1
 # --pretrained    ./checkpoints/cifar10/quant/lsq_vgg9/a:4_w:4/2T2R/no_psum_c:4/interp_type_1.0/2023-May-03-15-02-29/model_best.pth.tar
 # --tn_file       interp_abs_1
+# --pretrained    ./checkpoints/cifar10/quant/lsq_vgg9/a:4_w:4/2T2R/no_psum_c:4/interp_type_1.0/2023-May-08-15-52-44/model_best.pth.tar
+# --tn_file       abs_1
 
 # --pretrained    ./checkpoints/cifar10/quant/lsq_vgg9/a:4_w:4/2T2R/no_psum_c:4/interp_type_1.0/2023-May-03-20-41-29/model_best.pth.tar
 # --tn_file       interp_rel_1
