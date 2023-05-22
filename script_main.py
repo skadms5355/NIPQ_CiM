@@ -1,3 +1,6 @@
+# noisy cifar-10 in LSQ model 
+# python script_main.py --argfile ./argfiles/args_psum_vgg9_lsq -g 0 --psum_comp --co_noise 1 --noise_type interp --iter 5
+
 import os
 import sys
 import getopt
@@ -10,10 +13,9 @@ parser.add_argument('--dataset', default='cifar10', type=str,
                     help='Dataset to be used for training.')
 parser.add_argument('--argfile', default='./argfiles/args_psum_vgg9_nipq_inf', type=str)
 parser.add_argument('-g', '--gpu-id', default=0, type=int)
-parser.add_argument('--fixed_bit', default=4, type=int,
-                    help='When fix_bit is none mix-precision is trained (default: None) in NIPQ mode')
 parser.add_argument('--mapping_mode', type=str,  nargs='+', default=['2T2R'])
 parser.add_argument('--psum_comp', action='store_true')
+parser.add_argument('--testlog', action='store_true')
 parser.add_argument('--arraySize', type=int, nargs='+', default=[128],
                     help='arraySize list')
 parser.add_argument('--pbits', type=float, nargs='+', default=[32, 8, 7, 6, 5, 4],
@@ -22,11 +24,15 @@ parser.add_argument('--pclip', type=str, nargs='+', default=['sigma'],
                     help='pclip list')
 parser.add_argument('--co_noise', type=float, nargs='+', default=[0, 0.03, 0.05])
 parser.add_argument('--noise_type', default='prop', type=str,
-                    choices=['static', 'grad', 'prop'])
+                    choices=['static', 'grad', 'prop', 'interp'])
+parser.add_argument('--iter', default=1, type=int,
+                    help='how many iterate inference process')
 parser.add_argument('--tnipq', default='hwnoise', type=str,
                     choices=['quant', 'hwnoise', 'qhwnoise'])
 parser.add_argument('--tnoise_type', default='prop', type=str,
-                    choices=['static', 'grad', 'prop'])
+                    choices=['static', 'grad', 'prop', 'interp'])
+parser.add_argument('--tres_val', default='abs', type=str,
+                    choices=['abs', 'rel'])
 parser.add_argument('--tco_noise', type=float, default=0.03)
 
 args = parser.parse_args()
@@ -43,6 +49,7 @@ noise_type = args.noise_type
 trained_noise = False
 
 if "vgg9" in args.argfile:
+    model = 'vgg9'
     if "nipq" in args.argfile:
         arch = "nipq_vgg9"
         if "psum" in args.argfile:
@@ -53,9 +60,11 @@ if "vgg9" in args.argfile:
             arch = "psum_lsq_vgg9"
     check_file = "layer6_hist.pkl"
 elif "psum_alexnet" in args.argfile:
+    model = 'alexnet'
     arch = "psum_alexnet"
     check_file = "layer5_hist.pkl"
 elif "resnet18" in args.argfile:
+    model = 'resnet18'
     if "nipq" in args.argfile:
         arch = "nipq_resnet18"
         if "psum" in args.argfile:
@@ -101,11 +110,14 @@ if not args.psum_comp:
 else:
     for mapping_mode in mapping_mode_list:
         if args.tnipq=="qhwnoise":
-            tn_file = 't_{}_{}_{}'.format(args.tnoise_type, args.tco_noise, noise_type)
-            import pdb; pdb.set_trace()
-            pretrained = './checkpoints/{}/nipq/nipq_{}/qhwnoise_fix:4/{}/no_psum_c:4/{}_type_{}/best_model/model_best.pth.tar'.format(mapping_mode, args.tnoise_type, args.tco_noise)
+            if "nipq" in arch:
+                tn_file = 't_{}_{}'.format(args.tnoise_type, args.tco_noise)
+                pretrained = './checkpoints/{}/nipq/nipq_{}/qhwnoise_fix:4/{}/no_psum_c:4/{}_{}/best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tco_noise)
+            elif "lsq" in arch:
+                tn_file = '{}_{}_{}'.format(args.tnoise_type, args.tres_val, args.tco_noise)
+                pretrained = './checkpoints/{}/quant/lsq_{}/a:4_w:4/{}/no_psum_c:4/{}_{}_{}/best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tres_val, args.tco_noise)
         else:
-            tn_file = noise_type
+            tn_file = None
 
         for co_noise in co_noise_list:
             if co_noise == 0:
@@ -118,15 +130,19 @@ else:
                     nipq_noise = "qhwnoise"
 
             for a_size in arraySize:
-                testlog=True
+                testlog=args.testlog
+                if tn_file is None:
+                    noise_name = noise_type
+                else:
+                    noise_name = '{}_{}'.format(tn_file, noise_type)
                 if "nipq" in args.argfile:
                     if is_noise:
-                        log_path = os.path.join("checkpoints", args.dataset, "nipq", arch, "eval", "{}_fix:4".format(nipq_noise), mapping_mode, "{}_c:4/{}_type_{}/log_bitserial_info/hist".format(a_size, tn_file, co_noise), check_file)
+                        log_path = os.path.join("checkpoints", args.dataset, "nipq", arch, "eval", "{}_fix:4".format(nipq_noise), mapping_mode, "{}_c:4/{}_type_{}/log_bitserial_info/hist".format(a_size, noise_name, co_noise), check_file)
                     else:
                         log_path = os.path.join("checkpoints", args.dataset, "nipq", arch, "eval", "{}_fix:4".format(nipq_noise), mapping_mode, "{}_c:4/log_bitserial_info/hist".format(a_size), check_file)
                 else:
                     if is_noise:
-                        log_path = os.path.join("checkpoints", args.dataset, "quant", arch, "eval/a:4_w:4", mapping_mode, "{}_c:4/{}_type_{}/log_bitserial_info/hist".format(a_size, tn_file, co_noise), check_file)
+                        log_path = os.path.join("checkpoints", args.dataset, "quant", arch, "eval/a:4_w:4", mapping_mode, "{}_c:4/{}_type_{}/log_bitserial_info/hist".format(a_size, noise_name, co_noise), check_file)
                     else:
                         log_path = os.path.join("checkpoints", args.dataset, "quant", arch, "eval/a:4_w:4", mapping_mode, "{}_c:4/log_bitserial_info/hist".format(a_size), check_file)
 
@@ -137,24 +153,25 @@ else:
                     # local = "/home/nameunkang/Project/QNN_CIM"
 
                 for pbit in pbits_list:
-                    if is_noise:
-                        print(f'this operation is pbits {pbit}, arraySize {a_size}, per_class {per_class}, testlog_reset {testlog} log_file {log_file} co_noise {co_noise}')
-                        if noise_type == "qhwnoise":
-                            os.system('python main_nipq.py  --argfile {} --gpu-id {} --psum_comp {} --arraySize {} --mapping_mode {} \
-                                        --pbits {} --per_class {} --testlog_reset {} --log_file {} --pretrained {} \
-                                        --is_noise y --tn_file {} --nipq_noise {} --co_noise {} --noise_type {}'
-                                        .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, tn_file, nipq_noise, co_noise, noise_type))
+                    for i in range(args.iter):
+                        if is_noise:
+                            print(f'this operation is iter {i+1} pbits {pbit}, arraySize {a_size}, per_class {per_class}, testlog_reset {testlog} log_file {log_file} co_noise {co_noise}')
+                            if nipq_noise == "qhwnoise":
+                                os.system('python main.py  --argfile {} --gpu-id {} --psum_comp {} --arraySize {} --mapping_mode {} \
+                                            --pbits {} --per_class {} --testlog_reset {} --log_file {} --pretrained {} \
+                                            --is_noise y --tn_file {} --nipq_noise {} --co_noise {} --noise_type {}'
+                                            .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, tn_file, nipq_noise, co_noise, noise_type))
+                            else:
+                                os.system('python main.py  --argfile {} --gpu-id {} --psum_comp {} --arraySize {} --mapping_mode {} \
+                                            --pbits {} --per_class {} --testlog_reset {} --log_file {} --pretrained {} \
+                                            --is_noise y --nipq_noise {} --co_noise {} --noise_type {}'
+                                            .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, nipq_noise, co_noise, noise_type))
                         else:
-                            os.system('python main_nipq.py  --argfile {} --gpu-id {} --psum_comp {} --arraySize {} --mapping_mode {} \
-                                        --pbits {} --per_class {} --testlog_reset {} --log_file {} --pretrained {} \
-                                        --is_noise y --nipq_noise {} --co_noise {} --noise_type {}'
-                                        .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, nipq_noise, co_noise, noise_type))
-                    else:
-                        print(f'this operation is pbits {pbit}, arraySize {a_size}, per_class {per_class}, testlog_reset {testlog} log_file {log_file}')
-                        os.system('python main_nipq.py  --argfile {} --gpu-id {} --psum_comp {} --arraySize {} --mapping_mode {} \
-                                    --pbits {} --per_class {} --testlog_reset {} --log_file {} --pretrained {} --is_noise n --nipq_noise {}'
-                                    .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, nipq_noise))
-                    testlog=False
-                    log_file=False
+                            print(f'this operation is pbits {pbit}, arraySize {a_size}, per_class {per_class}, testlog_reset {testlog} log_file {log_file}')
+                            os.system('python main.py  --argfile {} --gpu-id {} --psum_comp {} --arraySize {} --mapping_mode {} \
+                                        --pbits {} --per_class {} --testlog_reset {} --log_file {} --pretrained {} --is_noise n --nipq_noise {}'
+                                        .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, nipq_noise))
+                        testlog=False
+                        log_file=False
 
 

@@ -113,6 +113,7 @@ class PsumQConv(SplitConv):
         # for sigma version
         self.pclip = 'sigma'
         self.psigma = 3
+        self.weight_chunk = None
 
         # for noise option
         self.is_noise = is_noise
@@ -589,27 +590,35 @@ class PsumQConv(SplitConv):
                 input_chunk = torch.chunk(sinput, abits, dim=1)
 
                 ### Cell noise injection + Cell conductance value change
-                if self.is_noise:
-                    bweight, wsplit_num = self._weight_bitserial(qweight, w_scale, cbits=self.cbits)
-                    bweight = self.noise_cell(bweight)
-                    
-                    weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
-                    
-                    ## make the same weight size as qweight
-                    if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
-                        bweight = weight_chunk[0] - weight_chunk[1]
-                        wsplit_num = 1
-                    else:
-                        ## [TODO] two_com split weight format check
-                        delta_G, G_min = self.noise_cell.get_deltaG(G_min=True)
-                        w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
+                ### in-mem computation programming (weight constant-noise)
+                if (self.weight_chunk is None) or self.training:
+                    if self.is_noise:
+                        bweight, wsplit_num = self._weight_bitserial(qweight, w_scale, cbits=self.cbits)
+                        bweight = self.noise_cell(bweight)
+                        
+                        weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
+                        
+                        ## make the same weight size as qweight
+                        if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
+                            bweight = weight_chunk[0] - weight_chunk[1]
+                            wsplit_num = 1
+                        else:
+                            ## [TODO] two_com split weight format check
+                            delta_G, G_min = self.noise_cell.get_deltaG(G_min=True)
+                            w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
 
-                    self.sweight = conv_sweight_cuda.forward(self.sweight, bweight, self.group_in_offset, self.split_groups)
-                    weight_chunk = torch.chunk(self.sweight, wsplit_num, dim=1)
+                        self.sweight = conv_sweight_cuda.forward(self.sweight, bweight, self.group_in_offset, self.split_groups)
+                        weight_chunk = torch.chunk(self.sweight, wsplit_num, dim=1)
+                    else:
+                        self.sweight = conv_sweight_cuda.forward(self.sweight, qweight, self.group_in_offset, self.split_groups)
+                        sweight, wsplit_num = self._weight_bitserial(self.sweight, w_scale, cbits=self.cbits)
+                        weight_chunk = torch.chunk(sweight, wsplit_num, dim=1)
+                    
+                    self.weight_chunk = weight_chunk
                 else:
-                    self.sweight = conv_sweight_cuda.forward(self.sweight, qweight, self.group_in_offset, self.split_groups)
-                    sweight, wsplit_num = self._weight_bitserial(self.sweight, w_scale, cbits=self.cbits)
-                    weight_chunk = torch.chunk(sweight, wsplit_num, dim=1)
+                    weight_chunk = self.weight_chunk
+                    wsplit_num = 1
+
 
                 # parameter computing
                 psum_scale = w_scale * a_scale
@@ -773,6 +782,7 @@ class PsumQLinear(SplitLinear):
         # for sigma version
         self.pclip = 'sigma'
         self.psigma = 3
+        self.weight_chunk = None
 
         # for noise option
         self.is_noise = is_noise
@@ -929,6 +939,7 @@ class PsumQLinear(SplitLinear):
         input_chunk = torch.chunk(sinput, abits, dim=1)
 
         bweight, wsplit_num = self._weight_bitserial(qweight, w_scale, cbits=self.cbits)
+
         ### Cell noise injection + Cell conductance value change
         if self.is_noise:
             bweight = self.noise_cell(bweight)
@@ -1174,19 +1185,23 @@ class PsumQLinear(SplitLinear):
 
                 bweight, wsplit_num = self._weight_bitserial(qweight, w_scale, cbits=self.cbits)
                 ### Cell noise injection + Cell conductance value change
-                if self.is_noise:
-                    bweight = self.noise_cell(bweight)
-                    weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
-                    
-                    if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
-                        bweight = weight_chunk[0] - weight_chunk[1]
-                        wsplit_num = 1
-                    else:
-                        ## [TODO] two_com split weight format check
-                        delta_G, G_min = self.noise_cell.get_deltaG(G_min=True)
-                        w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
+                if (self.weight_chunk is None) or self.training:
+                    if self.is_noise:
+                        bweight = self.noise_cell(bweight)
+                        weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
+                        
+                        if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
+                            bweight = weight_chunk[0] - weight_chunk[1]
+                            wsplit_num = 1
+                        else:
+                            ## [TODO] two_com split weight format check
+                            delta_G, G_min = self.noise_cell.get_deltaG(G_min=True)
+                            w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
 
-                weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
+                    weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
+                    self.weight_chunk = weight_chunk
+                else:
+                    weight_chunk = self.weight_chunk
 
                 out_adc = None
                 for abit, input_s in enumerate(input_chunk):

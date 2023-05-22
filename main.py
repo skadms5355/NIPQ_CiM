@@ -117,7 +117,10 @@ def main():
                 if args.noise_type == 'meas':
                     type = '{}'.format(args.meas_type)
                 else:
-                    type = 'type_{}'.format(args.co_noise)
+                    if args.evaluate:
+                        type = 'type_{}'.format(args.co_noise)
+                    else:
+                        type = '{}_{}'.format(args.res_val, args.co_noise)
 
                 if args.tn_file is not None:
                     prefix = os.path.join(prefix, '{}_{}_{}').format(args.tn_file, args.noise_type, type)

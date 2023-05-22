@@ -96,6 +96,7 @@ class Noise_cell(nn.Module):
                 assert False, 'This file does not support that cbits are lower than wbits'
     
     def interp_init(self):
+
         ## hynix reram data to convert continuous data
         if self.co_noise == 1:
             df = pd.read_csv('/mnt/nfs/nameunkang/Project/NIPQ_CiM/data/ReRAM/Hynix_data_case1.csv')
@@ -126,7 +127,6 @@ class Noise_cell(nn.Module):
         # import seaborn as sns
         # fig, ax = plt.subplots(nrows=2, figsize=(20, 12))
         # ax1 = ax[0].twinx()
-
         rseed = torch.randint(0, 32765, (1,))
         np.random.seed(rseed)
         
@@ -148,7 +148,7 @@ class Noise_cell(nn.Module):
 
             if torch.any(x<0):
                 import pdb; pdb.set_trace()
-
+            
             # else:
             #     index = torch.where(x==c)
             #     samples = torch.tensor(self.rv[c].rvs(size=x[index].numel()), dtype=x.dtype, device=x.device)
@@ -344,8 +344,15 @@ class Noise_cell(nn.Module):
                         x_cell = x+2**(self.wbits-1) if self.mapping_mode == 'ref_a' else abs(x)
                         output = x + torch.normal(0, self.G_std[x_cell.detach().cpu().numpy()]).to(x.device)
                 elif noise_type == 'interp':
-                    x_cell = x.detach().cpu().numpy()
-                    output =  torch.normal(self.G[x_cell], self.G_std[x_cell]).to(x.device).type(x.dtype)
+                    if self.w_format == 'state:':
+                        x_cell = x.detach().cpu().numpy()
+                    else:
+                        x_cell = x+2**(self.wbits-1) if self.mapping_mode == 'ref_a' else abs(x)
+                        x_cell = x_cell.detach().cpu().numpy()
+                    output = torch.normal(self.G[x_cell], self.G_std[x_cell]).to(x.device).type(x.dtype)
+
+                    if self.mapping_mode == '2T2R':
+                        output = torch.where(x<0, -1 * output, output)
                 else:
                     output = x + (self.G_std[0]**2 * torch.randn_like(x, device=x.device))
                 
