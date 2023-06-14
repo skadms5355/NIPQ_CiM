@@ -251,8 +251,8 @@ def set_arguments():
                             help='representation methods of resistance (default: relative(rel))).')               
 
     # Transfer Learning
-    transfer_group.add_argument('--transfer-mode', default=0, type=int, choices=[0,1,2,3],
-                                help='0: nothing, 1: knowledge-distilation (KD), 2: attention transfer (AT), 3: KD+AT')
+    transfer_group.add_argument('--transfer-mode', default=0, type=int, choices=[0,1,2,3, 4],
+                                help='0: nothing, 1: knowledge-distilation (KD), 2: attention transfer (AT), 3: KD+AT, 4: KD (eh code)')
     transfer_group.add_argument('--teacher', default=None, type=str, metavar='PATH',
                                 help='Path to pretrained teacher model.')
     transfer_group.add_argument('--kd-alpha', default=0.99, type=float,

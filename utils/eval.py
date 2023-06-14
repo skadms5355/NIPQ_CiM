@@ -77,7 +77,7 @@ def train(train_loader, model, teacher, criterion, optimizer, scheduler, scaler,
         teacher.eval()
         teacher.cuda()
 
-    if args.transfer_mode >= 2:
+    if args.transfer_mode >= 2 and args.transfer_mode <= 3:
         teacher.module.transfer = True
         model.module.transfer = True
 
@@ -134,7 +134,7 @@ def train(train_loader, model, teacher, criterion, optimizer, scheduler, scaler,
                 # compute output
                 if args.transfer_mode == 0:
                     outputs = model(inputs)
-                elif args.transfer_mode == 1:
+                elif (args.transfer_mode == 1) or (args.transfer_mode == 4):
                     outputs = model(inputs)
                     with torch.no_grad():
                         outputs_teacher = teacher(inputs)
@@ -160,6 +160,10 @@ def train(train_loader, model, teacher, criterion, optimizer, scheduler, scaler,
                     loss_kd = kd_loss_fn(outputs, outputs_teacher, args.kd_temperature, args.kd_alpha)
                     loss_at = sum([at_loss(x,y) for x, y in zip(feats, feats_teacher)]) * args.at_beta
                     loss_ce = loss_ce * (1. - args.kd_alpha)
+                elif args.transfer_mode == 4: #eh code kd loss
+                    loss_kd = -1 * torch.mean(
+                            torch.sum(F.softmax(outputs_teacher, dim=1) * F.log_softmax(outputs, dim=1), dim=1))
+                    loss_at = 0
                 else:
                     loss_kd = 0
                     loss_at = 0
@@ -172,7 +176,7 @@ def train(train_loader, model, teacher, criterion, optimizer, scheduler, scaler,
             # compute output
             if args.transfer_mode == 0:
                 outputs = model(inputs)
-            elif args.transfer_mode == 1:
+            elif (args.transfer_mode == 1) or (args.transfer_mode == 4):
                 outputs = model(inputs)
                 with torch.no_grad():
                     outputs_teacher = teacher(inputs)
@@ -199,6 +203,10 @@ def train(train_loader, model, teacher, criterion, optimizer, scheduler, scaler,
                 loss_kd = kd_loss_fn(outputs, outputs_teacher, args.kd_temperature, args.kd_alpha)
                 loss_at = sum([at_loss(x,y) for x, y in zip(feats, feats_teacher)]) * args.at_beta
                 loss_ce = loss_ce * (1. - args.kd_alpha)
+            elif args.transfer_mode == 4:
+                loss_kd = -1 * torch.mean(
+                        torch.sum(F.softmax(outputs_teacher, dim=1) * F.log_softmax(outputs, dim=1), dim=1))
+                loss_at = 0
             else:
                 loss_kd = 0
                 loss_at = 0
@@ -229,15 +237,15 @@ def train(train_loader, model, teacher, criterion, optimizer, scheduler, scaler,
             loss_ce = reduce_tensor(loss_ce.data, args)
             prec1 = reduce_tensor(prec1, args)
             prec5 = reduce_tensor(prec5, args)
-            if (args.transfer_mode == 1) or (args.transfer_mode == 3):
+            if (args.transfer_mode > 0) and (args.transfer_mode != 2):
                 loss_kd = reduce_tensor(loss_kd.data, args)
-            if args.transfer_mode >= 2:
+            if (args.transfer_mode >= 2) and (args.transfer_mode <= 3):
                 loss_at = reduce_tensor(loss_at.data, args)
 
         losses_ce.update(loss_ce.item(), inputs.size(0))
-        if (args.transfer_mode == 1) or (args.transfer_mode == 3):
+        if (args.transfer_mode > 0) and (args.transfer_mode != 2):
             losses_kd.update(loss_kd.item(), inputs.size(0))
-        if args.transfer_mode >= 2:
+        if (args.transfer_mode >= 2) and (args.transfer_mode <= 3):
             losses_at.update(loss_at.item(), inputs.size(0))
 
         top1.update(prec1.item(), inputs.size(0))

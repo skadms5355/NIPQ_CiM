@@ -3,6 +3,7 @@ import torch.nn as nn
 from scipy.interpolate import interp1d
 from scipy.stats import rv_continuous
 import math
+import os
 import numpy as np
 import pandas as pd
 
@@ -98,26 +99,32 @@ class Noise_cell(nn.Module):
     def interp_init(self):
 
         ## hynix reram data to convert continuous data
-        if self.co_noise == 1:
+        if (self.co_noise == 1) or (self.co_noise == 3):
             df = pd.read_csv('/mnt/nfs/nameunkang/Project/NIPQ_CiM/data/ReRAM/Hynix_data_case1.csv')
-        elif self.co_noise == 2:
+        elif (self.co_noise == 2) or (self.co_noise == 4):
             df = pd.read_csv('/mnt/nfs/nameunkang/Project/NIPQ_CiM/data/ReRAM/Hynix_data_case2.csv')
         else:
             assert False, "Check co_noise parameter, You only select two option (1, 2) in {}".format(self.noise_type)
         
         self.max_state = df.iloc[:, 0::2].max().to_numpy()
         self.min_state = df.iloc[:, 0::2].min().to_numpy()
-        if 'ref' in self.mapping_mode:
+        self.Gmin = 10
+        if self.co_noise <= 2: # step size is wide
+            if 'ref' in self.mapping_mode:
+                state = [df.iloc[:, 2*i:2*i+2].dropna(axis=0).to_numpy().transpose() for i in range(self.clevel)]
+                self.delta_G = 10 # G_min = 10us, delta_G = 10uS
+            elif self.mapping_mode == '2T2R':
+                self.delta_G = 19 # G_min = 10us, delta_G = 10uS (not evenly uniform)
+                index = [0, 4, 8, 12, 16, 20, 24, 28, 30] # location of state
+                state = [df.iloc[:, i:i+2].dropna(axis=0).to_numpy().transpose() for i in index]
+                self.max_state = df.iloc[:, index].max().to_numpy()
+                self.min_state = df.iloc[:, index].min().to_numpy()
+        else: # step size is constant to 10uS
+            self.delta_G = 10
             state = [df.iloc[:, 2*i:2*i+2].dropna(axis=0).to_numpy().transpose() for i in range(self.clevel)]
-            self.delta_G = 10 # G_min = 10us, delta_G = 10uS
-            self.Gmin = 10
-        elif self.mapping_mode == '2T2R':
-            self.delta_G = 19 # G_min = 10us, delta_G = 10uS (not evenly uniform)
-            self.Gmin = 10
-            index = [0, 4, 8, 12, 16, 20, 24, 28, 30] # location of state
-            state = [df.iloc[:, i:i+2].dropna(axis=0).to_numpy().transpose() for i in index]
-            self.max_state = df.iloc[:, index].max().to_numpy()
-            self.min_state = df.iloc[:, index].min().to_numpy()
+            self.max_state = self.max_state[:self.clevel]
+            self.min_state = self.min_state[:self.clevel]
+            # import pdb; pdb.set_trace()
 
         self.pdf = [interp1d(state[c][0], state[c][1], kind='quadratic', bounds_error=False, fill_value=0) for c in range(self.clevel)]
         self.rv = [InterpolatedPDF(self.pdf[c], kind='quadratic', samples=1000, a=state[c][0].min(), b=state[c][0].max(), name='interpolated') for c in range(self.clevel)]
@@ -145,6 +152,10 @@ class Noise_cell(nn.Module):
                         samples[max_index] = torch.tensor(self.rv[c].rvs(size=max_index[0].shape[0]), dtype=x.dtype, device=x.device)
 
                 x[index] = samples
+            
+            # # for graph
+            # else:
+            #     samples = torch.tensor([], dtype=x.dtype, device=x.device)
 
             if torch.any(x<0):
                 import pdb; pdb.set_trace()
@@ -154,7 +165,6 @@ class Noise_cell(nn.Module):
             #     samples = torch.tensor(self.rv[c].rvs(size=x[index].numel()), dtype=x.dtype, device=x.device)
 
         #     sns.histplot(samples.cpu().numpy(), ax=ax[0], bins=200, alpha=0.2, element='step', fill=True, stat='density')
-        #     # import pdb; pdb.set_trace()
         #     plt_x = np.linspace(self.min_state[c], self.max_state[c], num=1000)
         #     sns.lineplot(x=plt_x, y=self.pdf[c](plt_x), ax=ax1)
         #     sns.histplot(samples.cpu().numpy(), ax=ax[1], bins=200, alpha=0.2, element='step', fill=True, stat='count')
@@ -182,7 +192,7 @@ class Noise_cell(nn.Module):
         # ax[1].set_yticks(ax_ylabels)
 
         # # setting x-axis figure ax
-        # ax[0].set_title(f'ReRAM Noise Sampling (Case 2)', loc='right', fontsize=16)
+        # ax[0].set_title(f'ReRAM Noise Sampling (Case 2, Step=10uS)', loc='right', fontsize=16)
         # ax[0].set_xlabel('Conductance [uS]')
         # ax[0].set_xlabel(ax[0].get_xlabel(), fontsize=16)
         # xlabels = ax[0].get_xticks()
@@ -197,7 +207,7 @@ class Noise_cell(nn.Module):
         # ax[1].set_xlim(0, np.ceil(xlabels.max()))
         # ax[1].set_xticks(ax[1].get_xticks())
         # ax[1].set_xticklabels(ax[1].get_xticks(), fontsize=14)
-        # plt.savefig("/mnt/nfs/nameunkang/Project/NIPQ_CiM/graph/ReRAM/pdf_sample.png")
+        # plt.savefig(os.getcwd() +"/graph/ReRAM/pdf_sample.png")
         # import pdb; pdb.set_trace()
 
         return x 

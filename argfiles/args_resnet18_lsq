@@ -34,14 +34,3 @@
 
 --dali          y
 --distributed   y
-
-#hwnoise
---pretrained    ./checkpoints/imagenet/quant/lsq_resnet18/a:4_w:4/2022-Sep-12-01-10-42/model_best.pth.tar
---mapping_mode  ref_a
---cbits         4
-
-# noise option
---is_noise      y
---co_noise      0.03
---noise_type    grad
---res_val       rel

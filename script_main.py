@@ -27,6 +27,7 @@ parser.add_argument('--noise_type', default='prop', type=str,
                     choices=['static', 'grad', 'prop', 'interp'])
 parser.add_argument('--iter', default=1, type=int,
                     help='how many iterate inference process')
+parser.add_argument('--KD', action='store_true')
 parser.add_argument('--tnipq', default='hwnoise', type=str,
                     choices=['quant', 'hwnoise', 'qhwnoise'])
 parser.add_argument('--tnoise_type', default='prop', type=str,
@@ -114,8 +115,12 @@ else:
                 tn_file = 't_{}_{}'.format(args.tnoise_type, args.tco_noise)
                 pretrained = './checkpoints/{}/nipq/nipq_{}/qhwnoise_fix:4/{}/no_psum_c:4/{}_{}/best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tco_noise)
             elif "lsq" in arch:
-                tn_file = '{}_{}_{}'.format(args.tnoise_type, args.tres_val, args.tco_noise)
-                pretrained = './checkpoints/{}/quant/lsq_{}/a:4_w:4/{}/no_psum_c:4/{}_{}_{}/best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tres_val, args.tco_noise)
+                if args.KD:
+                    tn_file = 'KD_{}_{}_{}'.format(args.tnoise_type, args.tres_val, args.tco_noise)
+                    pretrained = './checkpoints/{}/quant/lsq_{}/a:4_w:4/{}/no_psum_c:4/{}_{}_{}/KD_best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tres_val, args.tco_noise)
+                else:
+                    tn_file = '{}_{}_{}'.format(args.tnoise_type, args.tres_val, args.tco_noise)
+                    pretrained = './checkpoints/{}/quant/lsq_{}/a:4_w:4/{}/no_psum_c:4/{}_{}_{}/best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tres_val, args.tco_noise)
         else:
             tn_file = None
 
@@ -146,6 +151,7 @@ else:
                     else:
                         log_path = os.path.join("checkpoints", args.dataset, "quant", arch, "eval/a:4_w:4", mapping_mode, "{}_c:4/log_bitserial_info/hist".format(a_size), check_file)
 
+                # import pdb; pdb.set_trace()
                 if os.path.isfile(log_path):
                     log_file=False
                 else:

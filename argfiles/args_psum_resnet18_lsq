@@ -21,7 +21,7 @@
 --wbits         4
 --abits         4
 --pretrained    ./checkpoints/imagenet/quant/lsq_resnet18/a:4_w:4/2022-Sep-12-01-10-42/model_best.pth.tar
-# --pretrained    ./checkpoints/imagenet/quant/lsq_resnet18/a:4_w:4/ref_a/no_psum_c:4/prop_type_0.03/2023-Mar-30-19-39-43/model_best.pth.tar
+# --pretrained    ./checkpoints/imagenet/quant/lsq_resnet18/a:4_w:4/2T2R/no_psum_c:4/interp_rel_1.0/2023-May-30-14-50-45/model_best.pth.tar
 
 --psum_comp     y
 --arraySize     128

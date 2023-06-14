@@ -218,10 +218,12 @@ def main_worker(gpu, ngpus_per_node, args):
     # Load teacher model if required
     if args.teacher is not None:
         print("==> Loading teacher model...")
-        if args.dataset == 'imagenet':
-            if args.teacher=='resnet18':
-                from torchvision.models import resnet18
-                teacher = resnet18(weights='DEFAULT')
+        if (args.dataset == 'imagenet') and (args.teacher=='resnet18'):
+            from torchvision.models import resnet18
+            teacher = resnet18(weights='DEFAULT')
+        elif (args.dataset == 'imagenet') and (args.teacher == 'efficientb0'):
+            from torchvision.models.efficientnet import efficientnet_b0
+            teacher = efficientnet_b0(weights='DEFAULT')
         else:
             assert os.path.exists(args.teacher), 'Error: no teacher model found!'
             state = torch.load(args.teacher, map_location=lambda storage, loc: storage.cuda(args.gpu))
@@ -556,7 +558,10 @@ def main_worker(gpu, ngpus_per_node, args):
             from models.quantized_lsq_modules import hwnoise_initialize
             hwnoise_initialize(model, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
                                 noise_type=args.noise_type, res_val=args.res_val, max_epoch=(args.epochs - args.ft_epoch))
-
+            for m in model.modules():
+                if type(m).__name__ in ["QConv"]:
+                    m.quan_w_fn.s.requires_grad = False
+                    print('range gradient fixed')
     # Train and val
     start_time = time.time()
     for epoch in range(start_epoch, args.epochs):
