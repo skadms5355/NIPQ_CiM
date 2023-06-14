@@ -387,7 +387,6 @@ def main_worker(gpu, ngpus_per_node, args):
             os.makedirs(report_path, exist_ok=True)
             report_file = os.path.join(report_path, 'model_report.pkl')
 
-
     start_time=time.time()
 
     if args.evaluate:
@@ -408,6 +407,15 @@ def main_worker(gpu, ngpus_per_node, args):
                                         noise_type=args.noise_type, res_val=args.res_val)
             else:
                 assert False, "This mode is not supported psum computation"
+
+            # get_parameters
+            if args.rank == 0:
+                for data, target in test_loader:
+                    img = data.to("cuda", non_blocking=True)
+                    # img = torch.Tensor(1, 3, 224, 224) if args.dataset =='imagenet' else torch.Tensor(1, 3, 32, 32)  # only two option imagenet
+                    from utils.get_parameter import get_parameter
+                    get_parameter(model, img)
+                    import pdb; pdb.set_trace()
 
             if args.log_file:
                 if args.class_split:

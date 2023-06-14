@@ -144,6 +144,7 @@ class SplitConv(nn.Conv2d):
             out_tmp = []
             for i in range(0, self.split_groups):
                 split_input = input.narrow(1, input_channel, self.group_in_channels)
+                import pdb; pdb.set_trace()
                 out_tmp.append(F.conv2d(split_input, split_weight[i], bias=None,\
                             stride=self.stride, padding=padding, dilation=self.dilation))
                 # prepare for the next stage

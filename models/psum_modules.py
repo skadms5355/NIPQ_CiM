@@ -24,10 +24,16 @@ ACC_BITS = 0 # MSB:3 LSB:0
 def split_conv(weight, nWL):
     nIC = weight.shape[1]
     nWH = weight.shape[2]*weight.shape[3]
-    nMem = int(math.ceil(nIC/math.floor(nWL/nWH)))
-    nIC_list = [int(math.floor(nIC/nMem)) for _ in range(nMem)]
-    for idx in range(nMem-1, nMem-(nIC-nIC_list[0]*nMem)-1, -1):
-        nIC_list[idx] += 1
+    nMem = int(math.floor(nWL/nWH))
+    nG = int(math.floor(nIC/math.floor(nWL/nWH)))
+    nIC_list = [nMem for _ in range(nG)]
+    if nG*nMem != nIC:
+        nIC_list.append(nIC-nG*nMem)
+
+    # nMem = int(math.ceil(nIC/math.floor(nWL/nWH)))
+    # nIC_list = [int(math.floor(nIC/nMem)) for _ in range(nMem)]
+    # for idx in range(nMem-1, nMem-(nIC-nIC_list[0]*nMem)-1, -1):
+    #     nIC_list[idx] += 1
 
     return nIC_list
 
@@ -128,8 +134,10 @@ class PsumQConv(SplitConv):
         if channels:
             self.split_groups = calculate_groups_channels(arraySize, self.in_channels, self.kernel_size[0])
             self.nIC_list = split_conv(self.weight, arraySize)
-            self.group_in_channels = self.nIC_list[-1]
-            self.group_move_in_channels = self.nIC_list[:-1]
+            # self.group_in_channels = self.nIC_list[-1]
+            # self.group_move_in_channels = self.nIC_list[:-1]
+            self.group_in_channels = self.nIC_list[0]
+            self.group_move_in_channels = self.nIC_list
         else:
             self.split_groups = calculate_groups(arraySize, self.fan_in)
             if self.fan_in % self.split_groups != 0:
@@ -608,6 +616,7 @@ class PsumQConv(SplitConv):
 
     def _bitserial_comp_forward(self, input, weight=None, short_path=None):
         # delete padding_shpe & additional padding operation by matching padding/stride format with nn.Conv2d
+        nopadding_input = input
         if self.padding > 0:
             if self.padding_mode is 'neg':
                 self.padding_value = float(input.min()) 
@@ -645,6 +654,9 @@ class PsumQConv(SplitConv):
                     a_shift = None
                     abits = 1
 
+                #get_parameter
+                self.sinput = torch.split((nopadding_input / a_scale).to(torch.uint8), self.nIC_list, dim =1)
+
                 if self.psum_mode == 'sigma' or 'fix':
                     minVal, maxVal, midVal = self._ADC_clamp_value()
                     abound = 1 if self.abit_serial else (2**self.wbits - 1)
@@ -662,14 +674,23 @@ class PsumQConv(SplitConv):
 
                 if self.split_channels:
                     split = torch.split(qweight, self.nIC_list, dim=1)
-                    split_w = split[-1]
-                    for i in range(self.split_groups-2, -1, -1):
-                        if self.nIC_list[i] != self.group_in_channels:
+                    split_w = split[0]
+                    for i in range(1, len(split)):
+                        if split[i].shape[1] != self.group_in_channels:
                             zero = torch.zeros(size=(split[i].shape[0], self.group_in_channels - split[i].shape[1], split[i].shape[2], split[i].shape[3]), device=split[i].device)
                             sexpand = torch.cat([split[i], zero], dim=1)
-                            split_w = torch.cat([sexpand, split_w], dim=0)
-                            continue
-                        split_w = torch.cat([split[i], split_w], dim=0)
+                            split_w = torch.cat([split_w, sexpand], dim=0)
+                        else:
+                            split_w = torch.cat([split_w, split[i]], dim=0)
+
+                    # split_w = split[-1]
+                    # for i in range(self.split_groups-2, -1, -1):
+                    #     if self.nIC_list[i] != self.group_in_channels:
+                    #         zero = torch.zeros(size=(split[i].shape[0], self.group_in_channels - split[i].shape[1], split[i].shape[2], split[i].shape[3]), device=split[i].device)
+                    #         sexpand = torch.cat([split[i], zero], dim=1)
+                    #         split_w = torch.cat([sexpand, split_w], dim=0)
+                    #         continue
+                    #     split_w = torch.cat([split[i], split_w], dim=0)
                     self.sweight = split_w
                 else:
                     self.sweight = conv_sweight_cuda.forward(self.sweight, qweight, self.group_in_offset, self.split_groups)
@@ -677,13 +698,20 @@ class PsumQConv(SplitConv):
                 sweight, wsplit_num = self._weight_bitserial(self.sweight, w_scale, cbits=self.cbits)
                 weight_chunk = torch.chunk(sweight, wsplit_num, dim=1)
 
+                # get_parameter
+                self.weight_group = torch.chunk((self.sweight/w_scale).to(torch.int8), self.split_groups, dim=0)
+
                 if w_serial:
                     w_one = torch.ones(size=weight_chunk[0].size(), device=weight_chunk[0].device)
 
                 # parameter computing
                 psum_scale = w_scale * a_scale
 
+                #get_parameter
+                self.psum_scale = psum_scale
+
                 out_adc = None
+                self.adc_list = []
                 for abit, input_s in enumerate(input_chunk):
                     a_mag = 2**(abit)
 
@@ -722,6 +750,9 @@ class PsumQConv(SplitConv):
                                                         pbound=self.pbound, center=self.center, weight=out_mag/multi_scale,
                                                         groups=self.split_groups, pzero=self.pzero)
 
+                        # get_parameter
+                        self.adc_list.append(out_adc)
+
                         # weight output summation
                         if self.mapping_mode == 'two_com':
                             if wsplit_num == wbit+1:
@@ -738,6 +769,9 @@ class PsumQConv(SplitConv):
                         # import pdb; pdb.set_trace()
                     out_inf = out_wsum if abit == 0 else out_inf+out_wsum
 
+                # get_parameter
+                self.output = out_inf
+                import pdb; pdb.set_trace()
                 # restore out_inf's scale
                 out_inf = out_inf * psum_scale
 
