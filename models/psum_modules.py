@@ -750,9 +750,6 @@ class PsumQConv(SplitConv):
                                                         pbound=self.pbound, center=self.center, weight=out_mag/multi_scale,
                                                         groups=self.split_groups, pzero=self.pzero)
 
-                        # get_parameter
-                        self.adc_list.append(out_adc)
-
                         # weight output summation
                         if self.mapping_mode == 'two_com':
                             if wsplit_num == wbit+1:
@@ -764,14 +761,19 @@ class PsumQConv(SplitConv):
                         else:
                             out_wsum = out_adc if wbit == 0 else out_wsum + out_adc
 
+
                         # output_real = F.conv2d(input_s, qweight, bias=self.bias,
                         #                         stride=self.stride, dilation=self.dilation, groups=self.groups)
                         # import pdb; pdb.set_trace()
+
+                    # get_parameter
+                    self.adc_list.append(out_wsum.to(torch.int16))
+
                     out_inf = out_wsum if abit == 0 else out_inf+out_wsum
 
                 # get_parameter
-                self.output = out_inf
-                import pdb; pdb.set_trace()
+                self.output = out_inf.to(torch.int16)
+
                 # restore out_inf's scale
                 out_inf = out_inf * psum_scale
 

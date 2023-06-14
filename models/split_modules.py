@@ -142,9 +142,14 @@ class SplitConv(nn.Conv2d):
 
             input_channel = 0
             out_tmp = []
+
+            # for get parameter
+            if self.group_move_in_channels[-1] != self.group_in_channels:
+                zero = torch.zeros(size=(input.shape[0], self.group_in_channels - self.group_move_in_channels[-1], input.shape[2], input.shape[3]), device=input.device)
+                input = torch.cat([input, zero], dim=1)
+
             for i in range(0, self.split_groups):
                 split_input = input.narrow(1, input_channel, self.group_in_channels)
-                import pdb; pdb.set_trace()
                 out_tmp.append(F.conv2d(split_input, split_weight[i], bias=None,\
                             stride=self.stride, padding=padding, dilation=self.dilation))
                 # prepare for the next stage

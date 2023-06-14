@@ -24,6 +24,7 @@ def get_parameter(model, x):
         psum_scale.append(module.psum_scale)
 
     def bn_forward_hook(module, inputs, outputs):
+        # import pdb; pdb.set_trace()
         bn_weight.append(module.weight)
         bn_bias.append(module.bias)
     
@@ -36,7 +37,6 @@ def get_parameter(model, x):
             hooks.append(module.register_forward_hook(bn_forward_hook))
 
         if isinstance(module, (PsumQConv)):
-            print('weight, s', module)
             hooks.append(module.register_forward_hook(psum_forward_hook))
 
         if isinstance(module, (Q_act)):
