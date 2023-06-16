@@ -712,6 +712,7 @@ class PsumQConv(SplitConv):
 
                 out_adc = None
                 self.adc_list = []
+                out_wgroup = []
                 for abit, input_s in enumerate(input_chunk):
                     a_mag = 2**(abit)
 
@@ -750,6 +751,13 @@ class PsumQConv(SplitConv):
                                                         pbound=self.pbound, center=self.center, weight=out_mag/multi_scale,
                                                         groups=self.split_groups, pzero=self.pzero)
 
+                            # for get_parameter
+                            out_group = None
+                            out_group = psum_quant(out_group, out_tmp,
+                                                        pbits=self.pbits, step=self.pstep, 
+                                                        half_num_levels=self.phalf_num_levels, 
+                                                        pbound=self.pbound, center=self.center, weight=out_mag/multi_scale,
+                                                        groups=self.split_groups, pzero=self.pzero)
                         # weight output summation
                         if self.mapping_mode == 'two_com':
                             if wsplit_num == wbit+1:
@@ -761,13 +769,27 @@ class PsumQConv(SplitConv):
                         else:
                             out_wsum = out_adc if wbit == 0 else out_wsum + out_adc
 
-
+                        for g in range(0, self.split_groups):
+                            if wsplit_num == wbit+1:
+                                out_wgroup[g] -= out_group[g]
+                            else:
+                                if (wbit==0) and (abit==0):
+                                    out_wgroup.append(out_group[g])
+                                elif (wbit==0):
+                                    out_wgroup[g] = out_group[g]
+                                else:
+                                    out_wgroup[g] += out_group[g]
+                            
                         # output_real = F.conv2d(input_s, qweight, bias=self.bias,
                         #                         stride=self.stride, dilation=self.dilation, groups=self.groups)
                         # import pdb; pdb.set_trace()
 
                     # get_parameter
-                    self.adc_list.append(out_wsum.to(torch.int16))
+                    for g in range(0, self.split_groups):
+                        if abit==0:
+                            self.adc_list.append(out_wgroup[g].to(torch.int16))
+                        else:
+                            self.adc_list[g] += out_wgroup[g].to(torch.int16)
 
                     out_inf = out_wsum if abit == 0 else out_inf+out_wsum
 
