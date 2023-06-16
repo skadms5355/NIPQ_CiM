@@ -53,8 +53,10 @@ def get_parameter(model, x):
     model(x.cuda())
 
     layer = 5 # only psum layer (conv)
-    max_range = 2**13
-    min_range = -2**13 +1
+    max_range = 2**15 - 1 
+    min_range = -2**8
+    max_hw = 2**15-1
+    min_hw= -2**15 
     delta = (max_range-min_range)/(2**4)
 
     inputs = {}
@@ -82,20 +84,45 @@ def get_parameter(model, x):
         # max_clip[i] = ((2**4-1) * next_scale[i]).to(torch.int16)
 
         # hw_act = torch.round((torch.clip((merge_outputs[i]*m+n), min_range+delta/2, max_range-delta/2)-min_range-delta/2)/delta)
+        print('\n\nm max, min', m.max(), m.min())
+        print('n max, min', n.max(), n.min())
+        n_clip = torch.clip(n, min_hw, max_hw)
+        n_clip_int = n_clip.round().to(torch.int16) 
         m_int = m.round().to(torch.int16)
         n_int = n.round().to(torch.int16)
+        print('\nm_int max, min', m_int.max(), m_int.min())
+        print('n_clip_int max, min', n_clip_int.max(), n_clip_int.min())
+        print('n_int max, min', n_int.max(), n_int.min())
         act_weight[i] = m_int
         act_bias[i] = n_int
+        m = m.unsqueeze(0).unsqueeze(2).unsqueeze(3)
+        n = n.unsqueeze(0).unsqueeze(2).unsqueeze(3)
         m_int = m_int.unsqueeze(0).unsqueeze(2).unsqueeze(3)
         n_int = n_int.unsqueeze(0).unsqueeze(2).unsqueeze(3)
+        n_clip_int = n_clip_int.unsqueeze(0).unsqueeze(2).unsqueeze(3)
+        y_hw = merge_outputs[i]*m+n
+        y_hw_int = torch.clip(merge_outputs[i]*m_int+n_int, min_hw, max_hw)
+        y_hw_clip = torch.clip(merge_outputs[i]*m_int+n_clip_int, min_hw, max_hw)
+        print('\ny_hw max, min', y_hw.max(), y_hw.min())
+        print('y_hw_int max, min', y_hw_int.max(), y_hw_int.min())
+        print('y_hw_clip max, min', y_hw_clip.max(), y_hw_clip.min())
 
         # results comparision
         sf_act = act_output[i]/next_scale[i]
-        hw_act_int = torch.round((torch.clip((merge_outputs[i]*m_int+n_int), min_range+delta/2, max_range-delta/2)-min_range-delta/2)/delta)
+        hw_act = torch.round((torch.clip(y_hw, min_range+delta/2, max_range-delta/2)-min_range-delta/2)/delta)
+        hw_act_int = torch.round((torch.clip(y_hw_int, min_range+delta/2, max_range-delta/2)-min_range-delta/2)/delta)
+        hw_ci = torch.round((torch.clip(y_hw_clip, min_range+delta/2, max_range-delta/2)-min_range-delta/2)/delta)
         if sf_act.shape[2] == hw_act_int.shape[2]:
+            index_b=torch.where(sf_act.round().to(torch.uint8) != hw_act.round().to(torch.uint8))
             index=torch.where(sf_act.round().to(torch.uint8) != hw_act_int.round().to(torch.uint8))
+            index_i=torch.where(sf_act.round().to(torch.uint8) != hw_ci.round().to(torch.uint8))
+            ind = torch.where(sf_act[index].round().to(torch.uint8)-hw_act_int[index].round().to(torch.uint8) == 1)
+            ind_not = torch.where(sf_act[index].round().to(torch.uint8)-hw_act_int[index].round().to(torch.uint8) != 1)
+
+            print(index_b[0].size())
             print(index[0].size())
-            import pdb; pdb.set_trace()
+            print(index_i[0].size())
+            # import pdb; pdb.set_trace()
 
     paramters = {
         'inputs' : inputs,
