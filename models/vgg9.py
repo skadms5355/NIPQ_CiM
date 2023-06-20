@@ -66,7 +66,7 @@ class LSQ_vgg9(nn.Module):
         self.symmetric = False
 
         self.features = nn.Sequential(
-            nn.Conv2d(3, 128, kernel_size=3, stride=1, padding=1, bias=False),
+            QConv(3, 128, wbits=kwargs['wbits'] if kwargs['FL_quant'] else 32, kernel_size=3, stride=1, padding=1, bias=False, symmetric=self.symmetric),
             nn.BatchNorm2d(128),
             add_act(abits=kwargs['abits']),
 
@@ -100,10 +100,11 @@ class LSQ_vgg9(nn.Module):
 
             QLinear(1024, 1024, wbits=kwargs['wbits'], symmetric=self.symmetric),
             nn.BatchNorm1d(1024),
-            add_act(abits=32 if kwargs['wbits']==32 else 32), 
+            add_act(abits=kwargs['abits'] if kwargs['FL_quant'] else 32), 
 
             nn.Dropout(kwargs['drop']),
-            nn.Linear(1024, kwargs['num_classes'], bias=True),
+            # nn.Linear(1024, kwargs['num_classes'], bias=True),
+            QLinear(1024, kwargs['num_classes'], wbits=kwargs['wbits'] if kwargs['FL_quant'] else 32, bias=True, symmetric=self.symmetric),
             nn.BatchNorm1d(kwargs['num_classes']),
         )
 

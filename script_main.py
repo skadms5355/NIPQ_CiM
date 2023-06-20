@@ -28,13 +28,14 @@ parser.add_argument('--noise_type', default='prop', type=str,
 parser.add_argument('--iter', default=1, type=int,
                     help='how many iterate inference process')
 parser.add_argument('--KD', action='store_true')
+parser.add_argument('--FL_quant', action='store_true')
 parser.add_argument('--tnipq', default='hwnoise', type=str,
                     choices=['quant', 'hwnoise', 'qhwnoise'])
 parser.add_argument('--tnoise_type', default='prop', type=str,
                     choices=['static', 'grad', 'prop', 'interp'])
 parser.add_argument('--tres_val', default='abs', type=str,
                     choices=['abs', 'rel'])
-parser.add_argument('--tco_noise', type=float, default=0.03)
+parser.add_argument('--tco_noise', type=float, default=0)
 
 args = parser.parse_args()
 
@@ -84,7 +85,10 @@ if args.dataset == 'imagenet':
     if "nipq" in arch:
         pretrained =  './checkpoints/imagenet/nipq/nipq_resnet18/qnoise_fix:4/2023-Apr-03-14-51-48/model_best.pth.tar'
     elif "lsq" in arch:
-        pretrained  = './checkpoints/imagenet/quant/lsq_resnet18/a:4_w:4/2022-Sep-12-01-10-42/model_best.pth.tar'
+        if args.FL_quant:
+            pretrained  = './checkpoints/imagenet/quant/lsq_resnet18/FL_a:4_w:4/2023-Jun-19-19-18-16/model_best.pth.tar'
+        else:
+            pretrained  = './checkpoints/imagenet/quant/lsq_resnet18/a:4_w:4/2022-Sep-12-01-10-42/model_best.pth.tar'
     else:
         assert False, "No pretrained model"
 elif args.dataset == 'pascal':
@@ -94,10 +98,10 @@ elif args.dataset == 'cifar10':
     if "nipq" in arch:
         pretrained = './checkpoints/cifar10/nipq/nipq_vgg9/qnoise_fix:4/2023-Feb-22-14-31-20/model_best.pth.tar'
     else:
-        pretrained = './checkpoints/cifar10/quant/lsq_vgg9/a:4_w:4/2022-Apr-01-18-57-49/model_best.pth.tar'
-
-
-
+        if args.FL_quant:
+            pretrained = './checkpoints/cifar10/quant/lsq_vgg9/FL_a:4_w:4/2023-Jun-19-16-49-05/model_best.pth.tar'
+        else:
+            pretrained = './checkpoints/cifar10/quant/lsq_vgg9/a:4_w:4/2022-Apr-01-18-57-49/model_best.pth.tar'
 
 if not args.psum_comp:
     for mapping_mode in mapping_mode_list:
@@ -146,16 +150,22 @@ else:
                     else:
                         log_path = os.path.join("checkpoints", args.dataset, "nipq", arch, "eval", "{}_fix:4".format(nipq_noise), mapping_mode, "{}_c:4/log_bitserial_info/hist".format(a_size), check_file)
                 else:
-                    if is_noise:
-                        log_path = os.path.join("checkpoints", args.dataset, "quant", arch, "eval/a:4_w:4", mapping_mode, "{}_c:4/{}_type_{}/log_bitserial_info/hist".format(a_size, noise_name, co_noise), check_file)
+                    if args.FL_quant:
+                        if is_noise:
+                            log_path = os.path.join("checkpoints", args.dataset, "quant", arch, "eval/FL_a:4_w:4", mapping_mode, "{}_c:4/{}_type_{}/log_bitserial_info/hist".format(a_size, noise_name, co_noise), check_file)
+                        else:
+                            log_path = os.path.join("checkpoints", args.dataset, "quant", arch, "eval/FL_a:4_w:4", mapping_mode, "{}_c:4/log_bitserial_info/hist".format(a_size), check_file)
                     else:
-                        log_path = os.path.join("checkpoints", args.dataset, "quant", arch, "eval/a:4_w:4", mapping_mode, "{}_c:4/log_bitserial_info/hist".format(a_size), check_file)
+                        if is_noise:
+                            log_path = os.path.join("checkpoints", args.dataset, "quant", arch, "eval/a:4_w:4", mapping_mode, "{}_c:4/{}_type_{}/log_bitserial_info/hist".format(a_size, noise_name, co_noise), check_file)
+                        else:
+                            log_path = os.path.join("checkpoints", args.dataset, "quant", arch, "eval/a:4_w:4", mapping_mode, "{}_c:4/log_bitserial_info/hist".format(a_size), check_file)
 
                 # import pdb; pdb.set_trace()
                 if os.path.isfile(log_path):
                     log_file=False
                 else:
-                    log_file=True
+                    log_file=False
                     # local = "/home/nameunkang/Project/QNN_CIM"
 
                 for pbit in pbits_list:
@@ -168,15 +178,28 @@ else:
                                             --is_noise y --tn_file {} --nipq_noise {} --co_noise {} --noise_type {}'
                                             .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, tn_file, nipq_noise, co_noise, noise_type))
                             else:
-                                os.system('python main.py  --argfile {} --gpu-id {} --psum_comp {} --arraySize {} --mapping_mode {} \
-                                            --pbits {} --per_class {} --testlog_reset {} --log_file {} --pretrained {} \
-                                            --is_noise y --nipq_noise {} --co_noise {} --noise_type {}'
-                                            .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, nipq_noise, co_noise, noise_type))
+                                if args.FL_quant:
+                                    os.system('python main.py  --argfile {} --gpu-id {} --psum_comp {} --arraySize {} --mapping_mode {} \
+                                                --pbits {} --per_class {} --testlog_reset {} --log_file {} --pretrained {} \
+                                                --is_noise y --nipq_noise {} --co_noise {} --noise_type {} --FL_quant y'
+                                                .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, nipq_noise, co_noise, noise_type))
+                                else:
+                                    os.system('python main.py  --argfile {} --gpu-id {} --psum_comp {} --arraySize {} --mapping_mode {} \
+                                                --pbits {} --per_class {} --testlog_reset {} --log_file {} --pretrained {} \
+                                                --is_noise y --nipq_noise {} --co_noise {} --noise_type {}'
+                                                .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, nipq_noise, co_noise, noise_type))
+
                         else:
-                            print(f'this operation is pbits {pbit}, arraySize {a_size}, per_class {per_class}, testlog_reset {testlog} log_file {log_file}')
-                            os.system('python main.py  --argfile {} --gpu-id {} --psum_comp {} --arraySize {} --mapping_mode {} \
-                                        --pbits {} --per_class {} --testlog_reset {} --log_file {} --pretrained {} --is_noise n --nipq_noise {}'
-                                        .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, nipq_noise))
+                            if args.FL_quant:
+                                print(f'this operation is pbits {pbit}, arraySize {a_size}, per_class {per_class}, testlog_reset {testlog} log_file {log_file}')
+                                os.system('python main.py  --argfile {} --gpu-id {} --psum_comp {} --arraySize {} --mapping_mode {} \
+                                            --pbits {} --per_class {} --testlog_reset {} --log_file {} --pretrained {} --is_noise n --nipq_noise {} --FL_quant y'
+                                            .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, nipq_noise))
+                            else:
+                                print(f'this operation is pbits {pbit}, arraySize {a_size}, per_class {per_class}, testlog_reset {testlog} log_file {log_file}')
+                                os.system('python main.py  --argfile {} --gpu-id {} --psum_comp {} --arraySize {} --mapping_mode {} \
+                                            --pbits {} --per_class {} --testlog_reset {} --log_file {} --pretrained {} --is_noise n --nipq_noise {}'
+                                            .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, nipq_noise))
                         testlog=False
                         log_file=False
 

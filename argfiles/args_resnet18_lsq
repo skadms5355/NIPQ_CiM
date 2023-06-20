@@ -12,17 +12,20 @@
 --valid-size    0
 
 --optimizer     sgd
---init-method	kaiming
---init-fan      fan_out
+# FL quant
+# --init-method	kaiming
+# --init-fan      fan_out
 
 --lr-method     lr_cosineannealwr
---T0            80
+--warmup        3
+--warmup_start_multiplier 0.1
+--T0            77
 --gamma         0.1
 
 --model_mode    quant
 --arch          lsq_resnet18
-# --gpu-id	    0
-# --amp           y
+
+--pretrained    url
 
 --wbits         4
 --abits         4

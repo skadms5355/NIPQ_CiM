@@ -102,10 +102,16 @@ def main():
 
 
         if args.model_mode == 'nipq':
-            prefix = os.path.join(prefix, "{}_fix:{}".format(args.nipq_noise, args.fixed_bit))
+            if args.FL_quant:
+                prefix = os.path.join(prefix, "FL_{}_fix:{}".format(args.nipq_noise, args.fixed_bit))
+            else:
+                prefix = os.path.join(prefix, "{}_fix:{}".format(args.nipq_noise, args.fixed_bit))
         else:
-            prefix = os.path.join(prefix, "a:{}_w:{}".format(args.abits,args.wbits))
-
+            if args.FL_quant:
+                prefix = os.path.join(prefix, "FL_a:{}_w:{}".format(args.abits,args.wbits))
+            else:
+                prefix = os.path.join(prefix, "a:{}_w:{}".format(args.abits,args.wbits))
+        
         if args.mapping_mode != 'none':
 
             if args.arraySize > 0 and args.psum_comp: # inference with psum comp
@@ -324,11 +330,12 @@ def main_worker(gpu, ngpus_per_node, args):
 
         model_dict = model.state_dict()
         model_keys = model_dict.keys()
+        
         for name, param in load_dict.items():
-            # if ('resnet18' in args.arch and 'downsample' in name) and args.pretrained == 'url':
-            #     name_list = name.split('.')
-            #     name_list[-2] = str(int(name_list[4])+1)
-            #     name = ".".join(name_list)
+            if ('resnet18' in args.arch and 'downsample' in name) and args.pretrained == 'url':
+                name_list = name.split('.')
+                name_list[-2] = str(int(name_list[4])+1)
+                name = ".".join(name_list)
 
             if name in model_keys:
                 model_dict[name] = param
@@ -559,9 +566,10 @@ def main_worker(gpu, ngpus_per_node, args):
             hwnoise_initialize(model, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
                                 noise_type=args.noise_type, res_val=args.res_val, max_epoch=(args.epochs - args.ft_epoch))
             for m in model.modules():
-                if type(m).__name__ in ["QConv"]:
-                    m.quan_w_fn.s.requires_grad = False
-                    print('range gradient fixed')
+                if type(m).__name__ in ["QConv", "QLinear"]:
+                    if m.wbits != 32:
+                        m.quan_w_fn.s.requires_grad = False
+                        print('range gradient fixed')
     # Train and val
     start_time = time.time()
     for epoch in range(start_epoch, args.epochs):

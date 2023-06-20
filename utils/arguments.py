@@ -169,12 +169,14 @@ def set_arguments():
                             help='Set requires_grad to True for the nonlinear function trainable parameters')
     arch_group.add_argument('--bn-bias', default=0.0, type=float,
                             help='Initialize value for BN bias.')
+    arch_group.add_argument('--FL_quant', default='False', type=str2bool,
+                            help='First & Last Layer quantization to wbit/abit same precision ')
     arch_group.add_argument('--abits', default=32, type=int,
                             help='Bit resolution of inputs. 32 is for full-precision.')
     arch_group.add_argument('--wbits', default=32, type=int,
                             help='Bit resolution of weights. 32 is for full-precision.')
     arch_group.add_argument('--wsymmetric', default='False', type=str2bool,
-                            help='Decide weight symmetric range (Default:False')
+                            help='Decide weight symmetric range (Default:False)')
     arch_group.add_argument('--x_offset', default=0.0, type=float,
                             help='x-axis offset for activation function.')
     arch_group.add_argument('--width', default=1.0, type=float,

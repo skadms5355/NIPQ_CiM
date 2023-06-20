@@ -66,7 +66,8 @@ class PLSQ_vgg9(nn.Module):
         super(PLSQ_vgg9, self).__init__()
 
         self.features = nn.Sequential(
-            nn.Conv2d(3, 128, kernel_size=3, stride=1, padding=1, bias=False),
+            # nn.Conv2d(3, 128, kernel_size=3, stride=1, padding=1, bias=False),
+            QConv(3, 128, wbits=kwargs['wbits'] if kwargs['FL_quant'] else 32, kernel_size=3, stride=1, padding=1, bias=False),
             nn.BatchNorm2d(128),
             add_act(abits=kwargs['abits'], bitserial=kwargs['abit_serial']),
 
@@ -121,10 +122,14 @@ class PLSQ_vgg9(nn.Module):
                         psum_mode=kwargs['psum_mode'], cbits=kwargs['cbits'], 
                         is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type']),
             nn.BatchNorm1d(1024),
-            add_act(abits=32), 
+            add_act(abits=kwargs['abits'] if kwargs['FL_quant'] else 32), 
 
             nn.Dropout(kwargs['drop']),
-            nn.Linear(1024, kwargs['num_classes'], bias=True),
+            PsumQLinear(1024, kwargs['num_classes'], wbits=kwargs['wbits'] if kwargs['FL_quant'] else 32, arraySize=kwargs['arraySize'], 
+                        wbit_serial=kwargs['wbit_serial'], mapping_mode=kwargs['mapping_mode'], 
+                        psum_mode=kwargs['psum_mode'], cbits=kwargs['cbits'], 
+                        is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type'], bias=True),
+            # nn.Linear(1024, kwargs['num_classes'], bias=True),
             nn.BatchNorm1d(kwargs['num_classes']),
         )
 

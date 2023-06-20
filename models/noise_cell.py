@@ -263,6 +263,10 @@ class Noise_cell(nn.Module):
             if (self.mapping_mode == '2T2R') or (self.mapping_mode == 'PN'):
                 self.G_std = torch.tensor([np.sqrt(np.power(state_std[c], 2) + np.power(state_std[0], 2)) for c in range(self.clevel)])
                 self.G = torch.tensor([state_mean[c] - state_mean[0] for c in range(self.clevel)])
+            elif 'ref' in self.mapping_mode:   
+                w_ref = int(self.clevel/2)
+                self.G_std = torch.tensor([np.sqrt(np.power(state_std[c], 2) + np.power(state_std[w_ref], 2)) for c in range(self.clevel)])
+                self.G = torch.tensor([state_mean[c] - state_mean[w_ref] for c in range(self.clevel)])
             else:
                 assert False, "Only support 2T2R mapping mode"
 
@@ -354,18 +358,19 @@ class Noise_cell(nn.Module):
                         x_cell = x+2**(self.wbits-1) if self.mapping_mode == 'ref_a' else abs(x)
                         output = x + torch.normal(0, self.G_std[x_cell.detach().cpu().numpy()]).to(x.device)
                 elif noise_type == 'interp':
-                    if self.w_format == 'state:':
+                    if self.w_format == 'state':
                         x_cell = x.detach().cpu().numpy()
                     else:
                         x_cell = x+2**(self.wbits-1) if self.mapping_mode == 'ref_a' else abs(x)
                         x_cell = x_cell.detach().cpu().numpy()
+                    import pdb; pdb.set_trace()
                     output = torch.normal(self.G[x_cell], self.G_std[x_cell]).to(x.device).type(x.dtype)
 
                     if self.mapping_mode == '2T2R':
                         output = torch.where(x<0, -1 * output, output)
+
                 else:
                     output = x + (self.G_std[0]**2 * torch.randn_like(x, device=x.device))
-                
         return output
 
 

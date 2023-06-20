@@ -118,7 +118,7 @@ class LSQReturnScale(nn.Module):
 
     def forward(self, x):
         if self.bit == 32:
-            return x
+            return x, None
         elif self.bit == 1:
             return fw(x, self.bit, 1, False)
         else:
@@ -170,6 +170,11 @@ class QConv(nn.Conv2d):
         self.qweight_noise = None
 
     def forward(self, input):
+
+        if self.wbits == 32:
+            return F.conv2d(input, self.weight, bias=self.bias,
+                stride=self.stride, padding=self.padding, dilation=self.dilation, groups=self.groups)
+            
         qweight, scale = self.quan_w_fn(self.weight)
 
         with torch.no_grad():
@@ -179,12 +184,15 @@ class QConv(nn.Conv2d):
                         self.qweight_noise = None
 
                     if self.noise_type == "interp" and self.res_val == 'abs':
-                        pqweight = torch.where(qweight>0, qweight, 0)
-                        nqweight = torch.where(qweight<0, abs(qweight), 0)
-                        cat_weight = torch.cat((pqweight, nqweight))
-                        cat_weight = self.inf_noise_cell((cat_weight / scale).round()) * scale
-                        split_weight = torch.chunk(cat_weight, 2)
-                        qweight_noise = split_weight[0] - split_weight[1]
+                        if self.mapping_mode == '2T2R':
+                            pqweight = torch.where(qweight>0, qweight, 0)
+                            nqweight = torch.where(qweight<0, abs(qweight), 0)
+                            cat_weight = torch.cat((pqweight, nqweight))
+                            cat_weight = self.inf_noise_cell((cat_weight / scale).round()) * scale
+                            split_weight = torch.chunk(cat_weight, 2)
+                            qweight_noise = split_weight[0] - split_weight[1]
+                        else:
+                            assert False, "Check noise type and res_val at training condition"
                     else:
                         qweight_noise = self.noise_cell((qweight / scale).round()) * scale
                 else:
@@ -195,6 +203,14 @@ class QConv(nn.Conv2d):
                                 nqweight = torch.where(qweight<0, abs(qweight), 0)
                                 cat_weight = torch.cat((pqweight, nqweight))
                                 cat_weight = self.inf_noise_cell((cat_weight / scale).round()) * scale
+                                split_weight = torch.chunk(cat_weight, 2)
+                                qweight_noise = split_weight[0] - split_weight[1]
+                            elif 'ref' in self.mapping_mode:
+                                shift_v = 2**(self.wbits-1)
+                                shift_w = shift_v*torch.ones(qweight.size()).cuda()
+                                value_w = torch.add((qweight/scale), shift_v)
+                                cat_weight = torch.cat((value_w, shift_w))
+                                cat_weight = self.inf_noise_cell(cat_weight.round_()) * scale
                                 split_weight = torch.chunk(cat_weight, 2)
                                 qweight_noise = split_weight[0] - split_weight[1]
                             else: 
@@ -212,6 +228,7 @@ class QConv(nn.Conv2d):
 
         output = F.conv2d(input, qweight, bias=self.bias,
                 stride=self.stride, padding=self.padding, dilation=self.dilation, groups=self.groups)
+
         return output
 
     def extra_repr(self):
@@ -244,7 +261,7 @@ class QLinear(nn.Linear):
         self.noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type=noise_type, \
                                     res_val=res_val, w_format=w_format, max_epoch=max_epoch)
         self.mapping_mode = mapping_mode
-        self.w_format = w_format
+        self.res_val = res_val
         self.noise_type = noise_type
         if noise_type == 'interp':
             w_format = 'state'
@@ -256,6 +273,10 @@ class QLinear(nn.Linear):
         self.qweight_noise = None
         
     def forward(self, input):
+
+        if self.wbits == 32:
+            return F.linear(input, self.weight, bias=self.bias)
+        
         qweight, scale = self.quan_w_fn(self.weight)
 
         with torch.no_grad():
@@ -264,7 +285,7 @@ class QLinear(nn.Linear):
                     if self.qweight_noise is not None:
                         self.qweight_noise = None
 
-                    if self.noise_type == "interp" and self.w_format == 'state':
+                    if self.noise_type == "interp" and self.res_val == 'abs':
                         pqweight = torch.where(qweight>0, qweight, 0)
                         nqweight = torch.where(qweight<0, abs(qweight), 0)
                         cat_weight = torch.cat((pqweight, nqweight))
@@ -281,6 +302,14 @@ class QLinear(nn.Linear):
                                 nqweight = torch.where(qweight<0, abs(qweight), 0)
                                 cat_weight = torch.cat((pqweight, nqweight))
                                 cat_weight = self.inf_noise_cell((cat_weight / scale).round()) * scale
+                                split_weight = torch.chunk(cat_weight, 2)
+                                qweight_noise = split_weight[0] - split_weight[1]
+                            elif 'ref' in self.mapping_mode:
+                                shift_v = 2**(self.wbits-1)
+                                shift_w = shift_v*torch.ones(qweight.size()).cuda()
+                                value_w = torch.add((qweight/scale), shift_v)
+                                cat_weight = torch.cat((value_w, shift_w))
+                                cat_weight = self.inf_noise_cell(cat_weight.round_()) * scale
                                 split_weight = torch.chunk(cat_weight, 2)
                                 qweight_noise = split_weight[0] - split_weight[1]
                             else:
@@ -318,12 +347,13 @@ def add_act(abits, bitserial=False):
 def hwnoise_initialize(model, hwnoise=True, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', max_epoch=-1):
     for name, module in model.named_modules():
         if isinstance(module, (QConv, QLinear)) and hwnoise:
-            module.hwnoise = True
+            if module.wbits != 32:
+                module.hwnoise = True
 
-            if noise_type == 'grad':
-                assert max_epoch != -1, "Enter max_epoch in hwnoise_initialize function"
-            if hwnoise:
-                module.hwnoise_init(cbits=cbits, mapping_mode=mapping_mode, co_noise=co_noise, noise_type=noise_type, res_val=res_val, max_epoch=max_epoch)
+                if noise_type == 'grad':
+                    assert max_epoch != -1, "Enter max_epoch in hwnoise_initialize function"
+                if hwnoise:
+                    module.hwnoise_init(cbits=cbits, mapping_mode=mapping_mode, co_noise=co_noise, noise_type=noise_type, res_val=res_val, max_epoch=max_epoch)
 
 def quant_or_not(abits):
     if abits == 32:

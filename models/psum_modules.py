@@ -685,7 +685,24 @@ class PsumQConv(SplitConv):
         # print(output_real[0][0])
         # print(output[0][0])
         # if self.layer_idx == 4:
-        #     import pdb; pdb.set_trace()
+        # import matplotlib.pyplot as plt
+        # import seaborn as sns
+        # fig, ax = plt.subplots(ncols=2, figsize=(20, 12))
+
+        # sns.histplot((qweight/w_scale).detach().cpu().numpy().ravel(), ax=ax[0], alpha=0.5)
+        # sns.histplot((bweight).detach().cpu().numpy().ravel(), ax=ax[1], alpha=0.5)
+        # ax[0].set_ylabel(ax[0].get_ylabel(), fontsize=14)
+        # ax[1].set_ylabel(ax[1].get_ylabel(), fontsize=14)
+        # ax[0].set_title(f'Before Noise', loc='right', fontsize=16)
+        # ax[1].set_title(f'After Noise', loc='right', fontsize=16)
+        # ax[0].set_xlabel('Weight', fontsize=16)
+        # ax[1].set_xlabel('Weight', fontsize=16)
+        # ax[0].set_xticklabels(ax[0].get_xticks(), fontsize=14)
+        # ax[1].set_xticklabels(ax[1].get_xticks(), fontsize=14)
+
+        # plt.savefig(os.getcwd() +f"/graph/ReRAM/NAT_Layer{self.layer_idx}_weight.png", bbox_inches='tight')
+
+        # import pdb; pdb.set_trace()
 
         return output
     
@@ -713,10 +730,15 @@ class PsumQConv(SplitConv):
         # qweight, w_scale = self.quan_w_fn(self.weight)
         # output_real =  F.conv2d(input, qweight, bias=self.bias,
         #                     stride=self.stride, dilation=self.dilation, groups=self.groups)
-        # import pdb; pdb.set_trace()        
+        # import pdb; pdb.set_trace()
+
         return output
 
     def forward(self, input):
+        if self.wbits == 32:
+            return F.conv2d(input, self.weight, bias=self.bias,
+            stride=self.stride, padding=self.padding, dilation=self.dilation, groups=self.groups)
+
         if self.concat and self.wbit_serial:
             return self._concat_bitserial_forward(input)
         elif self.bitserial_log:
@@ -1250,11 +1272,32 @@ class PsumQLinear(SplitLinear):
             output += self.bias
         
         # output_real = F.linear(input, qweight, bias=None)
+        # import matplotlib.pyplot as plt
+        # import seaborn as sns
+        # fig, ax = plt.subplots(ncols=2, figsize=(20, 12))
+
+        # sns.histplot((qweight/w_scale).detach().cpu().numpy().ravel(), ax=ax[0], alpha=0.5)
+        # sns.histplot((bweight).detach().cpu().numpy().ravel(), ax=ax[1], alpha=0.5)
+        # ax[0].set_ylabel(ax[0].get_ylabel(), fontsize=14)
+        # ax[1].set_ylabel(ax[1].get_ylabel(), fontsize=14)
+        # ax[0].set_title(f'Before Noise', loc='right', fontsize=16)
+        # ax[1].set_title(f'After Noise', loc='right', fontsize=16)
+        # ax[0].set_xlabel('Weight', fontsize=16)
+        # ax[1].set_xlabel('Weight', fontsize=16)
+        # ax[0].set_xticklabels(ax[0].get_xticks(), fontsize=14)
+        # ax[1].set_xticklabels(ax[1].get_xticks(), fontsize=14)
+
+        # plt.savefig(os.getcwd() +f"/graph/ReRAM/NAT_Layer{self.layer_idx}_weight.png")
+
         # import pdb; pdb.set_trace()
 
         return output
 
     def forward(self, input):
+
+        if self.wbits == 32:
+            return F.linear(input, self.weight, bias=self.bias)
+        
         if self.bitserial_log:
             return self._bitserial_log_forward(input)
         else:
@@ -1341,12 +1384,13 @@ def set_Qact_bitserial(model, pquant_idx, abit_serial=True):
 def set_Noise_injection(model, weight=False, hwnoise=True, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', w_format='weight', max_epoch=-1):
     for name, module in model.named_modules():
         if isinstance(module, (PsumQConv, PsumQLinear)) and weight and hwnoise:
-            module.is_noise = True
+            if module.wbits != 32:
+                module.is_noise = True
 
-            if noise_type == 'grad':
-                assert max_epoch != -1, "Enter max_epoch in hwnoise_initialize function"
-            if hwnoise:
-                module._cell_noise_init(cbits=cbits, mapping_mode=mapping_mode, co_noise=co_noise, noise_type=noise_type, res_val=res_val, w_format=w_format, max_epoch=max_epoch)
+                if noise_type == 'grad':
+                    assert max_epoch != -1, "Enter max_epoch in hwnoise_initialize function"
+                if hwnoise:
+                    module._cell_noise_init(cbits=cbits, mapping_mode=mapping_mode, co_noise=co_noise, noise_type=noise_type, res_val=res_val, w_format=w_format, max_epoch=max_epoch)
 
 def count_ArrayMaxV(wbits, cbits, mapping_mode, arraySize):
     if mapping_mode == '2T2R':

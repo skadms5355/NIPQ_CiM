@@ -59,13 +59,17 @@ class ResNet(nn.Module):
     def __init__(self, block, layers, **kwargs):
 
         super(ResNet, self).__init__()
+        self.symmetric = False 
 
         self.inplanes = 64
-
-        self.conv1 = nn.Conv2d(3, self.inplanes, kernel_size=7, stride=2, padding=3, bias=False)
+        
+        if kwargs['FL_quant']:
+            self.conv1 = QConv(3, self.inplanes, wbits=kwargs['wbits'] if kwargs['FL_quant'] else 32, kernel_size=7, stride=2, padding=3, bias=False, symmetric=self.symmetric)
+        else:
+            self.conv1 = nn.Conv2d(3, self.inplanes, kernel_size=7, stride=2, padding=3, bias=False)
         self.bn1 = nn.BatchNorm2d(self.inplanes)
-        self.relu1 = nn.ReLU(inplace=True)
-        # self.relu1 = add_act(abits=kwargs['abits'])
+        # self.relu1 = nn.ReLU(inplace=True)
+        self.relu1 = add_act(abits=kwargs['abits'] if kwargs['FL_quant'] else 32)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         self.bn2 = nn.BatchNorm2d(self.inplanes)
 
@@ -74,9 +78,13 @@ class ResNet(nn.Module):
         self.layer3 = self._make_layer(block, 256, layers[2], stride=2, **kwargs)
         self.layer4 = self._make_layer(block, 512, layers[3], stride=2, **kwargs)
 
-        self.relu2 = nn.ReLU(inplace=True)
+        # self.relu2 = nn.ReLU(inplace=True)
+        self.relu2 = add_act(abits=kwargs['abits'] if kwargs['FL_quant'] else 32)
         self.avgpool = nn.AdaptiveAvgPool2d((1,1)) # this layer works for any size of input.
-        self.fc = nn.Linear(512 * block.expansion, 1000) ## assume that Last layer is FP
+        if kwargs['FL_quant']:
+            self.fc = QLinear(512 * block.expansion, 1000, wbits=kwargs['wbits'] if kwargs['FL_quant'] else 32, bias=True, symmetric=self.symmetric)
+        else:
+            self.fc = nn.Linear(512 * block.expansion, 1000) ## assume that Last layer is FP
 
 
     def _make_layer(self, block, planes, blocks, stride=1, **kwargs):
