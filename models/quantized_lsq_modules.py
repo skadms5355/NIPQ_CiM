@@ -346,7 +346,16 @@ def add_act(abits, bitserial=False):
 
 def hwnoise_initialize(model, hwnoise=True, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', max_epoch=-1):
     for name, module in model.named_modules():
-        if isinstance(module, (QConv, QLinear)) and hwnoise:
+        if isinstance(module, (QConv)) and hwnoise:
+            if module.wbits != 32 and (module.in_channels != 3):
+                module.hwnoise = True
+
+                if noise_type == 'grad':
+                    assert max_epoch != -1, "Enter max_epoch in hwnoise_initialize function"
+                if hwnoise:
+                    module.hwnoise_init(cbits=cbits, mapping_mode=mapping_mode, co_noise=co_noise, noise_type=noise_type, res_val=res_val, max_epoch=max_epoch)
+        
+        if isinstance(module, (QLinear)) and hwnoise:
             if module.wbits != 32:
                 module.hwnoise = True
 

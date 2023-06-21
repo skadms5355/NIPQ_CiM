@@ -165,7 +165,7 @@ else:
                 if os.path.isfile(log_path):
                     log_file=False
                 else:
-                    log_file=False
+                    log_file=True
                     # local = "/home/nameunkang/Project/QNN_CIM"
 
                 for pbit in pbits_list:

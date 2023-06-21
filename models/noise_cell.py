@@ -359,11 +359,11 @@ class Noise_cell(nn.Module):
                         output = x + torch.normal(0, self.G_std[x_cell.detach().cpu().numpy()]).to(x.device)
                 elif noise_type == 'interp':
                     if self.w_format == 'state':
-                        x_cell = x.detach().cpu().numpy()
+                        x_cell = x.to(torch.long)
                     else:
                         x_cell = x+2**(self.wbits-1) if self.mapping_mode == 'ref_a' else abs(x)
-                        x_cell = x_cell.detach().cpu().numpy()
-                    import pdb; pdb.set_trace()
+                        x_cell = x_cell.to(torch.long)
+
                     output = torch.normal(self.G[x_cell], self.G_std[x_cell]).to(x.device).type(x.dtype)
 
                     if self.mapping_mode == '2T2R':
