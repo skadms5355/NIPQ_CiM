@@ -11,6 +11,7 @@ def get_parameter(model, x):
     sweight = []
     psum_scale = []
     adc = []
+    bpbs = []
     output = []
     bnweight = []
     bnbias = []
@@ -23,6 +24,7 @@ def get_parameter(model, x):
         sinput.append(module.sinput)
         sweight.append(module.weight_group)
         adc.append(module.adc_list)
+        bpbs.append(module.bpbs)
         output.append(module.output)
         psum_scale.append(module.psum_scale)
 
@@ -53,8 +55,8 @@ def get_parameter(model, x):
     model(x.cuda())
 
     layer = 5 # only psum layer (conv)
-    max_range = 2**15 - 1 
-    min_range = -2**8
+    max_range = 2**14 - 1 
+    min_range = -2**13
     max_hw = 2**15-1
     min_hw= -2**15 
     delta = (max_range-min_range)/(2**4)
@@ -63,6 +65,7 @@ def get_parameter(model, x):
     weights = {}
     group_outputs = {}
     merge_outputs = {}
+    bpbs_outputs = {}
     bn_weight = {}
     bn_bias = {}
     act_weight = {}
@@ -71,6 +74,7 @@ def get_parameter(model, x):
     for i in range(1, layer+1):
         inputs[i] = sinput[i-1]
         weights[i] = sweight[i-1]
+        bpbs_outputs[i] = bpbs[i-1]
         group_outputs[i] = adc[i-1]
         merge_outputs[i] = output[i-1]
         bn_weight[i] = bnweight[i]
@@ -100,33 +104,33 @@ def get_parameter(model, x):
         m_int = m_int.unsqueeze(0).unsqueeze(2).unsqueeze(3)
         n_int = n_int.unsqueeze(0).unsqueeze(2).unsqueeze(3)
         n_clip_int = n_clip_int.unsqueeze(0).unsqueeze(2).unsqueeze(3)
-        y_hw = merge_outputs[i]*m+n
-        y_hw_int = torch.clip(merge_outputs[i]*m_int+n_int, min_hw, max_hw)
-        y_hw_clip = torch.clip(merge_outputs[i]*m_int+n_clip_int, min_hw, max_hw)
+
+        y_hw = (merge_outputs[i]*m).to(torch.int32)
+        y_hw_clip = torch.clip(y_hw, min_hw, max_hw)
         print('\ny_hw max, min', y_hw.max(), y_hw.min())
-        print('y_hw_int max, min', y_hw_int.max(), y_hw_int.min())
         print('y_hw_clip max, min', y_hw_clip.max(), y_hw_clip.min())
+        y_hw_bias = torch.clip(y_hw_clip+n_int, min_hw, max_hw).to(torch.int16)
+        y_hw_clip_int = torch.clip(y_hw_clip+n_clip_int, min_hw, max_hw).to(torch.int16)
+        print('\ny_hw+n max, min', y_hw_bias.max(), y_hw_bias.min())
+        print('y_hw+n_int max, min', y_hw_clip_int.max(), y_hw_clip_int.min())
 
         # results comparision
         sf_act = act_output[i]/next_scale[i]
-        hw_act = torch.round((torch.clip(y_hw, min_range+delta/2, max_range-delta/2)-min_range-delta/2)/delta)
-        hw_act_int = torch.round((torch.clip(y_hw_int, min_range+delta/2, max_range-delta/2)-min_range-delta/2)/delta)
-        hw_ci = torch.round((torch.clip(y_hw_clip, min_range+delta/2, max_range-delta/2)-min_range-delta/2)/delta)
+        hw_act = torch.round((torch.clip(y_hw_bias, min_range+delta/2, max_range-delta/2)-min_range-delta/2)/delta)
+        hw_act_int = torch.round((torch.clip(y_hw_clip_int, min_range+delta/2, max_range-delta/2)-min_range-delta/2)/delta)
+        # hw_ci = torch.round((torch.clip(y_hw_clip, min_range+delta/2, max_range-delta/2)-min_range-delta/2)/delta)
         if sf_act.shape[2] == hw_act_int.shape[2]:
             index_b=torch.where(sf_act.round().to(torch.uint8) != hw_act.round().to(torch.uint8))
             index=torch.where(sf_act.round().to(torch.uint8) != hw_act_int.round().to(torch.uint8))
-            index_i=torch.where(sf_act.round().to(torch.uint8) != hw_ci.round().to(torch.uint8))
-            ind = torch.where(sf_act[index].round().to(torch.uint8)-hw_act_int[index].round().to(torch.uint8) == 1)
-            ind_not = torch.where(sf_act[index].round().to(torch.uint8)-hw_act_int[index].round().to(torch.uint8) != 1)
+            # index_i=torch.where(sf_act.round().to(torch.uint8) != hw_ci.round().to(torch.uint8))
 
             print(index_b[0].size())
             print(index[0].size())
-            print(index_i[0].size())
-            # import pdb; pdb.set_trace()
 
     paramters = {
         'inputs' : inputs,
         'weights': weights,
+        'bpbs_outputs': bpbs_outputs,
         'group_outputs': group_outputs,
         'merge_outputs': merge_outputs,
         'act_weight': act_weight,

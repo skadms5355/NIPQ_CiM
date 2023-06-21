@@ -712,6 +712,7 @@ class PsumQConv(SplitConv):
 
                 out_adc = None
                 self.adc_list = []
+                self.bpbs = []
                 out_wgroup = []
                 for abit, input_s in enumerate(input_chunk):
                     a_mag = 2**(abit)
@@ -721,6 +722,7 @@ class PsumQConv(SplitConv):
                         cnt_input = self._split_forward(input_s / a_mag, w_one, padded=True, ignore_bias=True, cat_output=False, weight_is_split=True, infer_only=True)
 
                     for wbit, weight_s in enumerate(weight_chunk):
+                        bpbs = []
                         out_tmp = self._split_forward(input_s, weight_s, padded=True, ignore_bias=True, cat_output=False,
                                                 weight_is_split=True, infer_only=True)
                         # [TODO] Inject ADC noise here
@@ -768,8 +770,8 @@ class PsumQConv(SplitConv):
                             out_wsum = out_adc if wbit == 0 else out_wsum - out_adc
                         else:
                             out_wsum = out_adc if wbit == 0 else out_wsum + out_adc
-
                         for g in range(0, self.split_groups):
+                            bpbs.append(out_group[g]/out_mag)
                             if wsplit_num == wbit+1:
                                 out_wgroup[g] -= out_group[g]
                             else:
@@ -779,7 +781,8 @@ class PsumQConv(SplitConv):
                                     out_wgroup[g] = out_group[g]
                                 else:
                                     out_wgroup[g] += out_group[g]
-                            
+                        
+                        self.bpbs.append(bpbs)
                         # output_real = F.conv2d(input_s, qweight, bias=self.bias,
                         #                         stride=self.stride, dilation=self.dilation, groups=self.groups)
                         # import pdb; pdb.set_trace()
