@@ -1,0 +1,51 @@
+# model : vgg9
+# dataset : cifar10
+# This is a argfile for training vgg9 model.
+
+--dataset       cifar10
+--augment	    y  
+
+--epochs        30
+--train-batch   256
+--test-batch    200
+
+--optimizer     sgd
+--lr-method     lr_cosineanneal
+--warmup        3
+--warmup_start_multiplier 0.1
+--eta_min       1e-3
+# --schedule      10 20
+--T0            27
+--gamma         0.1
+
+# --init-method	xavierd
+# --init-fan	fan_both
+
+--model_mode    quant
+--arch          lsq_vgg9
+--gpu-id	    0
+# --amp           y
+
+--wbits         4
+--abits         4
+--lr            0.01
+--weight-decay  0
+--dropout	    0.0
+
+# --pretrained    ./checkpoints/cifar10/quant/lsq_vgg9/a:4_w:4/2022-Apr-01-18-57-49/model_best.pth.tar
+--pretrained    ./checkpoints/cifar10/quant/lsq_vgg9/FL_a:4_w:4/2023-Jun-19-16-49-05/model_best.pth.tar
+            
+
+--psum_comp     n
+# --wbit-serial   y
+# --abit-serial   y
+
+--cbits         4
+--mapping_mode  2T2R
+
+# noise option
+--is_noise      y
+--nipq_noise    hwnoise
+--co_noise      1
+--noise_type    interp
+--res_val       rel

@@ -70,9 +70,11 @@ class Quantizer(nn.Module):
     def hwnoise_init(self, cbits, mapping_mode, co_noise=0.01, noise_type='prop', res_val='rel', max_epoch=-1):
         bit = 2 + torch.sigmoid(self.bit)*12
         w_format = 'state' if res_val == 'abs' or noise_type == 'meas' else 'weight'
-        self.noise_cell = Noise_cell(bit.round().squeeze(), cbits, mapping_mode, co_noise, noise_type=noise_type, \
+        self.noise_cell = Noise_cell(int(bit.round().squeeze()), cbits, mapping_mode, co_noise, noise_type=noise_type, \
                                     res_val=res_val, w_format=w_format, max_epoch=max_epoch)
-        self.inf_noise_cell = Noise_cell(bit.round().squeeze(), cbits, mapping_mode, co_noise, noise_type='prop', \
+        if not (noise_type == 'prop' or 'interp'):
+            noise_type = 'prop'
+        self.inf_noise_cell = Noise_cell(int(bit.round().squeeze()), cbits, mapping_mode, co_noise, noise_type=noise_type, \
                                     res_val=res_val, w_format=w_format, max_epoch=max_epoch)
     
     def get_alpha(self):
@@ -127,6 +129,7 @@ class Quantizer(nn.Module):
                 # sns.histplot(data=(lsq/alpha).detach().cpu().numpy().ravel())
                 # plt.savefig('./weight_hist.png')
                 # plt.close()
+                import pdb; pdb.set_trace()
                 lsq = self.inf_noise_cell((lsq / alpha).round(), w_split=serial) * alpha
                 # fig, ax = plt.subplots(1, 1, figsize=(10, 3))
                 # ax.set_xticks(np.arange(-8, 8, 1))

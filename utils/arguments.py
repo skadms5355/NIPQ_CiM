@@ -169,12 +169,14 @@ def set_arguments():
                             help='Set requires_grad to True for the nonlinear function trainable parameters')
     arch_group.add_argument('--bn-bias', default=0.0, type=float,
                             help='Initialize value for BN bias.')
+    arch_group.add_argument('--FL_quant', default='False', type=str2bool,
+                            help='First & Last Layer quantization to wbit/abit same precision ')
     arch_group.add_argument('--abits', default=32, type=int,
                             help='Bit resolution of inputs. 32 is for full-precision.')
     arch_group.add_argument('--wbits', default=32, type=int,
                             help='Bit resolution of weights. 32 is for full-precision.')
     arch_group.add_argument('--wsymmetric', default='False', type=str2bool,
-                            help='Decide weight symmetric range (Default:False')
+                            help='Decide weight symmetric range (Default:False)')
     arch_group.add_argument('--x_offset', default=0.0, type=float,
                             help='x-axis offset for activation function.')
     arch_group.add_argument('--width', default=1.0, type=float,
@@ -239,7 +241,7 @@ def set_arguments():
     noise_group.add_argument('--ratio', type=int, default=100,
                             help='Ratio of Gmax/Gmin (default: 100)')   
     noise_group.add_argument('--noise_type', default='prop', type=str, 
-                            choices=['static', 'grad', 'prop', 'meas'],
+                            choices=['static', 'grad', 'prop', 'meas', 'interp'],
                             help='Std type of conductance noise (default: static std)')   
     noise_group.add_argument('--meas_type', default='reram', type=str, 
                             choices=['reram', 'mram', 'sram'],
@@ -251,8 +253,8 @@ def set_arguments():
                             help='representation methods of resistance (default: relative(rel))).')               
 
     # Transfer Learning
-    transfer_group.add_argument('--transfer-mode', default=0, type=int, choices=[0,1,2,3],
-                                help='0: nothing, 1: knowledge-distilation (KD), 2: attention transfer (AT), 3: KD+AT')
+    transfer_group.add_argument('--transfer-mode', default=0, type=int, choices=[0,1,2,3, 4],
+                                help='0: nothing, 1: knowledge-distilation (KD), 2: attention transfer (AT), 3: KD+AT, 4: KD (eh code)')
     transfer_group.add_argument('--teacher', default=None, type=str, metavar='PATH',
                                 help='Path to pretrained teacher model.')
     transfer_group.add_argument('--kd-alpha', default=0.99, type=float,

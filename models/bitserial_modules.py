@@ -46,5 +46,9 @@ class Bitserial():
         return output_bit, cls.scale , cls.bits
     
     @classmethod
+    def abit_scale(cls):
+        return cls.scale
+    
+    @classmethod
     def abit_serial(cls):
         return cls.bitserial
