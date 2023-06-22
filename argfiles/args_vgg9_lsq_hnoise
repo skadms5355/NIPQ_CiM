@@ -49,3 +49,8 @@
 --co_noise      1
 --noise_type    interp
 --res_val       rel
+
+--transfer-mode     1
+--kd-alpha          0.5
+--kd-temperature    4
+--teacher           ./checkpoints/cifar10/quant/lsq_vgg9/FL_a:4_w:4/2023-Jun-19-16-49-05/model_best.pth.tar

@@ -119,12 +119,20 @@ else:
                 tn_file = 't_{}_{}'.format(args.tnoise_type, args.tco_noise)
                 pretrained = './checkpoints/{}/nipq/nipq_{}/qhwnoise_fix:4/{}/no_psum_c:4/{}_{}/best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tco_noise)
             elif "lsq" in arch:
-                if args.KD:
-                    tn_file = 'KD_{}_{}_{}'.format(args.tnoise_type, args.tres_val, args.tco_noise)
-                    pretrained = './checkpoints/{}/quant/lsq_{}/a:4_w:4/{}/no_psum_c:4/{}_{}_{}/KD_best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tres_val, args.tco_noise)
+                if args.FL_quant:
+                    if args.KD:
+                        tn_file = 'KD_{}_{}_{}'.format(args.tnoise_type, args.tres_val, args.tco_noise)
+                        pretrained = './checkpoints/{}/quant/lsq_{}/FL_a:4_w:4/{}/no_psum_c:4/{}_{}_{}/KD_best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tres_val, args.tco_noise)
+                    else:
+                        tn_file = '{}_{}_{}'.format(args.tnoise_type, args.tres_val, args.tco_noise)
+                        pretrained = './checkpoints/{}/quant/lsq_{}/FL_a:4_w:4/{}/no_psum_c:4/{}_{}_{}/best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tres_val, args.tco_noise)
                 else:
-                    tn_file = '{}_{}_{}'.format(args.tnoise_type, args.tres_val, args.tco_noise)
-                    pretrained = './checkpoints/{}/quant/lsq_{}/a:4_w:4/{}/no_psum_c:4/{}_{}_{}/best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tres_val, args.tco_noise)
+                    if args.KD:
+                        tn_file = 'KD_{}_{}_{}'.format(args.tnoise_type, args.tres_val, args.tco_noise)
+                        pretrained = './checkpoints/{}/quant/lsq_{}/a:4_w:4/{}/no_psum_c:4/{}_{}_{}/KD_best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tres_val, args.tco_noise)
+                    else:
+                        tn_file = '{}_{}_{}'.format(args.tnoise_type, args.tres_val, args.tco_noise)
+                        pretrained = './checkpoints/{}/quant/lsq_{}/a:4_w:4/{}/no_psum_c:4/{}_{}_{}/best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tres_val, args.tco_noise)
         else:
             tn_file = None
 
