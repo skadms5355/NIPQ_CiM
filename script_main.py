@@ -181,10 +181,16 @@ else:
                         if is_noise:
                             print(f'this operation is iter {i+1} pbits {pbit}, arraySize {a_size}, per_class {per_class}, testlog_reset {testlog} log_file {log_file} co_noise {co_noise}')
                             if nipq_noise == "qhwnoise":
-                                os.system('python main.py  --argfile {} --gpu-id {} --psum_comp {} --arraySize {} --mapping_mode {} \
-                                            --pbits {} --per_class {} --testlog_reset {} --log_file {} --pretrained {} \
-                                            --is_noise y --tn_file {} --nipq_noise {} --co_noise {} --noise_type {}'
-                                            .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, tn_file, nipq_noise, co_noise, noise_type))
+                                if args.FL_quant:
+                                    os.system('python main.py  --argfile {} --gpu-id {} --psum_comp {} --arraySize {} --mapping_mode {} \
+                                                --pbits {} --per_class {} --testlog_reset {} --log_file {} --pretrained {} \
+                                                --is_noise y --tn_file {} --nipq_noise {} --co_noise {} --noise_type {}  --FL_quant y'
+                                                .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, tn_file, nipq_noise, co_noise, noise_type))
+                                else:
+                                    os.system('python main.py  --argfile {} --gpu-id {} --psum_comp {} --arraySize {} --mapping_mode {} \
+                                                --pbits {} --per_class {} --testlog_reset {} --log_file {} --pretrained {} \
+                                                --is_noise y --tn_file {} --nipq_noise {} --co_noise {} --noise_type {}'
+                                                .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, tn_file, nipq_noise, co_noise, noise_type))
                             else:
                                 if args.FL_quant:
                                     os.system('python main.py  --argfile {} --gpu-id {} --psum_comp {} --arraySize {} --mapping_mode {} \
