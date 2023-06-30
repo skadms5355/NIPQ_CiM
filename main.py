@@ -112,6 +112,9 @@ def main():
             else:
                 prefix = os.path.join(prefix, "a:{}_w:{}".format(args.abits,args.wbits))
         
+        if args.wsymmetric:
+            prefix = os.path.join(prefix, "wsymmetric")
+
         if args.mapping_mode != 'none':
 
             if args.arraySize > 0 and args.psum_comp: # inference with psum comp
@@ -425,7 +428,7 @@ def main_worker(gpu, ngpus_per_node, args):
                 set_BitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, log_file=args.log_file,\
                     pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma)
                 if args.is_noise:
-                    set_Noise_injection(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
+                    set_Noise_injection(model, weight=True, hwnoise=True, wsym=args.wsymmetric, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
                                         noise_type=args.noise_type, res_val=args.res_val)
             else:
                 assert False, "This mode is not supported psum computation"
