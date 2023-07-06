@@ -33,26 +33,22 @@ class KIST_MRAM():
         self.TMR_std = 0.05
         self.Rp_100 = torch.tensor([1054, 753, 538, 384, 274, 196, 140, 100], dtype=torch.float32)
         self.Rp_std = torch.tensor([6.83, 6.45, 6.06, 5.71, 5.51, 5.41, 5.26, 5.21])/100 * self.Rp_100
-        self.Rap_std = torch.tensor([7.55, 7.26, 6.87, 6.61, 6.47, 6.40, 6.19, 6.15])/100
+        self.Rap = self.Rp_100*3
+        self.Rap_std = torch.tensor([7.55, 7.26, 6.87, 6.61, 6.47, 6.40, 6.19, 6.15])/100 * self.Rap 
+        # self.Rap = torch.normal(mean, self.TMR_std*mean)
 
         self.clevel = clevel
         self.step = 1
         # self.step = int(self.Rp_100.shape[0]/clevel)
         self.delta_R = 7.91 * self.step # ideal computed delta R
-        self.compute_Rap()
-
-    def compute_Rap(self):
-        mean = self.Rp_100*3
-        self.Rap = torch.normal(mean, self.TMR_std*mean)
 
     def make_res(self, state, num, device):
         #Random AP 
-        self.compute_Rap()
         idx = self.Rp_100.shape[0] - self.step * state
         expand_Rp = self.Rp_100.unsqueeze(dim=0).expand(num, -1)
         expand_Rap = self.Rap.unsqueeze(dim=0).expand(num, -1)
         Rp_n = torch.normal(expand_Rp, self.Rp_std).to(device=device)
-        Rap_n = torch.normal(expand_Rap, self.Rap_std*self.Rap).to(device=device)
+        Rap_n = torch.normal(expand_Rap, self.Rap_std).to(device=device)
         rRp_sum = torch.sum((1/Rp_n).transpose(1,0)[:idx], dim=0)
         rRap_sum = torch.sum((1/Rap_n).transpose(1,0)[idx:], dim=0)
         samples = 1/(rRp_sum+rRap_sum)
@@ -183,7 +179,9 @@ class Noise_cell(nn.Module):
             else:
                 assert False, 'This file does not support that cbits are lower than wbits-1'
         elif (self.mapping_mode == '2T2R') or (self.mapping_mode == 'PN'):
-            if self.cbits >= (self.wbits-1):
+            if self.wbits == 1:
+                self.clevel = 2
+            elif self.cbits >= (self.wbits-1):
                 if self.wsymmetric:
                     self.clevel = 2**(self.wbits - 1) # cell can represent self.wbits-1 levels (4bits: 8 levels)
                 else:

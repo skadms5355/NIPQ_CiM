@@ -21,7 +21,7 @@
 --weight-clip	1
 --weight-scale	False
 
---pretrained    ./checkpoints/cifar10/binarynet_vgg/a:1_w:1/2023-Jun-08-13-37-33/model_best.pth.tar
+--pretrained    ./checkpoints/cifar10/binary/binarynet_vgg/a:1_w:1/2023-Jun-08-13-37-33/model_best.pth.tar
 
 --psum_comp     y
 --arraySize     128

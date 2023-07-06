@@ -338,5 +338,6 @@ def nonlinear(abits, mode='signed', ste='hardtanh', offset=0, width=1):
         return nn.ReLU(inplace=True)
     else:
         return BinAct(abits=abits, mode=mode, ste=ste, offset=offset, width=width)
+    
 
 

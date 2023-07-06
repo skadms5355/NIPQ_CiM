@@ -258,7 +258,8 @@ class PsumBinConv(SplitConv):
 
             ### Cell noise injection + Cell conductance value change
             if self.is_noise:
-                bweight = self.noise_cell(qweight)
+                bweight, wsplit_num = self._weight_bitserial(qweight, 1, cbits=self.cbits)
+                bweight = self.noise_cell(bweight)
                 
                 weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
                 
@@ -275,7 +276,8 @@ class PsumBinConv(SplitConv):
                 weight_chunk = torch.chunk(self.sweight, wsplit_num, dim=1)
             else:
                 self.sweight = conv_sweight_cuda.forward(self.sweight, qweight, self.group_in_offset, self.split_groups)
-                weight_chunk = torch.chunk(self.sweight, wsplit_num, dim=1)
+                sweight, wsplit_num = self._weight_bitserial(self.sweight, 1, cbits=self.cbits)
+                weight_chunk = torch.chunk(sweight, wsplit_num, dim=1)
 
             # in-memory computing parameter computing
             out_tmp = None
@@ -459,7 +461,7 @@ class PsumBinConv(SplitConv):
 
         return minVal, maxVal, midVal 
 
-    def _bitserial_comp_forward(self, input, short_path=None):
+    def _bitserial_comp_forward(self, input):
         # delete padding_shpe & additional padding operation by matching padding/stride format with nn.Conv2d
         if self.padding > 0:
             if self.padding_mode == 'neg':
@@ -468,83 +470,76 @@ class PsumBinConv(SplitConv):
             input = Pad.pad(input, padding_shape, self.padding_mode, self.padding_value)
 
         qweight = fw(self.weight, self.wbits, self.weight_clip, self.weight_scale, self.fan_in)
-        import pdb; pdb.set_trace()
 
-        if self.wbit_serial:
-            with torch.no_grad():
-
-                if self.psum_mode == 'sigma':
-                    minVal, maxVal, midVal = self._ADC_clamp_value()
-                    self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
-                elif self.psum_mode == 'scan':
-                    pass
-                else:
-                    assert False, 'This script does not support {self.psum_mode}'
-
-                ### Cell noise injection + Cell conductance value change
-                ### in-mem computation programming (weight constant-noise)
-                if self.is_noise:
-                    bweight = self.noise_cell(bweight)
-                    
-                    weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
-                    
-                    ## make the same weight size as qweight
-                    if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
-                        bweight = weight_chunk[0] - weight_chunk[1]
-                        wsplit_num = 1
-                    else:
-                        ## [TODO] two_com split weight format check
-                        delta_G, G_min = self.noise_cell.get_deltaG(G_min=True)
-                        w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
-
-                    self.sweight = conv_sweight_cuda.forward(self.sweight, bweight, self.group_in_offset, self.split_groups)
-                    weight_chunk = torch.chunk(self.sweight, wsplit_num, dim=1)
-                else:
-                    self.sweight = conv_sweight_cuda.forward(self.sweight, qweight, self.group_in_offset, self.split_groups)
-                    weight_chunk = torch.chunk(self.sweight, wsplit_num, dim=1)
-                
-                self.weight_chunk = weight_chunk
-
-                out_adc = None
-                for wbit, weight_s in enumerate(weight_chunk):
-                    import pdb; pdb.set_trace()
-                    out_tmp = self._split_forward(input, weight_s, padded=True, ignore_bias=True, cat_output=False,
-                                            weight_is_split=True, infer_only=True)
-
-                    out_adc = psum_quant_merge(out_adc, out_tmp,
-                                                pbits=self.pbits, step=self.pstep, 
-                                                half_num_levels=self.phalf_num_levels, 
-                                                pbound=self.pbound, center=self.center, weight=1,
-                                                groups=self.split_groups, pzero=self.pzero)
-
-                    # weight output summation
-                    if self.mapping_mode == 'two_com':
-                        if wsplit_num == wbit+1:
-                            out_wsum -= out_adc
-                        else:
-                            out_wsum = out_adc if wbit == 0 else out_wsum + out_adc
-                    elif (self.mapping_mode == 'ref_d') or (self.mapping_mode == 'PN'):
-                        out_wsum = out_adc if wbit == 0 else out_wsum - out_adc
-                    else:
-                        out_wsum = out_adc if wbit == 0 else out_wsum + out_adc
-                    out_adc = None
-
-                if self.is_noise and not ((self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a')):
-                    out_one = (-G_min/delta_G) * self._split_forward(input, w_one, padded=True, ignore_bias=True, cat_output=False,
-                                            weight_is_split=True, infer_only=True, merge_group=True)
-                    out_wsum -= out_one
-                # output_real = F.conv2d(input_s, qweight, bias=self.bias,
-                #                         stride=self.stride, dilation=self.dilation, groups=self.groups)
-                # import pdb; pdb.set_trace()
-                output = out_wsum 
-
+        if self.pbits == 1:
+            self.pstep = 1
+            self.center = 0 
+            assert self.mapping_mode == '2T2R', "Only support 1bit (SA) when mapping mode is 2T2R"
         else:
-            if not self.abit_serial:
-                # in-mem computation mimic (split conv & psum quant/merge)
-                self.pbits = 32
-                output = self._split_forward(input, qweight, padded=True, ignore_bias=True,  merge_group=True)
+            if self.psum_mode == 'sigma':
+                minVal, maxVal, midVal = self._ADC_clamp_value()
+                self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
+            elif self.psum_mode == 'scan':
+                pass
             else:
-                assert False, "we do not support act serial only model"
+                assert False, 'This script does not support {self.psum_mode}'
+
+        ### Cell noise injection + Cell conductance value change
+        ### in-mem computation programming (weight constant-noise)
+        if self.is_noise:
+            bweight, wsplit_num = self._weight_bitserial(qweight, 1, cbits=self.cbits)
+            bweight = self.noise_cell(bweight)
+            
+            weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
+            
+            ## make the same weight size as qweight
+            if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
+                bweight = weight_chunk[0] - weight_chunk[1]
+                wsplit_num = 1
+            else:
+                ## [TODO] two_com split weight format check
+                delta_G, G_min = self.noise_cell.get_deltaG(G_min=True)
+                w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
+
+            self.sweight = conv_sweight_cuda.forward(self.sweight, bweight, self.group_in_offset, self.split_groups)
+            weight_chunk = torch.chunk(self.sweight, wsplit_num, dim=1)
+        else:
+            self.sweight = conv_sweight_cuda.forward(self.sweight, qweight, self.group_in_offset, self.split_groups)
+            sweight, wsplit_num = self._weight_bitserial(self.sweight, 1, cbits=self.cbits)
+            weight_chunk = torch.chunk(sweight, wsplit_num, dim=1)
+        
+        self.weight_chunk = weight_chunk
+
+        out_adc = None
+        for wbit, weight_s in enumerate(weight_chunk):
+            out_tmp = self._split_forward(input, weight_s, padded=True, ignore_bias=True, cat_output=False,
+                                    weight_is_split=True, infer_only=True)
+
+            out_adc = psum_quant_merge(out_adc, out_tmp,
+                                        pbits=self.pbits, step=self.pstep, 
+                                        half_num_levels=self.phalf_num_levels, 
+                                        pbound=self.pbound, center=self.center, weight=1,
+                                        groups=self.split_groups, pzero=self.pzero)
+
+            # weight output summation
+            if self.mapping_mode == 'two_com':
+                if wsplit_num == wbit+1:
+                    output -= out_adc
+                else:
+                    output = out_adc if wbit == 0 else output + out_adc
+            elif (self.mapping_mode == 'ref_d') or (self.mapping_mode == 'PN'):
+                output = out_adc if wbit == 0 else output - out_adc
+            else:
+                output = out_adc if wbit == 0 else output + out_adc
+            out_adc = None
+
+        if self.is_noise and not ((self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a')):
+            out_one = (-G_min/delta_G) * self._split_forward(input, w_one, padded=True, ignore_bias=True, cat_output=False,
+                                    weight_is_split=True, infer_only=True, merge_group=True)
+            output -= out_one
+        # output_real = F.conv2d(input_s, qweight, bias=self.bias,
+        #                         stride=self.stride, dilation=self.dilation, groups=self.groups)
+        # import pdb; pdb.set_trace()
 
         # add bias
         if self.bias is not None:
@@ -779,6 +774,8 @@ class PsumBinLinear(SplitLinear):
         layer_hist_dict = {}
 
         ### in-mem computation mimic (split conv & psum quant/merge)
+        bweight, wsplit_num = self._weight_bitserial(qweight, 1, cbits=self.cbits)
+
         ### Cell noise injection + Cell conductance value change
         if self.is_noise:
             bweight = self.noise_cell(bweight)
@@ -973,9 +970,12 @@ class PsumBinLinear(SplitLinear):
         # get quantization parameter and input bitserial 
         qweight = fw(self.weight, self.wbits, self.weight_clip, self.weight_scale, self.fan_in)
 
-        if self.wbit_serial:
-            with torch.no_grad():
-
+        with torch.no_grad():
+            if self.pbits == 1:
+                self.pstep = 1
+                self.center = 0 
+                assert self.mapping_mode != '2T2R', "Only support 1bit (SA) when mapping mode is 2T2R"
+            else:
                 if self.psum_mode == 'sigma':
                     minVal, maxVal, midVal = self._ADC_clamp_value()
                     self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
@@ -984,59 +984,52 @@ class PsumBinLinear(SplitLinear):
                 else:
                     assert False, 'This script does not support {self.psum_mode}'
 
-                ### in-mem computation mimic (split conv & psum quant/merge)
-                ### Cell noise injection + Cell conductance value change
-                if self.is_noise:
-                    bweight = self.noise_cell(bweight)
-                    weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
-                    
-                    if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
-                        bweight = weight_chunk[0] - weight_chunk[1]
-                        wsplit_num = 1
-                    else:
-                        ## [TODO] two_com split weight format check
-                        delta_G, G_min = self.noise_cell.get_deltaG(G_min=True)
-                        w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
+            ### in-mem computation mimic (split conv & psum quant/merge)
+            bweight, wsplit_num = self._weight_bitserial(qweight, 1, cbits=self.cbits)
 
+            ### Cell noise injection + Cell conductance value change
+            if self.is_noise:
+                bweight = self.noise_cell(bweight)
                 weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
-                self.weight_chunk = weight_chunk
+                
+                if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
+                    bweight = weight_chunk[0] - weight_chunk[1]
+                    wsplit_num = 1
+                else:
+                    ## [TODO] two_com split weight format check
+                    delta_G, G_min = self.noise_cell.get_deltaG(G_min=True)
+                    w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
 
-                out_adc = None
-                for wbit, weight_s in enumerate(weight_chunk):
-                    out_tmp = self._split_forward(input, weight_s, ignore_bias=True, cat_output=False, infer_only=True)
-                    # out_tmp = F.linear(input_s[:,nIF_cnt:nIF_cnt+self.split_nIF[idx]], weight_s, bias=None)
+            weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
+            self.weight_chunk = weight_chunk
 
-                    out_adc = psum_quant_merge(out_adc, out_tmp,
-                                                pbits=self.pbits, step=self.pstep, 
-                                                half_num_levels=self.phalf_num_levels, 
-                                                pbound=self.pbound, center=self.center, weight=1,
-                                                groups=self.split_groups, pzero=self.pzero)
+            out_adc = None
+            for wbit, weight_s in enumerate(weight_chunk):
+                out_tmp = self._split_forward(input, weight_s, ignore_bias=True, cat_output=False, infer_only=True)
+                # out_tmp = F.linear(input_s[:,nIF_cnt:nIF_cnt+self.split_nIF[idx]], weight_s, bias=None)
 
-                    # weight output summation
-                    if self.mapping_mode == 'two_com':
-                        if wsplit_num == wbit+1:
-                            out_wsum -= out_adc
-                        else:
-                            out_wsum = out_adc if wbit == 0 else out_wsum + out_adc
-                    elif (self.mapping_mode == 'ref_d') or (self.mapping_mode == 'PN'):
-                        out_wsum = out_adc if wbit == 0 else out_wsum - out_adc
+                out_adc = psum_quant_merge(out_adc, out_tmp,
+                                            pbits=self.pbits, step=self.pstep, 
+                                            half_num_levels=self.phalf_num_levels, 
+                                            pbound=self.pbound, center=self.center, weight=1,
+                                            groups=self.split_groups, pzero=self.pzero)
+
+                # weight output summation
+                if self.mapping_mode == 'two_com':
+                    if wsplit_num == wbit+1:
+                        output -= out_adc
                     else:
-                        out_wsum = out_adc if wbit == 0 else out_wsum + out_adc
-                    out_adc = None
+                        output = out_adc if wbit == 0 else output + out_adc
+                elif (self.mapping_mode == 'ref_d') or (self.mapping_mode == 'PN'):
+                    output = out_adc if wbit == 0 else output - out_adc
+                else:
+                    output = out_adc if wbit == 0 else output + out_adc
+                out_adc = None
 
-                if self.is_noise and not ((self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a')):
-                    out_one = (-G_min/delta_G) * self._split_forward(input, w_one, ignore_bias=True, infer_only=True, merge_group=True)
-                    out_wsum -= out_one
-                output = out_wsum 
-        else:
-            abit_serial = Bitserial.abit_serial()
-            if not abit_serial:
-                # in-mem computation mimic (split linear & psum quant/merge)
-                self.pbits = 32
-                output = self._split_forward(input, qweight, ignore_bias=True, merge_group=True)
-            else:
-                assert False, "we do not support act serial only model"
-
+            if self.is_noise and not ((self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a')):
+                out_one = (-G_min/delta_G) * self._split_forward(input, w_one, ignore_bias=True, infer_only=True, merge_group=True)
+                output -= out_one
+      
         # add bias
         if self.bias is not None:
             output += self.bias
