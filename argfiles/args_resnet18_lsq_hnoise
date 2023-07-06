@@ -48,7 +48,7 @@
 --res_val       rel
 
 # for teacher model (w/o noise model)
-# --transfer-mode     4
+--transfer-mode     4
 # --kd-alpha          0.5
 # --kd-temperature    4
-# --teacher           resnet18
+--teacher           resnet18
