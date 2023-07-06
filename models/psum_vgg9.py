@@ -5,8 +5,10 @@ from .nipq_hwnoise_psum_module import PsumQuantOps as PQ
 from .quantized_lsq_modules import *
 from .quantized_basic_modules import *
 from .psum_modules import *
+from .binarized_psum_modules import *
+from .binarized_modules import nonlinear
 
-__all__ = ['psum_lsq_vgg9', 'psum_nipq_vgg9']
+__all__ = ['psum_lsq_vgg9', 'psum_nipq_vgg9', 'psum_binary_vgg9']
 
 class PNIPQ_vgg9(nn.Module):
     def __init__(self, **kwargs):
@@ -139,6 +141,71 @@ class PLSQ_vgg9(nn.Module):
         x = self.classifier(x)
         return x
 
+class PBin_vgg(nn.Module):
+    def __init__(self, **kwargs):
+        super(PBin_vgg, self).__init__()
+
+        self.features = nn.Sequential(
+            nn.Conv2d(3, 128, kernel_size=3, stride=1, padding=1, bias=False),
+            # BinConv(3, 128, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode']),
+            nn.BatchNorm2d(128),
+            nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
+
+            PsumBinConv(128, 128, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode'],
+                        arraySize=kwargs['arraySize'], mapping_mode=kwargs['mapping_mode'], psum_mode=kwargs['psum_mode'], cbits=kwargs['cbits'], 
+                        is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type']),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.BatchNorm2d(128),
+            nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
+
+            PsumBinConv(128, 256, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode'],
+                        arraySize=kwargs['arraySize'], mapping_mode=kwargs['mapping_mode'], psum_mode=kwargs['psum_mode'], cbits=kwargs['cbits'], 
+                        is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type']),
+            nn.BatchNorm2d(256),
+            nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
+
+            PsumBinConv(256, 256, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode'],
+                        arraySize=kwargs['arraySize'], mapping_mode=kwargs['mapping_mode'], psum_mode=kwargs['psum_mode'], cbits=kwargs['cbits'], 
+                        is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type']),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.BatchNorm2d(256),
+            nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
+
+            PsumBinConv(256, 512, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode'],
+                        arraySize=kwargs['arraySize'], mapping_mode=kwargs['mapping_mode'], psum_mode=kwargs['psum_mode'], cbits=kwargs['cbits'], 
+                        is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type']),
+            nn.BatchNorm2d(512),
+            nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
+
+            PsumBinConv(512, 512, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode'],
+                        arraySize=kwargs['arraySize'], mapping_mode=kwargs['mapping_mode'], psum_mode=kwargs['psum_mode'], cbits=kwargs['cbits'], 
+                        is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type']),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.BatchNorm2d(512),
+            nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
+
+        )
+        self.classifier = nn.Sequential(
+            BinLinear(512 * 4 * 4, 1024, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale = kwargs['weight_scale']),
+            nn.BatchNorm1d(1024),
+            nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
+
+            BinLinear(1024, 1024, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale']),
+            nn.BatchNorm1d(1024),
+            # nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
+            nonlinear(abits=32, mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
+
+            nn.Linear(1024, kwargs['num_classes'], bias=True),
+            # BinLinear(1024, kwargs['num_classes'], wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale']),
+            nn.BatchNorm1d(kwargs['num_classes'])
+        )
+
+    def forward(self, x):
+        x = self.features(x)
+        x = x.view(x.size(0), -1)
+        x = self.classifier(x)
+        return x
+    
 def psum_lsq_vgg9(**kwargs):
     assert kwargs['dataset'] == 'cifar10', f"binarynet vgg model only supports CIFAR-10 dataset."
 
@@ -148,3 +215,8 @@ def psum_nipq_vgg9(**kwargs):
     assert kwargs['dataset'] == 'cifar10', f"binarynet vgg model only supports CIFAR-10 dataset."
 
     return PNIPQ_vgg9(**kwargs)
+
+def psum_binary_vgg9(**kwargs):
+    assert kwargs['dataset'] == 'cifar10', f"binarynet vgg model only supports CIFAR-10 dataset."
+
+    return PBin_vgg(**kwargs)

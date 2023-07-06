@@ -30,6 +30,7 @@ from utils import data_loader, initialize, logging, misc, tensorboard, eval
 from utils.schedule_train import set_optimizer, set_scheduler
 
 from models.psum_modules import set_BitSerial_log, set_Noise_injection, unset_BitSerial_log
+from models.binarized_psum_modules import set_PsumBinary_log, set_PsumBin_Noise_injection, unset_PsumBinary_log
 from models.nipq_quantization_module import bops_cal
 
 warnings.simplefilter("ignore", category=FutureWarning)
@@ -429,6 +430,12 @@ def main_worker(gpu, ngpus_per_node, args):
                     pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma)
                 if args.is_noise:
                     set_Noise_injection(model, weight=True, hwnoise=True, wsym=args.wsymmetric, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
+                                        noise_type=args.noise_type, res_val=args.res_val)
+            elif args.model_mode == 'binary':
+                set_PsumBinary_log(model, checkpoint=args.checkpoint, log_file=args.log_file,\
+                    pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma)
+                if args.is_noise:
+                    set_PsumBin_Noise_injection(model, weight=True, hwnoise=True, wsym=args.wsymmetric, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
                                         noise_type=args.noise_type, res_val=args.res_val)
             else:
                 assert False, "This mode is not supported psum computation"

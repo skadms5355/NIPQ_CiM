@@ -94,7 +94,7 @@ def set_arguments():
 
     # Training options
     train_group.add_argument('-tm', '--model_mode', default='baseline', type=str,
-                             choices=['baseline', 'quant', 'nipq'],
+                             choices=['baseline', 'quant', 'nipq', 'binary'],
                              help='training mode to be used. (default: baseline (basic))')
     train_group.add_argument('--epochs', default=90, type=int, metavar='N',
                              help='Number of total epochs to run')

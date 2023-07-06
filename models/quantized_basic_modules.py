@@ -496,7 +496,7 @@ class QuantAct(nn.Module):
         return s.format(**self.__dict__)
 
 
-def nonlinear(abits, ste='clippedrelu', abit_serial=False, amax=1):
+def Qnonlinear(abits, ste='clippedrelu', abit_serial=False, amax=1):
     """An activation that can be used as either FP or N-bit precision
     Args:
         abits (int): Bit resolution of activation. If set to 32, uses ReLU instead.

@@ -338,7 +338,7 @@ class Q_act(LSQ):
     def __init__(self, abits, half_range=True, per_channel=False, bitserial=False):
         super().__init__(bit=abits, half_range=True, per_channel=False, bitserial=bitserial)
 
-def add_act(abits, bitserial=False):
+def add_act(abits, bitserial=False, mode='signed', ste='hardtanh', offset=0, width=1):
     if abits == 32:
         return nn.ReLU(inplace=True)
     else:

@@ -23,7 +23,8 @@
 --wbits         4
 --abits         3
 --pretrained    ./checkpoints/cifar10/quant/lsq_vgg9/a:3_w:4/wsymmetric/2023-May-30-15-13-51/model_best.pth.tar
-# a:2 w:3
+
+# a:2 w:3 
 # --wbits         3
 # --abits         2
 # --pretrained    ./checkpoints/cifar10/quant/lsq_vgg9/a:2_w:3/wsymmetric/2023-May-30-13-32-11/model_best.pth.tar
