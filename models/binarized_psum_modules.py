@@ -51,7 +51,7 @@ class PsumBinConv(SplitConv):
         Quant(LSQ)Conv + Psum quantization
     """
     def __init__(self, in_channels, out_channels, wbits=32, kernel_size=3, stride=1, padding=0, groups=1, bias=False, padding_mode='zeros', 
-                weight_clip=0, weight_scale=True, arraySize=128, mapping_mode='none', psum_mode='sigma', cbits=None,
+                weight_clip=0, weight_scale=True, arraySize=128, mapping_mode='none', psum_mode='sigma', pbits=32, cbits=None,
                 is_noise=False, noise_type=None):
         super(PsumBinConv, self).__init__(in_channels, out_channels, kernel_size,
                                        stride=stride, padding=padding, groups=groups, bias=bias)
@@ -105,7 +105,7 @@ class PsumBinConv(SplitConv):
         self.cbits = cbits # Cell bits [multi, binary]
         self.psum_mode = psum_mode
         self.pclipmode = 'Layer'
-        self.pbits = 32
+        self.pbits = pbits
         # for scan version
         self.pstep = None
         self.pzero = None # contain zero value (True)
@@ -472,8 +472,8 @@ class PsumBinConv(SplitConv):
         qweight = fw(self.weight, self.wbits, self.weight_clip, self.weight_scale, self.fan_in)
 
         if self.pbits == 1:
+            self.setting_pquant_func(pbits=self.pbits)
             self.pstep = 1
-            self.center = 0 
             assert self.mapping_mode == '2T2R', "Only support 1bit (SA) when mapping mode is 2T2R"
         else:
             if self.psum_mode == 'sigma':
@@ -515,13 +515,12 @@ class PsumBinConv(SplitConv):
             out_tmp = self._split_forward(input, weight_s, padded=True, ignore_bias=True, cat_output=False,
                                     weight_is_split=True, infer_only=True)
             
-            if self.training:
+            if self.pbits==1:
                 out_adc = psum_quant(out_adc, out_tmp,
                                         pbits=self.pbits, step=self.pstep, 
                                         half_num_levels=self.phalf_num_levels, 
                                         pbound=self.pbound, center=self.center, weight=1,
                                         groups=self.split_groups, pzero=self.pzero)
-                import pdb; pdb.set_trace()
                 output = torch.cat(out_adc, dim=1)
             else:
                 out_adc = psum_quant_merge(out_adc, out_tmp,
@@ -615,7 +614,7 @@ class PsumBinLinear(SplitLinear):
         Quant(LSQ)Linear + Psum quantization
     """
     def __init__(self, in_features, out_features, wbits, bias=False,
-                weight_clip=0, weight_scale=True, arraySize=128, mapping_mode='none', psum_mode='sigma', cbits=None,
+                weight_clip=0, weight_scale=True, arraySize=128, mapping_mode='none', psum_mode='sigma', pbits=32, cbits=None,
                 is_noise=False, noise_type=None):
         super(PsumBinLinear, self).__init__(in_features, out_features, bias=bias)
         # for QLinear
@@ -641,7 +640,7 @@ class PsumBinLinear(SplitLinear):
         self.cbits = cbits # Cell bits [multi, binary]
         self.psum_mode = psum_mode
         self.pclipmode = 'Layer'
-        self.pbits = 32
+        self.pbits = pbits
         # for scan version
         self.pstep = None
         self.pzero = None # contain zero value (True)
@@ -981,9 +980,9 @@ class PsumBinLinear(SplitLinear):
         qweight = fw(self.weight, self.wbits, self.weight_clip, self.weight_scale, self.fan_in)
 
         if self.pbits == 1:
+            self.setting_pquant_func(pbits=self.pbits)
             self.pstep = 1
-            self.center = 0 
-            assert self.mapping_mode != '2T2R', "Only support 1bit (SA) when mapping mode is 2T2R"
+            assert self.mapping_mode == '2T2R', "Only support 1bit (SA) when mapping mode is 2T2R"
         else:
             if self.psum_mode == 'sigma':
                 minVal, maxVal, midVal = self._ADC_clamp_value()
@@ -1017,12 +1016,13 @@ class PsumBinLinear(SplitLinear):
             out_tmp = self._split_forward(input, weight_s, ignore_bias=True, cat_output=False, infer_only=True)
             # out_tmp = F.linear(input_s[:,nIF_cnt:nIF_cnt+self.split_nIF[idx]], weight_s, bias=None)
 
-            if self.training:
-                output = psum_quant(out_adc, out_tmp,
+            if self.pbits==1:
+                out_adc = psum_quant(out_adc, out_tmp,
                                             pbits=self.pbits, step=self.pstep, 
                                             half_num_levels=self.phalf_num_levels, 
                                             pbound=self.pbound, center=self.center, weight=1,
                                             groups=self.split_groups, pzero=self.pzero)
+                output = torch.cat(out_adc, dim=1)
             else:
                 out_adc = psum_quant_merge(out_adc, out_tmp,
                                             pbits=self.pbits, step=self.pstep, 

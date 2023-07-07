@@ -145,7 +145,7 @@ def main():
             prefix_bak = prefix
             prefix = os.path.join(args.local, prefix_bak)
 
-        if args.psum_comp:
+        if args.psum_comp and args.evaluate:
             args.checkpoint = os.path.join(prefix, "log_bitserial_info")
             if not os.path.exists(args.checkpoint):
                 os.makedirs(args.checkpoint)
@@ -334,13 +334,39 @@ def main_worker(gpu, ngpus_per_node, args):
 
         model_dict = model.state_dict()
         model_keys = model_dict.keys()
-        
+
+        if ('binary_split' in args.arch):
+            conv_num = ['3', '7', '10', '14', '17']
+            linear_num = ['0', '3']
+            c_i = 0
+            l_i = 0
+
         for name, param in load_dict.items():
-            import pdb; pdb.set_trace()
             if ('resnet18' in args.arch and 'downsample' in name) and args.pretrained == 'url':
                 name_list = name.split('.')
                 name_list[-2] = str(int(name_list[4])+1)
                 name = ".".join(name_list)
+            elif ('binary_split' in args.arch):
+                if ('features' in name) and (conv_num[c_i] in name):
+                    name_list = name.split('.')
+                    name_list[-2] = str(3 + c_i)+'.pconv'
+                    c_i += 1 if c_i < len(conv_num)-1 else 0
+                    name = ".".join(name_list)
+
+                elif 'classifier' in name:
+                    if linear_num[l_i] in name:
+                        name_list = name.split('.')
+                        name_list[-2] = str(l_i)+'.plinear'
+                        l_i += 1 if l_i < len(linear_num)-1 else 0
+                        name = ".".join(name_list)
+                    elif '6' in name: 
+                        name_list = name.split('.')
+                        name_list[-2] = '2'
+                        name = ".".join(name_list)
+                    elif '7' in name:
+                        name_list = name.split('.')
+                        name_list[-2] = '3'
+                        name = ".".join(name_list)
 
             if name in model_keys:
                 model_dict[name] = param
