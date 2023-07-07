@@ -450,6 +450,8 @@ def main_worker(gpu, ngpus_per_node, args):
                 PQ.unset_bitserial_log(model)
             elif (args.model_mode == 'quant') or (args.model_mode == 'hn_quant'):
                 unset_BitSerial_log(model)
+            elif args.model_mode == 'binary':
+                unset_PsumBinary_log(model)
 
         else:
             if args.model_mode == 'nipq':

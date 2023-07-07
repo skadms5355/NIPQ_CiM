@@ -9,7 +9,7 @@ import pandas as pd
 from .noise_cell import Noise_cell
 import utils.padding as Pad
 from .quantized_lsq_modules import *
-from .quantized_basic_modules import psum_quant_merge
+from .quantized_basic_modules import psum_quant_merge, psum_quant
 from .bitserial_modules import *
 from .split_modules import *
 # custom kernel
@@ -514,36 +514,44 @@ class PsumBinConv(SplitConv):
         for wbit, weight_s in enumerate(weight_chunk):
             out_tmp = self._split_forward(input, weight_s, padded=True, ignore_bias=True, cat_output=False,
                                     weight_is_split=True, infer_only=True)
-
-            out_adc = psum_quant_merge(out_adc, out_tmp,
+            
+            if self.training:
+                output = psum_quant(out_adc, out_tmp,
+                                        pbits=self.pbits, step=self.pstep, 
+                                        half_num_levels=self.phalf_num_levels, 
+                                        pbound=self.pbound, center=self.center, weight=1,
+                                        groups=self.split_groups, pzero=self.pzero)
+            else:
+                out_adc = psum_quant_merge(out_adc, out_tmp,
                                         pbits=self.pbits, step=self.pstep, 
                                         half_num_levels=self.phalf_num_levels, 
                                         pbound=self.pbound, center=self.center, weight=1,
                                         groups=self.split_groups, pzero=self.pzero)
 
-            # weight output summation
-            if self.mapping_mode == 'two_com':
-                if wsplit_num == wbit+1:
-                    output -= out_adc
+                # weight output summation
+                if self.mapping_mode == 'two_com':
+                    if wsplit_num == wbit+1:
+                        output -= out_adc
+                    else:
+                        output = out_adc if wbit == 0 else output + out_adc
+                elif (self.mapping_mode == 'ref_d') or (self.mapping_mode == 'PN'):
+                    output = out_adc if wbit == 0 else output - out_adc
                 else:
                     output = out_adc if wbit == 0 else output + out_adc
-            elif (self.mapping_mode == 'ref_d') or (self.mapping_mode == 'PN'):
-                output = out_adc if wbit == 0 else output - out_adc
-            else:
-                output = out_adc if wbit == 0 else output + out_adc
-            out_adc = None
+                out_adc = None
 
-        if self.is_noise and not ((self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a')):
-            out_one = (-G_min/delta_G) * self._split_forward(input, w_one, padded=True, ignore_bias=True, cat_output=False,
-                                    weight_is_split=True, infer_only=True, merge_group=True)
-            output -= out_one
-        # output_real = F.conv2d(input_s, qweight, bias=self.bias,
-        #                         stride=self.stride, dilation=self.dilation, groups=self.groups)
-        # import pdb; pdb.set_trace()
+        if not self.training:
+            if self.is_noise and not ((self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a')):
+                out_one = (-G_min/delta_G) * self._split_forward(input, w_one, padded=True, ignore_bias=True, cat_output=False,
+                                        weight_is_split=True, infer_only=True, merge_group=True)
+                output -= out_one
+            # output_real = F.conv2d(input_s, qweight, bias=self.bias,
+            #                         stride=self.stride, dilation=self.dilation, groups=self.groups)
+            # import pdb; pdb.set_trace()
 
-        # add bias
-        if self.bias is not None:
-            output += self.bias
+            # add bias
+            if self.bias is not None:
+                output += self.bias
 
         # output_real = F.conv2d(input, qweight, bias=self.bias,
         #                         stride=self.stride, dilation=self.dilation, groups=self.groups)
@@ -604,7 +612,7 @@ class PsumBinLinear(SplitLinear):
     """
         Quant(LSQ)Linear + Psum quantization
     """
-    def __init__(self, in_features, out_features, wbits, symmetric=False, bias=False,
+    def __init__(self, in_features, out_features, wbits, bias=False,
                 weight_clip=0, weight_scale=True, arraySize=128, mapping_mode='none', psum_mode='sigma', cbits=None,
                 is_noise=False, noise_type=None):
         super(PsumBinLinear, self).__init__(in_features, out_features, bias=bias)
@@ -970,49 +978,56 @@ class PsumBinLinear(SplitLinear):
         # get quantization parameter and input bitserial 
         qweight = fw(self.weight, self.wbits, self.weight_clip, self.weight_scale, self.fan_in)
 
-        with torch.no_grad():
-            if self.pbits == 1:
-                self.pstep = 1
-                self.center = 0 
-                assert self.mapping_mode != '2T2R', "Only support 1bit (SA) when mapping mode is 2T2R"
+        if self.pbits == 1:
+            self.pstep = 1
+            self.center = 0 
+            assert self.mapping_mode != '2T2R', "Only support 1bit (SA) when mapping mode is 2T2R"
+        else:
+            if self.psum_mode == 'sigma':
+                minVal, maxVal, midVal = self._ADC_clamp_value()
+                self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
+            elif self.psum_mode == 'scan':
+                pass
             else:
-                if self.psum_mode == 'sigma':
-                    minVal, maxVal, midVal = self._ADC_clamp_value()
-                    self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
-                elif self.psum_mode == 'scan':
-                    pass
-                else:
-                    assert False, 'This script does not support {self.psum_mode}'
+                assert False, 'This script does not support {self.psum_mode}'
 
-            ### in-mem computation mimic (split conv & psum quant/merge)
-            bweight, wsplit_num = self._weight_bitserial(qweight, 1, cbits=self.cbits)
+        ### in-mem computation mimic (split conv & psum quant/merge)
+        bweight, wsplit_num = self._weight_bitserial(qweight, 1, cbits=self.cbits)
 
-            ### Cell noise injection + Cell conductance value change
-            if self.is_noise:
-                bweight = self.noise_cell(bweight)
-                weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
-                
-                if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
-                    bweight = weight_chunk[0] - weight_chunk[1]
-                    wsplit_num = 1
-                else:
-                    ## [TODO] two_com split weight format check
-                    delta_G, G_min = self.noise_cell.get_deltaG(G_min=True)
-                    w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
-
+        ### Cell noise injection + Cell conductance value change
+        if self.is_noise:
+            bweight = self.noise_cell(bweight)
             weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
-            self.weight_chunk = weight_chunk
+            
+            if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
+                bweight = weight_chunk[0] - weight_chunk[1]
+                wsplit_num = 1
+            else:
+                ## [TODO] two_com split weight format check
+                delta_G, G_min = self.noise_cell.get_deltaG(G_min=True)
+                w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
 
-            out_adc = None
-            for wbit, weight_s in enumerate(weight_chunk):
-                out_tmp = self._split_forward(input, weight_s, ignore_bias=True, cat_output=False, infer_only=True)
-                # out_tmp = F.linear(input_s[:,nIF_cnt:nIF_cnt+self.split_nIF[idx]], weight_s, bias=None)
+        weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
+        self.weight_chunk = weight_chunk
 
+        out_adc = None
+        for wbit, weight_s in enumerate(weight_chunk):
+            out_tmp = self._split_forward(input, weight_s, ignore_bias=True, cat_output=False, infer_only=True)
+            # out_tmp = F.linear(input_s[:,nIF_cnt:nIF_cnt+self.split_nIF[idx]], weight_s, bias=None)
+
+            if self.training:
+                output = psum_quant(out_adc, out_tmp,
+                                            pbits=self.pbits, step=self.pstep, 
+                                            half_num_levels=self.phalf_num_levels, 
+                                            pbound=self.pbound, center=self.center, weight=1,
+                                            groups=self.split_groups, pzero=self.pzero)
+            else:
                 out_adc = psum_quant_merge(out_adc, out_tmp,
                                             pbits=self.pbits, step=self.pstep, 
                                             half_num_levels=self.phalf_num_levels, 
                                             pbound=self.pbound, center=self.center, weight=1,
                                             groups=self.split_groups, pzero=self.pzero)
+
 
                 # weight output summation
                 if self.mapping_mode == 'two_com':
@@ -1026,13 +1041,14 @@ class PsumBinLinear(SplitLinear):
                     output = out_adc if wbit == 0 else output + out_adc
                 out_adc = None
 
+        if not self.training:
             if self.is_noise and not ((self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a')):
                 out_one = (-G_min/delta_G) * self._split_forward(input, w_one, ignore_bias=True, infer_only=True, merge_group=True)
                 output -= out_one
-      
-        # add bias
-        if self.bias is not None:
-            output += self.bias
+        
+            # add bias
+            if self.bias is not None:
+                output += self.bias
         
         # output_real = F.linear(input, qweight, bias=None)
         # import matplotlib.pyplot as plt
@@ -1068,10 +1084,10 @@ class PsumBinLinear(SplitLinear):
 
     def extra_repr(self):
         """Provides layer information, including wbits, when print(model) is called."""
-        s =  'in_features={}, out_features={}, bias={}, wbits={}, wbit_serial={}, split_groups={}, '\
+        s =  'in_features={}, out_features={}, bias={}, wbits={}, split_groups={}, '\
             'mapping_mode={}, cbits={}, psum_mode={}, pbits={}, pbound={}, '\
             'noise={}, bitserial_log={}, layer_idx={}'\
-            .format(self.in_features, self.out_features, self.bias is not None, self.wbits, self.wbit_serial,
+            .format(self.in_features, self.out_features, self.bias is not None, self.wbits,
             self.split_groups, self.mapping_mode, self.cbits, self.psum_mode, self.pbits, self.pbound, 
             self.is_noise, self.bitserial_log, self.layer_idx)
         return s
@@ -1153,24 +1169,3 @@ def set_PsumBin_Noise_injection(model, weight=False, wsym=False, hwnoise=True, c
                     assert max_epoch != -1, "Enter max_epoch in hwnoise_initialize function"
                 if hwnoise:
                     module._cell_noise_init(cbits=cbits, mapping_mode=mapping_mode, wsym=wsym, co_noise=co_noise, noise_type=noise_type, res_val=res_val, w_format=w_format, max_epoch=max_epoch)
-
-def count_ArrayMaxV(wbits, cbits, mapping_mode, arraySize):
-    if mapping_mode == '2T2R':
-        if cbits >= (wbits-1):
-            aMaxV = (2**(wbits-1)-1) * arraySize
-        else:
-            assert False, 'This file does not support this case cbits_{} < wbits_{}'.format(cbits, wbits)
-    elif mapping_mode == 'two_com':
-        if cbits >= (wbits-1):
-            aMaxV = (2**(wbits-1)-1) * arraySize
-        else:
-            assert False, 'This file does not support this case cbits_{} < wbits_{}'.format(cbits, wbits)
-    elif mapping_mode == 'ref_d':
-        if cbits >= wbits:
-            aMaxV = (2**(wbits)-1) * arraySize
-        else:
-            assert False, 'This file does not support this case cbits_{} < wbits_{}'.format(cbits, wbits)
-    else:
-        assert False, 'This file does not support the mapping_mode {}'.format(mapping_mode)
-    
-    return aMaxV

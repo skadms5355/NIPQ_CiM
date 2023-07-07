@@ -186,11 +186,15 @@ class PBin_vgg(nn.Module):
 
         )
         self.classifier = nn.Sequential(
-            BinLinear(512 * 4 * 4, 1024, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale = kwargs['weight_scale']),
+            PsumBinLinear(512 * 4 * 4, 1024, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale = kwargs['weight_scale'],
+                            arraySize=kwargs['arraySize'], mapping_mode=kwargs['mapping_mode'], psum_mode=kwargs['psum_mode'], cbits=kwargs['cbits'], 
+                            is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type']),
             nn.BatchNorm1d(1024),
             nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
 
-            BinLinear(1024, 1024, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale']),
+            PsumBinLinear(1024, 1024, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'],
+                            arraySize=kwargs['arraySize'], mapping_mode=kwargs['mapping_mode'], psum_mode=kwargs['psum_mode'], cbits=kwargs['cbits'], 
+                            is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type']),
             nn.BatchNorm1d(1024),
             # nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
             nonlinear(abits=32, mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),

@@ -74,7 +74,6 @@ class KIST_MRAM():
             if torch.any(x<0):
                 import pdb; pdb.set_trace()
             
-        
         #     sns.histplot(samples.cpu().numpy(), ax=ax[0], bins=200, alpha=0.2, element='step', fill=True, stat='density')
         #     sns.histplot(samples.cpu().numpy(), ax=ax[1], bins=200, alpha=0.2, element='step', fill=True, stat='count')
         
@@ -95,7 +94,7 @@ class KIST_MRAM():
 
         # # setting x-axis figure ax
         # ax[0].set_title(f'MRAM Noise', loc='right', fontsize=16)
-        # ax[0].set_xlabel('Resistor [kohm]')
+        # ax[0].set_xlabel('Resistance [kohm]')
         # ax[0].set_xlabel(ax[0].get_xlabel(), fontsize=16)
         # xlabels = ax[0].get_xticks()
         # ax[0].set_xlim(20, np.ceil(xlabels.max()))
@@ -103,7 +102,7 @@ class KIST_MRAM():
         # ax[0].set_xticklabels(ax[0].get_xticks(), fontsize=14)
 
         # # setting x-axis figure ax[1]
-        # ax[1].set_xlabel('Resistor [kohm]')
+        # ax[1].set_xlabel('Resistance [kohm]')
         # # xlabels = ax[1].get_xticks()
         # ax[1].set_xlabel(ax[1].get_xlabel(), fontsize=16)
         # ax[1].set_xlim(20, np.ceil(xlabels.max()))
