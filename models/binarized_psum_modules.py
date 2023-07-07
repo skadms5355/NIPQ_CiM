@@ -516,11 +516,13 @@ class PsumBinConv(SplitConv):
                                     weight_is_split=True, infer_only=True)
             
             if self.training:
-                output = psum_quant(out_adc, out_tmp,
+                out_adc = psum_quant(out_adc, out_tmp,
                                         pbits=self.pbits, step=self.pstep, 
                                         half_num_levels=self.phalf_num_levels, 
                                         pbound=self.pbound, center=self.center, weight=1,
                                         groups=self.split_groups, pzero=self.pzero)
+                import pdb; pdb.set_trace()
+                output = torch.cat(out_adc, dim=1)
             else:
                 out_adc = psum_quant_merge(out_adc, out_tmp,
                                         pbits=self.pbits, step=self.pstep, 
