@@ -3,19 +3,26 @@
 --augment	    False
 --zca		    True
 
---epochs        500
---train-batch   200
+# --epochs        500
+--train-batch   256
 --test-batch    200
 
---optimizer     adamax
---weight-decay  0
---glr           True
+--epoch         200
 
---lr-method     lr_step
---schedule      50 100 150 200 250 300 350 400 450
---gamma         0.5
---lr            0.01
---glr		    True
+--optimizer     adam
+--lr-method     lr_cosineanneal
+--warmup        3
+--warmup_start_multiplier 0.1
+--eta_min       1e-3
+--T0            197
+
+--weight-decay  0
+
+# --lr-method     lr_step
+# --schedule      50 100 150 200 250 300 350 400 450
+--gamma         0.1
+--lr            0.05
+# --glr		    True
 
 --model_mode    binary
 --arch          binary_split_vgg9
@@ -28,11 +35,11 @@
 --weight-clip	1
 --weight-scale	False
 
---pretrained    ./checkpoints/cifar10/binary/binarynet_vgg/a:1_w:1/2023-Jun-08-13-37-33/model_best.pth.tar
-
 --psum_comp     y
 --arraySize     128
 --mapping_mode  2T2R
+
+--pretrained    ./checkpoints/cifar10/binary/binarynet_vgg/a:1_w:1/2023-Jun-08-13-37-33/model_best.pth.tar
 
 # noise option
 --is_noise      n
