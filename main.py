@@ -252,12 +252,15 @@ def main_worker(gpu, ngpus_per_node, args):
     # initialize weights
     modules_to_init = ['Conv2d', 'BinConv', 'Linear', 'BinLinear', \
             'QConv', 'QLinear', 'QuantConv', 'QuantLinear', \
-            'PsumQConv', 'PsumQLinear']
+            'PsumQConv', 'PsumQLinear', 'PsumBinConv', 'PsumBinLinear']
+    modules_to_mult = ['PsumBinConv', 'PsumBinLinear']
     bn_modules_to_init = ['BatchNorm1d', 'BatchNorm2d']
     for m in model.modules():
         if type(m).__name__ in modules_to_init:
             initialize.init_weight(m, method=args.init_method, dist=args.init_dist, mode=args.init_fan)
             # print('Layer {} has been initialized.'.format(type(m).__name__))
+            if type(m).__name__ in modules_to_mult:
+                m.weight.data = math.sqrt(1/m.split_groups)*m.weight.data
         if type(m).__name__ in bn_modules_to_init:
             if args.bn_bias != 0.0:
                 # print(f"Initializing BN bias to {args.bn_bias}")

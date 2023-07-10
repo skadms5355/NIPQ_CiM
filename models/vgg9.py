@@ -68,39 +68,39 @@ class LSQ_vgg9(nn.Module):
         self.features = nn.Sequential(
             QConv(3, 128, wbits=kwargs['wbits'] if kwargs['FL_quant'] else 32, kernel_size=3, stride=1, padding=1, bias=False, symmetric=self.symmetric),
             nn.BatchNorm2d(128),
-            add_act(abits=kwargs['abits']),
+            add_act(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
 
             QConv(128, 128, wbits=kwargs['wbits'], kernel_size=3, stride=1, padding=1, bias=False, symmetric=self.symmetric),
             nn.MaxPool2d(kernel_size=2, stride=2),
             nn.BatchNorm2d(128),
-            add_act(abits=kwargs['abits']),
+            add_act(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
 
             QConv(128, 256, wbits=kwargs['wbits'], kernel_size=3, stride=1, padding=1, bias=False, symmetric=self.symmetric),
             nn.BatchNorm2d(256),
-            add_act(abits=kwargs['abits']),
+            add_act(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
 
             QConv(256, 256, wbits=kwargs['wbits'], kernel_size=3, stride=1, padding=1, bias=False, symmetric=self.symmetric),
             nn.MaxPool2d(kernel_size=2, stride=2),
             nn.BatchNorm2d(256),
-            add_act(abits=kwargs['abits']),
+            add_act(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
 
             QConv(256, 512, wbits=kwargs['wbits'], kernel_size=3, stride=1, padding=1, bias=False, symmetric=self.symmetric),
             nn.BatchNorm2d(512),
-            add_act(abits=kwargs['abits']),
+            add_act(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
 
             QConv(512, 512, wbits=kwargs['wbits'], kernel_size=3, stride=1, padding=1, bias=False, symmetric=self.symmetric),
             nn.MaxPool2d(kernel_size=2, stride=2),
             nn.BatchNorm2d(512),
-            add_act(abits=kwargs['abits']),    
+            add_act(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),    
         )
         self.classifier = nn.Sequential(
             QLinear(512 * 4 * 4, 1024, wbits=kwargs['wbits'], symmetric=self.symmetric),  
             nn.BatchNorm1d(1024),
-            add_act(abits=kwargs['abits']), 
+            add_act(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']), 
 
             QLinear(1024, 1024, wbits=kwargs['wbits'], symmetric=self.symmetric),
             nn.BatchNorm1d(1024),
-            add_act(abits=kwargs['abits'] if kwargs['FL_quant'] else 32), 
+            add_act(abits=kwargs['abits'] if kwargs['FL_quant'] else 32, mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']), 
 
             nn.Dropout(kwargs['drop']),
             # nn.Linear(1024, kwargs['num_classes'], bias=True),

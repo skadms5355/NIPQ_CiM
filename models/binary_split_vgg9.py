@@ -7,15 +7,16 @@ __all__ = ['binary_split_vgg9']
 
 class PConv_BN_Merge(nn.Module):
     def __init__(self, inplane, outplane, wbits, weight_clip, weight_scale, padding_mode, arraySize, mapping_mode, is_noise, noise_type,
-                 abits, mode, ste, offset, width, maxpool=False):
+                 abits, mode, ste, offset, width, pool=False):
         super(PConv_BN_Merge, self).__init__()
         self.pconv = PsumBinConv(inplane, outplane, wbits=wbits, weight_clip=weight_clip, weight_scale=weight_scale, kernel_size=3, stride=1, padding=1, padding_mode=padding_mode,
                         arraySize=arraySize, mapping_mode=mapping_mode, pbits=1, cbits=1, is_noise=is_noise, noise_type=noise_type)
         self.split_groups = self.pconv.split_groups
         self.BN = nn.BatchNorm2d(outplane*self.pconv.split_groups)
-        self.Maxpooling = None
-        if maxpool:
-            self.Maxpooling = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.pooling = None
+        if pool:
+            self.pooling = nn.MaxPool2d(kernel_size=2, stride=2)
+            # self.pooling = nn.AvgPool2d(kernel_size=2, stride=2)
         self.qrelu = nonlinear(abits=abits, mode=mode, ste=ste, offset=offset, width=width)
 
     def merge_output(self, x):
@@ -29,8 +30,8 @@ class PConv_BN_Merge(nn.Module):
 
     def forward(self, x):
         x = self.pconv(x)
-        if self.Maxpooling is not None:
-            x = self.Maxpooling(x)
+        if self.pooling is not None:
+            x = self.pooling(x)
         x = self.BN(x)
         x = self.merge_output(x)
         x = self.qrelu(x)
@@ -76,27 +77,27 @@ class BinarySplit_vgg(nn.Module):
             PConv_BN_Merge(128, 128, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], padding_mode=kwargs['padding_mode'],
                         arraySize=kwargs['arraySize'], mapping_mode=kwargs['mapping_mode'], is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type'],
                         abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width'],
-                        maxpool=True),
+                        pool=True),
 
             PConv_BN_Merge(128, 256, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], padding_mode=kwargs['padding_mode'],
                         arraySize=kwargs['arraySize'], mapping_mode=kwargs['mapping_mode'], is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type'],
                         abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width'],
-                        maxpool=False),
+                        pool=False),
 
             PConv_BN_Merge(256, 256, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], padding_mode=kwargs['padding_mode'],
                         arraySize=kwargs['arraySize'], mapping_mode=kwargs['mapping_mode'], is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type'],
                         abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width'],
-                        maxpool=True),
+                        pool=True),
 
             PConv_BN_Merge(256, 512, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], padding_mode=kwargs['padding_mode'],
                         arraySize=kwargs['arraySize'], mapping_mode=kwargs['mapping_mode'], is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type'],
                         abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width'],
-                        maxpool=False),
+                        pool=False),
 
             PConv_BN_Merge(512, 512, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], padding_mode=kwargs['padding_mode'],
                         arraySize=kwargs['arraySize'], mapping_mode=kwargs['mapping_mode'], is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type'],
                         abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width'],
-                        maxpool=True)
+                        pool=True)
         )
         self.classifier = nn.Sequential(
             PLinear_BN_Merge(512 * 4 * 4, 1024, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale = kwargs['weight_scale'],

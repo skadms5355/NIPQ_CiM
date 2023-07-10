@@ -3,26 +3,29 @@
 --augment	    False
 --zca		    True
 
-# --epochs        500
---train-batch   256
+--epochs        500
+--train-batch   200
 --test-batch    200
 
---epoch         200
+# --epoch         200
 
---optimizer     adam
---lr-method     lr_cosineanneal
---warmup        3
---warmup_start_multiplier 0.1
---eta_min       1e-3
---T0            197
+--optimizer     adamax
+# --lr-method     lr_cosineanneal
+# --warmup        3
+# --warmup_start_multiplier 0.1
+# --eta_min       1e-3
+# --T0            197
 
 --weight-decay  0
+--init-method   kaiming
+--init-dist     normal
+--init-fan      fan_both
 
-# --lr-method     lr_step
-# --schedule      50 100 150 200 250 300 350 400 450
---gamma         0.1
---lr            0.05
-# --glr		    True
+--lr-method     lr_step
+--schedule      50 100 150 200 250 300 350 400 450
+--gamma         0.5
+--lr            0.01
+--glr		    True
 
 --model_mode    binary
 --arch          binary_split_vgg9
