@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 from .binarized_psum_modules import *
-from .binarized_modules import nonlinear
+from .binarized_modules import nonlinear, BinarizedNeurons
 __all__ = ['binary_split_vgg9']
 
 class PConv_BN_Merge(nn.Module):
@@ -13,10 +13,11 @@ class PConv_BN_Merge(nn.Module):
                         arraySize=arraySize, mapping_mode=mapping_mode, pbits=1, cbits=1, is_noise=is_noise, noise_type=noise_type)
         self.split_groups = self.pconv.split_groups
         self.BN = nn.BatchNorm2d(outplane*self.pconv.split_groups)
+        # self.hardtanh = nn.Hardtanh(-1, 1, inplace=True)
         self.pooling = None
         if pool:
-            self.pooling = nn.MaxPool2d(kernel_size=2, stride=2)
-            # self.pooling = nn.AvgPool2d(kernel_size=2, stride=2)
+            # self.pooling = nn.MaxPool2d(kernel_size=2, stride=2)
+            self.pooling = nn.AvgPool2d(kernel_size=2, stride=2)
         self.qrelu = nonlinear(abits=abits, mode=mode, ste=ste, offset=offset, width=width)
 
     def merge_output(self, x):
@@ -33,6 +34,7 @@ class PConv_BN_Merge(nn.Module):
         if self.pooling is not None:
             x = self.pooling(x)
         x = self.BN(x)
+        # x = self.hardtanh(x)
         x = self.merge_output(x)
         x = self.qrelu(x)
 
@@ -46,6 +48,8 @@ class PLinear_BN_Merge(nn.Module):
                         arraySize=arraySize, mapping_mode=mapping_mode, pbits=1, cbits=1, is_noise=is_noise, noise_type=noise_type)
         self.split_groups = self.plinear.split_groups
         self.BN = nn.BatchNorm1d(outfeatures*self.plinear.split_groups)
+        # self.hardtanh = nn.Hardtanh(-1, 1, inplace=True)
+        # self.binarized = BinarizedNeurons()
         self.qrelu = nonlinear(abits=abits, mode=mode, ste=ste, offset=offset, width=width)
 
     def merge_output(self, x):
@@ -59,6 +63,8 @@ class PLinear_BN_Merge(nn.Module):
     def forward(self, x):
         x = self.plinear(x)
         x = self.BN(x)
+        # x = self.hardtanh(x)
+        # x = self.binarized(x)
         x = self.merge_output(x)
         x = self.qrelu(x)
 
@@ -68,7 +74,7 @@ class PLinear_BN_Merge(nn.Module):
 class BinarySplit_vgg(nn.Module):
     def __init__(self, **kwargs):
         super(BinarySplit_vgg, self).__init__()
-
+        
         self.features = nn.Sequential(        
             nn.Conv2d(3, 128, kernel_size=3, stride=1, padding=1, bias=False),
             nn.BatchNorm2d(128),

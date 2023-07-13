@@ -17,8 +17,10 @@
 # --T0            197
 
 --weight-decay  0
---init-method   kaiming
---init-dist     normal
+# --init-method   kaiming
+# --init-dist     normal
+--init-method   uniform
+--init-dist     uniform
 --init-fan      fan_both
 
 --lr-method     lr_step
@@ -42,7 +44,7 @@
 --arraySize     128
 --mapping_mode  2T2R
 
---pretrained    ./checkpoints/cifar10/binary/binarynet_vgg/a:1_w:1/2023-Jun-08-13-37-33/model_best.pth.tar
+# --pretrained    ./checkpoints/cifar10/binary/binarynet_vgg/a:1_w:1/2023-Jun-08-13-37-33/model_best.pth.tar
 
 # noise option
 --is_noise      n

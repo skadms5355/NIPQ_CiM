@@ -9,7 +9,7 @@ import pandas as pd
 from .noise_cell import Noise_cell
 import utils.padding as Pad
 from .quantized_lsq_modules import *
-from .quantized_basic_modules import psum_quant_merge, psum_quant
+from .quantized_basic_modules import psum_quant_merge
 from .bitserial_modules import *
 from .split_modules import *
 # custom kernel
@@ -96,8 +96,9 @@ class PsumBinConv(SplitConv):
         self._group_move_offset()
         
         # sweight
-        sweight = torch.Tensor(self.out_channels*self.split_groups, self.group_in_channels, kernel_size, kernel_size)
-        self.register_buffer('sweight', sweight)
+        # self.sweight = nn.Parameter(torch.Tensor(self.out_channels*self.split_groups, self.group_in_channels, kernel_size, kernel_size))
+        # self.register_buffer('sweight', sweight)
+        # self.ks = kernel_size
 
         # for psum quantization
         self.mapping_mode = mapping_mode # Array mapping method [none, 2T2R, two_com, ref_d]]
@@ -224,242 +225,6 @@ class PsumBinConv(SplitConv):
         if not (noise_type == 'prop' or 'interp'):
             noise_type = 'prop'
         self.noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, wsym, co_noise, noise_type, res_val=res_val, w_format=self.w_format)
-    
-    def _bitserial_log_forward(self, input):
-        print(f'[layer{self.layer_idx}]: bitserial mac log')
-        # delete padding_shpe & additional padding operation by matching padding/stride format with nn.Conv2d
-        if self.padding > 0:
-            if self.padding_mode == 'neg':
-                self.padding_value = float(input.min()) 
-            padding_shape = (self.padding, self.padding, self.padding, self.padding)
-            input = Pad.pad(input, padding_shape, self.padding_mode, self.padding_value)
-
-        # local parameter setting
-        bitplane_idx = 0
-
-        with torch.no_grad():
-            # get quantization parameter and input bitserial 
-            qweight = fw(self.weight, self.wbits, self.weight_clip, self.weight_scale, self.fan_in)
-
-            if self.is_noise and self.w_format=="weight":
-                import pdb; pdb.set_trace()
-                qweight = self.noise_cell(qweight)
-
-
-            ## get dataframe
-            logger = f'{self.checkpoint}/layer{self.layer_idx}_mac_static.pkl'
-            df = pd.DataFrame(columns=['wbits', 'abits', 'mean', 'std', 'min', 'max'])
-
-            # logger_scaled = f'{self.checkpoint}/layer{self.layer_idx}_wabitplane_mac_static_scaled_lastbatch.pkl'
-            # df_scaled = pd.DataFrame(columns=['wbits', 'abits', 'mean', 'std', 'min', 'max'])
-
-            layer_hist = f'{self.checkpoint}/hist/layer{self.layer_idx}_hist.pkl'
-            network_hist = f'{self.checkpoint}/hist/network_hist.pkl'
-
-            ### Cell noise injection + Cell conductance value change
-            if self.is_noise:
-                bweight, wsplit_num = self._weight_bitserial(qweight, 1, cbits=self.cbits)
-                bweight = self.noise_cell(bweight)
-                
-                weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
-                
-                ## make the same weight size as qweight
-                if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
-                    bweight = weight_chunk[0] - weight_chunk[1]
-                    wsplit_num = 1
-                else:
-                    ## [TODO] two_com split weight format check
-                    delta_G, G_min = self.noise_cell.get_deltaG(G_min=True)
-                    w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
-
-                self.sweight = conv_sweight_cuda.forward(self.sweight, bweight, self.group_in_offset, self.split_groups)
-                weight_chunk = torch.chunk(self.sweight, wsplit_num, dim=1)
-            else:
-                self.sweight = conv_sweight_cuda.forward(self.sweight, qweight, self.group_in_offset, self.split_groups)
-                sweight, wsplit_num = self._weight_bitserial(self.sweight, 1, cbits=self.cbits)
-                weight_chunk = torch.chunk(sweight, wsplit_num, dim=1)
-
-            # in-memory computing parameter computing
-            out_tmp = None
-            layer_hist_dict = {}
-            for wbit, weight_s in enumerate(weight_chunk):
-                wabitplane_hist = f'{self.checkpoint}/hist/layer{self.layer_idx}_w:{wbit}__hist.pkl'
-                wa_hist_dict = {}
-                out_tmp = self._split_forward(input, weight_s, padded=True, ignore_bias=True,
-                                                weight_is_split=True, infer_only=True)
-                # out_tmp = F.conv2d(input_s[:,nIC_cnt:nIC_cnt+self.split_nIC[idx],:,:], weight_s, bias=self.bias,
-                #             stride=self.stride, dilation=self.dilation, groups=self.groups)
-
-                out_array = out_tmp.round()
-                ## NOTE
-                df.loc[bitplane_idx] = [wbit, 0,
-                                                float(out_array.mean()), 
-                                                float(out_array.std()), 
-                                                float(out_array.min()), 
-                                                float(out_array.max())] 
-
-                # out_tmp_scale = out_tmp / self.pquant_bitplane[bitplane_idx]
-                out_min = out_array.min()
-                out_max = out_array.max()
-                # df_scaled.loc[bitplane_idx] = [wbit, abit,
-                #                                 float(out_tmp_scale.mean()), 
-                #                                 float(out_tmp_scale.std()), 
-                #                                 float(out_min), 
-                #                                 float(out_max)] 
-
-                # update hist
-                for val in range(int(out_min), int(out_max)+1):
-                    count = out_array.eq(val).sum().item()
-                    # get wa_hist
-                    wa_hist_dict[val] = count
-
-                # save wabitplane_hist
-                df_hist = pd.DataFrame(list(wa_hist_dict.items()), columns = ['val', 'count'])
-                # wabitplane hist
-                if os.path.isfile(wabitplane_hist):
-                    print(f'[{self.layer_idx}]Update wabitplane_hist for w:{wbit} ({wabitplane_hist})')
-                    df_wabitplane_hist = pd.read_pickle(wabitplane_hist) 
-                    df_merge = pd.merge(df_wabitplane_hist, df_hist, how="outer", on="val")
-                    df_merge = df_merge.replace(np.nan, 0)
-                    df_merge['count'] = df_merge['count_x'] + df_merge['count_y']
-                    df_merge = df_merge[['val', 'count']]
-                    df_merge.to_pickle(wabitplane_hist)
-                else:
-                    print(f'[{self.layer_idx}]Create wabitplane_hist for w:{wbit} ({wabitplane_hist})')
-                    df_hist.to_pickle(wabitplane_hist)
-
-                # split output merge
-                output_chunk = out_tmp.chunk(self.split_groups, dim=1) 
-                for g in range(0, self.split_groups):
-                    if g==0:
-                        out_tmp = output_chunk[g]
-                    else:
-                        out_tmp += output_chunk[g]
-
-                # weight output summation
-                if self.mapping_mode == 'two_com':
-                    if wsplit_num == wbit+1:
-                        out_wsum -= out_tmp
-                    else:
-                        out_wsum = out_tmp if wbit == 0 else out_wsum + out_tmp
-                elif (self.mapping_mode == 'ref_d') or (self.mapping_mode == 'PN'):
-                    out_wsum = out_tmp if wbit == 0 else out_wsum - out_tmp
-                else:
-                        out_wsum = out_tmp if wbit == 0 else out_wsum + out_tmp
-
-                bitplane_idx += 1
-
-            # update layer hist
-            for val, count in wa_hist_dict.items():
-                if val in layer_hist_dict.keys():
-                    layer_hist_dict[val] += count
-                else:
-                    layer_hist_dict[val] = count
-
-            if self.is_noise and not ((self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a')):
-                out_one = (-G_min/delta_G) * self._split_forward(input, w_one, padded=True, ignore_bias=True,
-                                                weight_is_split=True, infer_only=True, merge_group=True)
-                out_wsum -= out_one
-            output = out_wsum 
-
-            # add bias
-            if self.bias is not None:
-                output += self.bias
-
-        # save logger
-        df.to_pickle(logger)
-        # df_scaled.to_pickle(logger_scaled)
-
-        # save hist
-        df_hist = pd.DataFrame(list(layer_hist_dict.items()), columns = ['val', 'count'])
-        # layer hist
-        if os.path.isfile(layer_hist):
-            print(f'[{self.layer_idx}] Update layer_hist ({layer_hist})')
-            df_layer_hist = pd.read_pickle(layer_hist) 
-            df_merge = pd.merge(df_layer_hist, df_hist, how="outer", on="val")
-            df_merge = df_merge.replace(np.nan, 0)
-            df_merge['count'] = df_merge['count_x'] + df_merge['count_y']
-            df_merge = df_merge[['val', 'count']]
-            df_merge.to_pickle(layer_hist)
-        else:
-            print(f'[{self.layer_idx}] Create layer_hist ({layer_hist})')
-            df_hist.to_pickle(layer_hist)
-        # network hist
-        if os.path.isfile(network_hist):
-            print(f'[{self.layer_idx}]Update network_hist ({network_hist})')
-            df_network_hist = pd.read_pickle(network_hist) 
-            df_merge = pd.merge(df_network_hist, df_hist, how="outer", on="val")
-            df_merge = df_merge.replace(np.nan, 0)
-            df_merge['count'] = df_merge['count_x'] + df_merge['count_y']
-            df_merge = df_merge[['val', 'count']]
-            df_merge.to_pickle(network_hist)
-        else:
-            print(f'[{self.layer_idx}] Create network_hist ({network_hist})')
-            df_hist.to_pickle(network_hist)
-
-        # if self.concat:
-        #     output_real = F.conv2d(input, qweight, bias=self.bias,
-        #                         stride=self.stride, dilation=self.dilation, groups=self.groups)
-        #     import pdb; pdb.set_trace()
-        #     print('split', output[0][0][0])
-        #     print('real', output_real[0][0][0])
-
-        return output
-
-    def _ADC_clamp_value(self):
-        # get ADC clipping value for hist [Layer or Network hist]
-        if self.pclipmode == 'Layer':
-            phist = f'{self.checkpoint}/hist/layer{self.layer_idx}_hist.pkl'
-            # phist = f'./hist/layer{self.layer_idx}_hist.pkl'
-        elif self.pclipmode == 'Network':
-            phist = f'{self.checkpoint}/hist/network_hist.pkl'
-
-        if os.path.isfile(phist):
-            # print(f'Load ADC_hist ({phist})')
-            df_hist = pd.read_pickle(phist)
-            mean, std, min, max = get_statistics_from_hist(df_hist)
-        else:
-            if self.pbits != 32:
-                assert False, "Error: Don't have ADC hist file"
-            else:
-                mean, std, min, max = 0.0, 0.0, 0.0, 0.0
-
-        # Why abs(mean) is used not mean?? => Asymmetric quantizaion is occured
-        if self.pbits == 32:
-            maxVal = 1
-            minVal = 0
-        else:
-            if self.pclip == 'max':
-                maxVal = max
-                minVal = min
-            else:
-                maxVal =  (abs(mean) + self.psigma*std).round() 
-                minVal = (abs(mean) - self.psigma*std).round()
-                if (self.mapping_mode == 'two_com') or (self.mapping_mode =='ref_d') or (self.mapping_mode == 'PN'):
-                    minVal = min if minVal < 0 else minVal
-        
-        midVal = (maxVal + minVal) / 2
-
-        if self.info_print:
-            write_file = f'{self.checkpoint}/Layer_clipping_range.txt'
-            if os.path.isfile(write_file) and (self.layer_idx == 0):
-                option = 'w'
-            else:
-                option = 'a'
-            with open(write_file, option) as file:
-                if self.layer_idx == 0:
-                    file.write(f'{self.pclipmode}-wise Mode Psum quantization \n')
-                    file.write(f'Layer_information  Mean    Std     Min Max Clip_Min    Clip_Max    Mid \n')
-                file.write(f'Layer{self.layer_idx}  {mean}  {std}   {min}   {max}   {minVal}    {maxVal}    {midVal}\n')
-            
-            print(f'{self.pclipmode}-wise Mode Psum quantization')
-            if self.pbits == 32:
-                print(f'Layer{self.layer_idx} information | pbits {self.pbits}')
-            else:
-                print(f'Layer{self.layer_idx} information | pbits {self.pbits} | Mean: {mean} | Std: {std} | Min: {min} | Max: {max} | Clip Min: {minVal} | Clip Max: {maxVal} | Mid: {midVal}')
-            self.info_print = False
-
-        return minVal, maxVal, midVal 
 
     def _bitserial_comp_forward(self, input):
         # delete padding_shpe & additional padding operation by matching padding/stride format with nn.Conv2d
@@ -471,113 +236,25 @@ class PsumBinConv(SplitConv):
 
         qweight = fw(self.weight, self.wbits, self.weight_clip, self.weight_scale, self.fan_in)
 
-        if self.pbits == 1:
-            self.setting_pquant_func(pbits=self.pbits)
-            self.pstep = 1
-            assert self.mapping_mode == '2T2R', "Only support 1bit (SA) when mapping mode is 2T2R"
-        else:
-            if self.psum_mode == 'sigma':
-                minVal, maxVal, midVal = self._ADC_clamp_value()
-                self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
-            elif self.psum_mode == 'scan':
-                pass
-            else:
-                assert False, 'This script does not support {self.psum_mode}'
+        self.setting_pquant_func(pbits=self.pbits)
+        assert self.mapping_mode == '2T2R', "Only support 1bit (SA) when mapping mode is 2T2R"
 
         ### Cell noise injection + Cell conductance value change
         ### in-mem computation programming (weight constant-noise)
-        if self.is_noise:
-            bweight, wsplit_num = self._weight_bitserial(qweight, 1, cbits=self.cbits)
-            bweight = self.noise_cell(bweight)
-            
-            weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
-            
-            ## make the same weight size as qweight
-            if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
-                bweight = weight_chunk[0] - weight_chunk[1]
+        with torch.no_grad():
+            if self.is_noise:
+                qweight, wsplit_num = self._weight_bitserial(qweight, 1, cbits=self.cbits)
+                qweight = self.noise_cell(qweight)
+                
+                weight_chunk = torch.chunk(qweight, wsplit_num, dim=1)
+                
+                ## make the same weight size as qweight (only 2T2R design)
+                qweight = weight_chunk[0] - weight_chunk[1]
                 wsplit_num = 1
-            else:
-                ## [TODO] two_com split weight format check
-                delta_G, G_min = self.noise_cell.get_deltaG(G_min=True)
-                w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
 
-            self.sweight = conv_sweight_cuda.forward(self.sweight, bweight, self.group_in_offset, self.split_groups)
-            weight_chunk = torch.chunk(self.sweight, wsplit_num, dim=1)
-        else:
-            self.sweight = conv_sweight_cuda.forward(self.sweight, qweight, self.group_in_offset, self.split_groups)
-            sweight, wsplit_num = self._weight_bitserial(self.sweight, 1, cbits=self.cbits)
-            weight_chunk = torch.chunk(sweight, wsplit_num, dim=1)
-        
-        self.weight_chunk = weight_chunk
-
-        out_adc = None
-        for wbit, weight_s in enumerate(weight_chunk):
-            out_tmp = self._split_forward(input, weight_s, padded=True, ignore_bias=True, cat_output=False,
-                                    weight_is_split=True, infer_only=True)
-            
-            if self.pbits==1:
-                out_adc = psum_quant(out_adc, out_tmp,
-                                        pbits=self.pbits, step=self.pstep, 
-                                        half_num_levels=self.phalf_num_levels, 
-                                        pbound=self.pbound, center=self.center, weight=1,
-                                        groups=self.split_groups, pzero=self.pzero)
-                output = torch.cat(out_adc, dim=1)
-            else:
-                out_adc = psum_quant_merge(out_adc, out_tmp,
-                                        pbits=self.pbits, step=self.pstep, 
-                                        half_num_levels=self.phalf_num_levels, 
-                                        pbound=self.pbound, center=self.center, weight=1,
-                                        groups=self.split_groups, pzero=self.pzero)
-
-                # weight output summation
-                if self.mapping_mode == 'two_com':
-                    if wsplit_num == wbit+1:
-                        output -= out_adc
-                    else:
-                        output = out_adc if wbit == 0 else output + out_adc
-                elif (self.mapping_mode == 'ref_d') or (self.mapping_mode == 'PN'):
-                    output = out_adc if wbit == 0 else output - out_adc
-                else:
-                    output = out_adc if wbit == 0 else output + out_adc
-                out_adc = None
-
-        if not self.training:
-            if self.is_noise and not ((self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a')):
-                out_one = (-G_min/delta_G) * self._split_forward(input, w_one, padded=True, ignore_bias=True, cat_output=False,
-                                        weight_is_split=True, infer_only=True, merge_group=True)
-                output -= out_one
-            # output_real = F.conv2d(input_s, qweight, bias=self.bias,
-            #                         stride=self.stride, dilation=self.dilation, groups=self.groups)
-            # import pdb; pdb.set_trace()
-
-            # add bias
-            if self.bias is not None:
-                output += self.bias
-
-        # output_real = F.conv2d(input, qweight, bias=self.bias,
-        #                         stride=self.stride, dilation=self.dilation, groups=self.groups)
-        # print(output_real[0][0])
-        # print(output[0][0])
-        # if self.layer_idx == 4:
-        # import matplotlib.pyplot as plt
-        # import seaborn as sns
-        # fig, ax = plt.subplots(ncols=2, figsize=(20, 12))
-
-        # sns.histplot((qweight/w_scale).detach().cpu().numpy().ravel(), ax=ax[0], alpha=0.5)
-        # sns.histplot((bweight).detach().cpu().numpy().ravel(), ax=ax[1], alpha=0.5)
-        # ax[0].set_ylabel(ax[0].get_ylabel(), fontsize=14)
-        # ax[1].set_ylabel(ax[1].get_ylabel(), fontsize=14)
-        # ax[0].set_title(f'Before Noise', loc='right', fontsize=16)
-        # ax[1].set_title(f'After Noise', loc='right', fontsize=16)
-        # ax[0].set_xlabel('Weight', fontsize=16)
-        # ax[1].set_xlabel('Weight', fontsize=16)
-        # ax[0].set_xticklabels(ax[0].get_xticks(), fontsize=14)
-        # ax[1].set_xticklabels(ax[1].get_xticks(), fontsize=14)
-
-        # plt.savefig(os.getcwd() +f"/graph/ReRAM/NAT_Layer{self.layer_idx}_weight.png", bbox_inches='tight')
-
+        out_tmp = self._split_forward(input, qweight, padded=True, ignore_bias=True, weight_is_split=True, binary=True)
+        output = bfp(out_tmp)
         # import pdb; pdb.set_trace()
-
         return output
 
     def forward(self, input):
@@ -585,8 +262,6 @@ class PsumBinConv(SplitConv):
             return F.conv2d(input, self.weight, bias=self.bias,
             stride=self.stride, padding=self.padding, dilation=self.dilation, groups=self.groups)
 
-        if self.bitserial_log:
-            return self._bitserial_log_forward(input)
         else:
             return self._bitserial_comp_forward(input)
 
@@ -758,319 +433,31 @@ class PsumBinLinear(SplitLinear):
             noise_type = 'prop'
         self.noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, wsym, co_noise, noise_type, res_val=res_val, w_format=self.w_format)
     
-    def _bitserial_log_forward(self, input):
-        print(f'[layer{self.layer_idx}]: bitserial mac log')
-
-        # local parameter setting
-        bitplane_idx = 0
-
-        # get quantization parameter and input bitserial 
-        qweight = fw(self.weight, self.wbits, self.weight_clip, self.weight_scale, self.fan_in)
-
-        if self.is_noise and self.w_format=="weight":
-            qweight = self.noise_cell(qweight)
-
-        ## get dataframe
-        logger = f'{self.checkpoint}/layer{self.layer_idx}_mac_static.pkl'
-        df = pd.DataFrame(columns=['wbits', 'abits', 'mean', 'std', 'min', 'max'])
-
-        # logger_scaled = f'{self.checkpoint}/layer{self.layer_idx}_wabitplane_mac_static_scaled_lastbatch.pkl'
-        # df_scaled = pd.DataFrame(columns=['wbits', 'abits', 'mean', 'std', 'min', 'max'])
-
-        layer_hist = f'{self.checkpoint}/hist/layer{self.layer_idx}_hist.pkl'
-        network_hist = f'{self.checkpoint}/hist/network_hist.pkl'
-        
-        layer_hist_dict = {}
-
-        ### in-mem computation mimic (split conv & psum quant/merge)
-        bweight, wsplit_num = self._weight_bitserial(qweight, 1, cbits=self.cbits)
-
-        ### Cell noise injection + Cell conductance value change
-        if self.is_noise:
-            bweight = self.noise_cell(bweight)
-            weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
-            
-            if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
-                bweight = weight_chunk[0] - weight_chunk[1]
-                wsplit_num = 1
-            else:
-                ## [TODO] two_com split weight format check
-                delta_G, G_min = self.noise_cell.get_deltaG(G_min=True)
-                w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
-
-        weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
-
-        out_tmp = None
-        for wbit, weight_s in enumerate(weight_chunk):
-            wabitplane_hist = f'{self.checkpoint}/hist/layer{self.layer_idx}_w:{wbit}_hist.pkl'
-            wa_hist_dict = {}
-            out_tmp = self._split_forward(input, weight_s, ignore_bias=True, infer_only=True)
-            # out_tmp = F.linear(input_s[:,nIF_cnt:nIF_cnt+self.split_nIF[idx]], weight_s, bias=None)
-
-            out_array = out_tmp.round()
-                            
-            ## NOTE
-            df.loc[bitplane_idx] = [wbit, 0,
-                                            float(out_array.mean()), 
-                                            float(out_array.std()), 
-                                            float(out_array.min()), 
-                                            float(out_array.max())] 
-
-            # out_tmp_scale = out_tmp / self.pquant_bitplane[bitplane_idx]
-            out_min = out_array.min()
-            out_max = out_array.max()
-            # df_scaled.loc[bitplane_idx] = [wbit, abit,
-            #                                 float(out_tmp_scale.mean()), 
-            #                                 float(out_tmp_scale.std()), 
-            #                                 float(out_min), 
-            #                                 float(out_max)] 
-
-            # update hist
-            for val in range(int(out_min), int(out_max)+1):
-                count = out_array.eq(val).sum().item()
-                # get wa_hist
-                wa_hist_dict[val] = count
-
-            # save wabitplane_hist
-            df_hist = pd.DataFrame(list(wa_hist_dict.items()), columns = ['val', 'count'])
-            # wabitplane hist
-            if os.path.isfile(wabitplane_hist):
-                print(f'[{self.layer_idx}]Update wabitplane_hist for w:{wbit} ({wabitplane_hist})')
-                df_wabitplane_hist = pd.read_pickle(wabitplane_hist) 
-                df_merge = pd.merge(df_wabitplane_hist, df_hist, how="outer", on="val")
-                df_merge = df_merge.replace(np.nan, 0)
-                df_merge['count'] = df_merge['count_x'] + df_merge['count_y']
-                df_merge = df_merge[['val', 'count']]
-                df_merge.to_pickle(wabitplane_hist)
-            else:
-                print(f'[{self.layer_idx}]Create wabitplane_hist for w:{wbit} ({wabitplane_hist})')
-                df_hist.to_pickle(wabitplane_hist)
-
-            # split output merge
-            output_chunk = out_tmp.chunk(self.split_groups, dim=1) 
-            for g in range(0, self.split_groups):
-                if g==0:
-                    out_tmp = output_chunk[g]
-                else:
-                    out_tmp += output_chunk[g]
-
-            # weight output summation
-            if self.mapping_mode == 'two_com':
-                if wsplit_num == wbit+1:
-                    out_wsum -= out_tmp
-                else:
-                    out_wsum = out_tmp if wbit == 0 else out_wsum + out_tmp
-            elif (self.mapping_mode == 'ref_d') or (self.mapping_mode == 'PN'):
-                out_wsum = out_tmp if wbit == 0 else out_wsum - out_tmp
-            else:
-                out_wsum = out_tmp if wbit == 0 else out_wsum + out_tmp
-
-            bitplane_idx += 1
-
-        # update layer hist
-        for val, count in wa_hist_dict.items():
-            if val in layer_hist_dict.keys():
-                layer_hist_dict[val] += count
-            else:
-                layer_hist_dict[val] = count
-
-        if self.is_noise and not ((self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a')):
-            out_one = (-G_min/delta_G) * self._split_forward(input, w_one, ignore_bias=True, infer_only=True, merge_group=True)
-            out_wsum -= out_one
-        output = out_wsum 
-
-        # add bias
-        if self.bias is not None:
-            output += self.bias
-
-        # save logger
-        df.to_pickle(logger)
-        # df_scaled.to_pickle(logger_scaled)
-
-        # save hist
-        df_hist = pd.DataFrame(list(layer_hist_dict.items()), columns = ['val', 'count'])
-        # layer hist
-        if os.path.isfile(layer_hist):
-            print(f'[{self.layer_idx}] Update layer_hist ({layer_hist})')
-            df_layer_hist = pd.read_pickle(layer_hist) 
-            df_merge = pd.merge(df_layer_hist, df_hist, how="outer", on="val")
-            df_merge = df_merge.replace(np.nan, 0)
-            df_merge['count'] = df_merge['count_x'] + df_merge['count_y']
-            df_merge = df_merge[['val', 'count']]
-            df_merge.to_pickle(layer_hist)
-        else:
-            print(f'[{self.layer_idx}] Create layer_hist ({layer_hist})')
-            df_hist.to_pickle(layer_hist)
-        # network hist
-        if os.path.isfile(network_hist):
-            print(f'[{self.layer_idx}]Update network_hist ({network_hist})')
-            df_network_hist = pd.read_pickle(network_hist) 
-            df_merge = pd.merge(df_network_hist, df_hist, how="outer", on="val")
-            df_merge = df_merge.replace(np.nan, 0)
-            df_merge['count'] = df_merge['count_x'] + df_merge['count_y']
-            df_merge = df_merge[['val', 'count']]
-            df_merge.to_pickle(network_hist)
-        else:
-            print(f'[{self.layer_idx}] Create network_hist ({network_hist})')
-            df_hist.to_pickle(network_hist)
-
-        # output_real = F.linear(input, qweight, bias=None)
-        # import pdb; pdb.set_trace()
-
-        return output
-    
-    def _ADC_clamp_value(self):
-        # get ADC clipping value for hist [Layer or Network hist]
-        if self.pclipmode == 'Layer':
-            phist = f'{self.checkpoint}/hist/layer{self.layer_idx}_hist.pkl'
-            # phist = f'./hist/layer{self.layer_idx}_hist.pkl'
-        elif self.pclipmode == 'Network':
-            phist = f'{self.checkpoint}/hist/network_hist.pkl'
-
-        if os.path.isfile(phist):
-            # print(f'Load ADC_hist ({phist})')
-            df_hist = pd.read_pickle(phist)
-            mean, std, min, max = get_statistics_from_hist(df_hist)
-        else:
-            if self.pbits != 32:
-                assert False, "Error: Don't have ADC hist file"
-            else:
-                mean, std, min, max = 0, 0, 0, 0
-            
-        # Why abs(mean) is used not mean?? => Asymmetric quantizaion is occured
-        if self.pbits == 32:
-            maxVal = 1
-            minVal = 0
-        else:
-            if self.pclip == 'max':
-                maxVal = max
-                minVal = min
-            else:
-                maxVal =  (abs(mean) + self.psigma*std).round() 
-                minVal = (abs(mean) - self.psigma*std).round() 
-                if (self.mapping_mode == 'two_com') or (self.mapping_mode == 'ref_d') or (self.mapping_mode == 'PN'):
-                    minVal = min if minVal < 0 else minVal
-        
-        midVal = (maxVal + minVal) / 2
-        
-        if self.info_print:
-            write_file = f'{self.checkpoint}/Layer_clipping_range.txt'
-            if os.path.isfile(write_file) and (self.layer_idx == 0):
-                option = 'w'
-            else:
-                option = 'a'
-            with open(write_file, option) as file:
-                if self.layer_idx == 0:
-                    file.write(f'{self.pclipmode}-wise Mode Psum quantization \n')
-                    file.write(f'Layer_information  Mean    Std     Min Max Clip_Min    Clip_Max    Mid \n')
-                file.write(f'Layer{self.layer_idx}  {mean}  {std}   {min}   {max}   {minVal}    {maxVal}    {midVal}\n')
-            
-            print(f'{self.pclipmode}-wise Mode Psum quantization')
-            if self.pbits == 32:
-                print(f'Layer{self.layer_idx} information | pbits {self.pbits}')
-            else:
-                print(f'Layer{self.layer_idx} information | pbits {self.pbits} | Mean: {mean} | Std: {std} | Min: {min} | Max: {max} | Clip Min: {minVal} | Clip Max: {maxVal} | Mid: {midVal}')
-            self.info_print = False
-
-        return minVal, maxVal, midVal
 
     def _bitserial_comp_forward(self, input):
 
         # get quantization parameter and input bitserial 
         qweight = fw(self.weight, self.wbits, self.weight_clip, self.weight_scale, self.fan_in)
 
-        if self.pbits == 1:
-            self.setting_pquant_func(pbits=self.pbits)
-            self.pstep = 1
-            assert self.mapping_mode == '2T2R', "Only support 1bit (SA) when mapping mode is 2T2R"
-        else:
-            if self.psum_mode == 'sigma':
-                minVal, maxVal, midVal = self._ADC_clamp_value()
-                self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
-            elif self.psum_mode == 'scan':
-                pass
-            else:
-                assert False, 'This script does not support {self.psum_mode}'
+        # output = F.linear(input, qweight, bias=None)
+        self.setting_pquant_func(pbits=self.pbits)
+        assert self.mapping_mode == '2T2R', "Only support 1bit (SA) when mapping mode is 2T2R"
 
         ### in-mem computation mimic (split conv & psum quant/merge)
-        bweight, wsplit_num = self._weight_bitserial(qweight, 1, cbits=self.cbits)
+        with torch.no_grad():
+            bweight, wsplit_num = self._weight_bitserial(qweight, 1, cbits=self.cbits)
 
-        ### Cell noise injection + Cell conductance value change
-        if self.is_noise:
-            bweight = self.noise_cell(bweight)
-            weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
-            
-            if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
+            ### Cell noise injection + Cell conductance value change
+            if self.is_noise:
+                bweight = self.noise_cell(bweight)
+                weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
+                
                 bweight = weight_chunk[0] - weight_chunk[1]
-                wsplit_num = 1
-            else:
-                ## [TODO] two_com split weight format check
-                delta_G, G_min = self.noise_cell.get_deltaG(G_min=True)
-                w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
 
-        weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
-        self.weight_chunk = weight_chunk
+            qweight.copy_(bweight)
 
-        out_adc = None
-        for wbit, weight_s in enumerate(weight_chunk):
-            out_tmp = self._split_forward(input, weight_s, ignore_bias=True, cat_output=False, infer_only=True)
-            # out_tmp = F.linear(input_s[:,nIF_cnt:nIF_cnt+self.split_nIF[idx]], weight_s, bias=None)
-
-            if self.pbits==1:
-                out_adc = psum_quant(out_adc, out_tmp,
-                                            pbits=self.pbits, step=self.pstep, 
-                                            half_num_levels=self.phalf_num_levels, 
-                                            pbound=self.pbound, center=self.center, weight=1,
-                                            groups=self.split_groups, pzero=self.pzero)
-                output = torch.cat(out_adc, dim=1)
-            else:
-                out_adc = psum_quant_merge(out_adc, out_tmp,
-                                            pbits=self.pbits, step=self.pstep, 
-                                            half_num_levels=self.phalf_num_levels, 
-                                            pbound=self.pbound, center=self.center, weight=1,
-                                            groups=self.split_groups, pzero=self.pzero)
-
-
-                # weight output summation
-                if self.mapping_mode == 'two_com':
-                    if wsplit_num == wbit+1:
-                        output -= out_adc
-                    else:
-                        output = out_adc if wbit == 0 else output + out_adc
-                elif (self.mapping_mode == 'ref_d') or (self.mapping_mode == 'PN'):
-                    output = out_adc if wbit == 0 else output - out_adc
-                else:
-                    output = out_adc if wbit == 0 else output + out_adc
-                out_adc = None
-
-        if not self.training:
-            if self.is_noise and not ((self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a')):
-                out_one = (-G_min/delta_G) * self._split_forward(input, w_one, ignore_bias=True, infer_only=True, merge_group=True)
-                output -= out_one
-        
-            # add bias
-            if self.bias is not None:
-                output += self.bias
-        
-        # output_real = F.linear(input, qweight, bias=None)
-        # import matplotlib.pyplot as plt
-        # import seaborn as sns
-        # fig, ax = plt.subplots(ncols=2, figsize=(20, 12))
-
-        # sns.histplot((qweight/w_scale).detach().cpu().numpy().ravel(), ax=ax[0], alpha=0.5)
-        # sns.histplot((bweight).detach().cpu().numpy().ravel(), ax=ax[1], alpha=0.5)
-        # ax[0].set_ylabel(ax[0].get_ylabel(), fontsize=14)
-        # ax[1].set_ylabel(ax[1].get_ylabel(), fontsize=14)
-        # ax[0].set_title(f'Before Noise', loc='right', fontsize=16)
-        # ax[1].set_title(f'After Noise', loc='right', fontsize=16)
-        # ax[0].set_xlabel('Weight', fontsize=16)
-        # ax[1].set_xlabel('Weight', fontsize=16)
-        # ax[0].set_xticklabels(ax[0].get_xticks(), fontsize=14)
-        # ax[1].set_xticklabels(ax[1].get_xticks(), fontsize=14)
-
-        # plt.savefig(os.getcwd() +f"/graph/ReRAM/NAT_Layer{self.layer_idx}_weight.png")
-
-        # import pdb; pdb.set_trace()
+        out_tmp = self._split_forward(input, qweight, ignore_bias=True, binary=True)
+        output = bfp(out_tmp)
 
         return output
 
@@ -1078,11 +465,8 @@ class PsumBinLinear(SplitLinear):
 
         if self.wbits == 32:
             return F.linear(input, self.weight, bias=self.bias)
-        
-        if self.bitserial_log:
-            return self._bitserial_log_forward(input)
-        else:
-            return self._bitserial_comp_forward(input)
+
+        return self._bitserial_comp_forward(input)
 
     def extra_repr(self):
         """Provides layer information, including wbits, when print(model) is called."""
