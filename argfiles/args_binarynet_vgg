@@ -1,0 +1,35 @@
+--dataset       cifar10
+--valid-size    0.1
+--augment	    False
+--zca		    True
+
+--epochs        500
+--train-batch   200
+--test-batch    200
+
+--optimizer     adamax
+--weight-decay  0
+--init-method   uniform
+--init-dist     uniform
+--init-fan      fan_both
+--glr           True
+
+--lr-method     lr_step
+--schedule      50 100 150 200 250 300 350 400 450
+--gamma         0.5
+--lr            0.01
+--glr		    True
+
+--model_mode    binary
+--arch          binarynet_vgg
+
+--binary-mode   unsigned
+--ste           hardtanh
+--abits         1
+--wbits         1
+--weight-clip	1
+--weight-scale	False
+
+#-s		        3017
+
+

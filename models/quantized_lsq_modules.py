@@ -341,6 +341,8 @@ class Q_act(LSQ):
 def add_act(abits, bitserial=False, mode='signed', ste='hardtanh', offset=0, width=1):
     if abits == 32:
         return nn.ReLU(inplace=True)
+    elif abits == 1:
+        return BinAct(abits=abits, mode=mode, ste=ste, offset=offset, width=width)
     else:
         return Q_act(abits=abits, bitserial=bitserial)
 

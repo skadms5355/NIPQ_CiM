@@ -15,6 +15,7 @@ import torch.nn.functional as F
 from torch.nn.modules.utils import _pair #YUL: added to use _pair for padding & stride
 
 import utils.padding as Pad
+import conv_sweight_cuda
 
 
 class BinActFunc(torch.autograd.Function):
@@ -48,7 +49,8 @@ class BinActFunc(torch.autograd.Function):
             # return torch._C._nn.hardtanh(x, 0, 1).round()
 	    
 	    ## This version uses th=0. threshold will be covered by higher level class using offset.
-            return x.sign().add(1).mul(0.5)
+            return x.ge(0).type_as(x)
+            # return x.sign().add(1).mul(0.5)
 
         else:
             assert False, "Binary activation mode {} is not supported.".format(mode)
@@ -95,7 +97,7 @@ class BinActFunc(torch.autograd.Function):
                 assert False, "STE function {} is not supported.".format(ctx.ste)
 
         elif ctx.mode == 'unsigned':
-            # ## this version is for th=0.5.
+            ## this version is for th=0.5.
             # if ctx.ste == 'clippedrelu':
             #     deriv = ((input > 0) & (input < 1))
             #     grad_input = grad_output * deriv
@@ -106,7 +108,7 @@ class BinActFunc(torch.autograd.Function):
             # else:
             #     assert False, "STE function {} is not supported.".format(ctx.ste)
 
-            ## this version is for th=0.
+            # this version is for th=0.
             if ctx.ste == 'hardtanh':
                 deriv = ((input > -ctx.width/2) & (input < ctx.width/2))
                 grad_input = grad_output * deriv
@@ -338,6 +340,82 @@ def nonlinear(abits, mode='signed', ste='hardtanh', offset=0, width=1):
         return nn.ReLU(inplace=True)
     else:
         return BinAct(abits=abits, mode=mode, ste=ste, offset=offset, width=width)
-    
 
+
+#######################################################################
+
+class BinaryPsum(torch.autograd.Function):
+    """ Sense Amplifier functions with torch.autograd extension."""   
+
+    @staticmethod
+    @torch.cuda.amp.custom_fwd
+    def forward(ctx, x, mode='unsigned'):
+        """Performs weight binarization.
+
+        Args:
+            x: An input tensor.
+        Returns:
+            A scaled binarized tensor(usually weight), optionally clipped with a specified value.
+        """
+        if mode=='signed':
+            output = x.ge(0).type_as(x).mul(2).add(-1)
+        elif mode == 'unsigned':
+            output = x.ge(0).type_as(x)
+
+        return output
+
+    @staticmethod
+    @torch.cuda.amp.custom_bwd
+    def backward(ctx, grad_output):
+        """Defines a formula for differentiating weight binarization."""
+        grad_input = grad_output
+        return grad_input, None
+
+def bfp(x, mode='signed', pbits=1):
+    """ Performs quantized psum in regard to pbits. (above 2bits)"""
+    if pbits == 1:
+        return BinaryPsum.apply(x, mode)
+    else:
+        assert False, "QuantPsumFunc does not support {} pbits.".format(pbits)
+
+
+class BinarizedNeurons(nn.Module):
+    def __init__(self, mode='signed'):
+        super(BinarizedNeurons, self).__init__()
+        self.mode = mode
+
+    def forward(self, input):
+        return bfp(input, mode=self.mode)
+
+    def extra_repr(self):
+        """Provides layer information, including abits, when print(model) is called."""
+        s = ('mode={mode}')
+        return s.format(**self.__dict__)
+
+class Conv_group(torch.autograd.Function):
+    """ Sense Amplifier functions with torch.autograd extension."""   
+
+    @staticmethod
+    @torch.cuda.amp.custom_fwd
+    def forward(ctx, output, input, group_in_offset, split_groups, index):
+        """Performs weight binarization.
+
+        Args:
+            x: An input tensor.
+        Returns:
+            A scaled binarized tensor(usually weight), optionally clipped with a specified value.
+        """
+        ctx.index = index
+        ctx.shape = input.shape
+        # import pdb; pdb.set_trace()
+        output = conv_sweight_cuda.forward(output, input, group_in_offset, split_groups)
+
+        return output
+
+    @staticmethod
+    @torch.cuda.amp.custom_bwd
+    def backward(ctx, grad_output):
+        """Defines a formula for differentiating weight binarization."""
+        grad_input = grad_output[ctx.index].reshape(ctx.shape)
+        return grad_output, grad_input, None, None, None
 
