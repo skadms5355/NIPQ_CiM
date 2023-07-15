@@ -253,7 +253,8 @@ class PsumBinConv(SplitConv):
                 wsplit_num = 1
 
         out_tmp = self._split_forward(input, qweight, padded=True, ignore_bias=True, weight_is_split=True, binary=True)
-        output = bfp(out_tmp)
+        # output = bfp(out_tmp)
+        output = out_tmp
         # import pdb; pdb.set_trace()
         return output
 
@@ -457,8 +458,8 @@ class PsumBinLinear(SplitLinear):
             qweight.copy_(bweight)
 
         out_tmp = self._split_forward(input, qweight, ignore_bias=True, binary=True)
-        output = bfp(out_tmp)
-
+        # output = bfp(out_tmp)
+        output = out_tmp
         return output
 
     def forward(self, input):

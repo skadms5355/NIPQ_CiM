@@ -296,7 +296,7 @@ def set_arguments():
 
     # Use CUDA. This line has to be come before importing torch modules.
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
-    os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+    # os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 
     return args
 

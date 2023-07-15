@@ -3,28 +3,29 @@
 --augment	    False
 --zca		    True
 
---epochs        500
+# --epochs        500
 --train-batch   200
 --test-batch    200
 
-# --epoch         200
+--epoch         200
 
 --optimizer     adamax
-# --lr-method     lr_cosineanneal
-# --warmup        3
-# --warmup_start_multiplier 0.1
-# --eta_min       1e-3
-# --T0            197
+--lr-method     lr_cosineanneal
+--warmup        3
+--warmup_start_multiplier 0.1
+--eta_min       1e-3
+--T0            197
 
 --weight-decay  0
-# --init-method   kaiming
-# --init-dist     normal
---init-method   uniform
---init-dist     uniform
+--init-method   kaiming
+--init-dist     normal
+# --init-method   uniform
+# --init-dist     uniform
 --init-fan      fan_both
 
---lr-method     lr_step
---schedule      50 100 150 200 250 300 350 400 450
+# --lr-method     lr_step
+# --schedule      50 100 150 200 250 300 350 400 450
+# --schedule      100 200 300 400
 --gamma         0.5
 --lr            0.01
 --glr		    True
@@ -34,7 +35,7 @@
 --gpu-id        1
 
 --binary-mode   unsigned
---ste           hardtanh
+--ste           vanilla
 --abits         1
 --wbits         1
 --weight-clip	1
