@@ -23,7 +23,7 @@ parser.add_argument('--pbits', type=float, nargs='+', default=[32, 8, 7, 6, 5, 4
 parser.add_argument('--pclip', type=str, nargs='+', default=['sigma'],
                     help='pclip list')
 parser.add_argument('--co_noise', type=float, nargs='+', default=[0, 0.03, 0.05])
-parser.add_argument('--noise_type', default='prop', type=str,
+parser.add_argument('--noise_type', default='interp', type=str,
                     choices=['static', 'grad', 'prop', 'interp'])
 parser.add_argument('--iter', default=1, type=int,
                     help='how many iterate inference process')
@@ -31,9 +31,9 @@ parser.add_argument('--KD', action='store_true')
 parser.add_argument('--FL_quant', action='store_true')
 parser.add_argument('--tnipq', default='hwnoise', type=str,
                     choices=['quant', 'hwnoise', 'qhwnoise'])
-parser.add_argument('--tnoise_type', default='prop', type=str,
+parser.add_argument('--tnoise_type', default='interp', type=str,
                     choices=['static', 'grad', 'prop', 'interp'])
-parser.add_argument('--tres_val', default='abs', type=str,
+parser.add_argument('--tres_val', default='rel', type=str,
                     choices=['abs', 'rel'])
 parser.add_argument('--tco_noise', type=float, default=0)
 
