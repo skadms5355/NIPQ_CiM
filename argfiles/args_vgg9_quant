@@ -8,13 +8,13 @@
 
 --augment	    y  
 
---epochs        200
+--epochs        500
 --train-batch   256
 --test-batch    200
 
 --optimizer     adamax
 --lr-method     lr_step
---schedule      50 100 150
+--schedule      50 100 150 200 250 300 350 400 450
 --gamma         0.1
 
 --init-method	kaiming
@@ -30,7 +30,7 @@
 --warmup        3
 --warmup_start_multiplier 0.1
 --eta_min       1e-3
---T0            197
+--T0            497
 
 # --wbits         4
 # --abits         4
