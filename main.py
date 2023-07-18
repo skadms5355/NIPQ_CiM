@@ -127,6 +127,9 @@ def main():
                         type = 'type_{}'.format(args.co_noise)
                     else:
                         type = '{}_{}'.format(args.res_val, args.co_noise)
+                
+                if args.shrink is not None:
+                    type = '{}_shrink_{}'.format(type, args.shrink)
 
                 if args.tn_file is not None:
                     prefix = os.path.join(prefix, '{}_{}_{}').format(args.tn_file, args.noise_type, type)
@@ -420,13 +423,13 @@ def main_worker(gpu, ngpus_per_node, args):
                                     checkpoint=args.checkpoint, log_file=args.log_file)
                 if args.is_noise and 'hwnoise' in args.nipq_noise:
                     PQ.hwnoise_initialize(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
-                                        noise_type=args.noise_type, res_val=args.res_val)
+                                        noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink)
             elif (args.model_mode == 'quant') or (args.model_mode == 'hn_quant'):
                 set_BitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, log_file=args.log_file,\
                     pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma)
                 if args.is_noise:
                     set_Noise_injection(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
-                                        noise_type=args.noise_type, res_val=args.res_val)
+                                        noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink)
             else:
                 assert False, "This mode is not supported psum computation"
 
@@ -448,12 +451,12 @@ def main_worker(gpu, ngpus_per_node, args):
 
                 if args.is_noise and 'hwnoise' in args.nipq_noise:
                     Q.hwnoise_initialize(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
-                                        noise_type=args.noise_type, res_val=args.res_val)
+                                        noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink)
             elif args.model_mode == 'quant':
                 if args.is_noise:
                     from models.quantized_lsq_modules import hwnoise_initialize
                     hwnoise_initialize(model, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
-                                        noise_type=args.noise_type, res_val=args.res_val, max_epoch=(args.epochs - args.ft_epoch))
+                                        noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink, max_epoch=(args.epochs - args.ft_epoch))
         log_time = time.time()
 
         if args.rank == 0:
@@ -550,7 +553,7 @@ def main_worker(gpu, ngpus_per_node, args):
 
         if args.is_noise and 'hwnoise' in args.nipq_noise:
             Q.hwnoise_initialize(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
-                                noise_type=args.noise_type, res_val=args.res_val, max_epoch=(args.epochs - args.ft_epoch))
+                                noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink, max_epoch=(args.epochs - args.ft_epoch))
 
         # TO DO: When adding yolov2 (object detection)
         if args.rank == 0:
@@ -564,7 +567,7 @@ def main_worker(gpu, ngpus_per_node, args):
         if args.is_noise and not args.evaluate:
             from models.quantized_lsq_modules import hwnoise_initialize
             hwnoise_initialize(model, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
-                                noise_type=args.noise_type, res_val=args.res_val, max_epoch=(args.epochs - args.ft_epoch))
+                                noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink, max_epoch=(args.epochs - args.ft_epoch))
             for m in model.modules():
                 if type(m).__name__ in ["QConv", "QLinear"]:
                     if m.wbits != 32:

@@ -153,10 +153,10 @@ class QConv(nn.Conv2d):
         self.hwnoise = hwnoise
         self.quan_w_fn = LSQReturnScale(bit=self.wbits, half_range=False, symmetric=symmetric, per_channel=False)
 
-    def hwnoise_init(self, cbits, mapping_mode, co_noise=0.01, noise_type='prop', res_val='rel', max_epoch=-1):
+    def hwnoise_init(self, cbits, mapping_mode, co_noise=0.01, noise_type='prop', res_val='rel', shrink=None, max_epoch=-1):
         w_format = 'state' if res_val == 'abs' or noise_type == 'meas' else 'weight'
         self.noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type=noise_type, \
-                                    res_val=res_val, w_format=w_format, max_epoch=max_epoch)
+                                    res_val=res_val, w_format=w_format, shrink=shrink, max_epoch=max_epoch)
         self.mapping_mode = mapping_mode
         self.res_val = res_val
         self.noise_type = noise_type
@@ -166,7 +166,7 @@ class QConv(nn.Conv2d):
         elif not (noise_type == 'prop' or 'interp'):
             noise_type = 'prop'
         self.inf_noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type=noise_type, \
-                                    res_val=res_val, w_format=w_format, max_epoch=max_epoch)
+                                    res_val=res_val, w_format=w_format, shrink=shrink, max_epoch=max_epoch)
         self.qweight_noise = None
 
     def forward(self, input):
@@ -256,10 +256,10 @@ class QLinear(nn.Linear):
         self.hwnoise = hwnoise
         self.quan_w_fn = LSQReturnScale(bit=self.wbits, half_range=False, symmetric=symmetric, per_channel=False)
 
-    def hwnoise_init(self, cbits, mapping_mode, co_noise=0.01, noise_type='prop', res_val='rel', max_epoch=-1):
+    def hwnoise_init(self, cbits, mapping_mode, co_noise=0.01, noise_type='prop', res_val='rel', shrink=None, max_epoch=-1):
         w_format = 'state' if res_val == 'abs' or noise_type == 'meas' else 'weight'
         self.noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type=noise_type, \
-                                    res_val=res_val, w_format=w_format, max_epoch=max_epoch)
+                                    res_val=res_val, w_format=w_format, shrink=shrink, max_epoch=max_epoch)
         self.mapping_mode = mapping_mode
         self.res_val = res_val
         self.noise_type = noise_type
@@ -269,7 +269,7 @@ class QLinear(nn.Linear):
         elif not (noise_type == 'prop' or 'interp'):
             noise_type = 'prop'
         self.inf_noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type=noise_type, \
-                                    res_val=res_val, w_format=w_format, max_epoch=max_epoch)
+                                    res_val=res_val, w_format=w_format, shrink=shrink, max_epoch=max_epoch)
         self.qweight_noise = None
         
     def forward(self, input):
@@ -344,7 +344,7 @@ def add_act(abits, bitserial=False):
     else:
         return Q_act(abits=abits, bitserial=bitserial)
 
-def hwnoise_initialize(model, hwnoise=True, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', max_epoch=-1):
+def hwnoise_initialize(model, hwnoise=True, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', shrink=None, max_epoch=-1):
     for name, module in model.named_modules():
         if isinstance(module, (QConv)) and hwnoise:
             if module.wbits != 32 and (module.in_channels != 3):
@@ -353,7 +353,7 @@ def hwnoise_initialize(model, hwnoise=True, cbits=4, mapping_mode=None, co_noise
                 if noise_type == 'grad':
                     assert max_epoch != -1, "Enter max_epoch in hwnoise_initialize function"
                 if hwnoise:
-                    module.hwnoise_init(cbits=cbits, mapping_mode=mapping_mode, co_noise=co_noise, noise_type=noise_type, res_val=res_val, max_epoch=max_epoch)
+                    module.hwnoise_init(cbits=cbits, mapping_mode=mapping_mode, co_noise=co_noise, noise_type=noise_type, res_val=res_val, shrink=shrink, max_epoch=max_epoch)
         
         if isinstance(module, (QLinear)) and hwnoise:
             if module.wbits != 32:
@@ -362,7 +362,7 @@ def hwnoise_initialize(model, hwnoise=True, cbits=4, mapping_mode=None, co_noise
                 if noise_type == 'grad':
                     assert max_epoch != -1, "Enter max_epoch in hwnoise_initialize function"
                 if hwnoise:
-                    module.hwnoise_init(cbits=cbits, mapping_mode=mapping_mode, co_noise=co_noise, noise_type=noise_type, res_val=res_val, max_epoch=max_epoch)
+                    module.hwnoise_init(cbits=cbits, mapping_mode=mapping_mode, co_noise=co_noise, noise_type=noise_type, res_val=res_val, shrink=shrink, max_epoch=max_epoch)
 
 def quant_or_not(abits):
     if abits == 32:

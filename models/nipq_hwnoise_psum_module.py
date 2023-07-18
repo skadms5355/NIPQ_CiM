@@ -1048,7 +1048,7 @@ def unset_bitserial_log(model):
             print("Finish log unsetting {}, idx: {}".format(name.replace("module.", ""), counter))
             counter += 1
 
-def hwnoise_initialize(model, weight=False, hwnoise=True, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', max_epoch=-1):
+def hwnoise_initialize(model, weight=False, hwnoise=True, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', shrink=None, max_epoch=-1):
     for name, module in model.named_modules():
         if isinstance(module, (Psum_QConv2d, Psum_QLinear)) and weight and hwnoise:
             module.quant_func.hwnoise = True
@@ -1058,7 +1058,7 @@ def hwnoise_initialize(model, weight=False, hwnoise=True, cbits=4, mapping_mode=
             if noise_type == 'grad':
                 assert max_epoch != -1, "Enter max_epoch in hwnoise_initialize function"
             if hwnoise:
-                module.quant_func.hwnoise_init(cbits=cbits, mapping_mode=mapping_mode, co_noise=co_noise, noise_type=noise_type, res_val=res_val, max_epoch=max_epoch)
+                module.quant_func.hwnoise_init(cbits=cbits, mapping_mode=mapping_mode, co_noise=co_noise, noise_type=noise_type, res_val=res_val, shrink=shrink, max_epoch=max_epoch)
 
 class PsumQuantOps(object):
     psum_initialize = psum_initialize

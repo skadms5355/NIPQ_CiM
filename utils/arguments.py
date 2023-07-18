@@ -251,6 +251,8 @@ def set_arguments():
     noise_group.add_argument('--res_val', type=str, default='rel',
                             choices=['rel', 'abs'],
                             help='representation methods of resistance (default: relative(rel))).')               
+    noise_group.add_argument('--shrink', type=float, default=None,
+                            help='Noise state shrink percentage (range: 0 ~ 0.17)')   
 
     # Transfer Learning
     transfer_group.add_argument('--transfer-mode', default=0, type=int, choices=[0,1,2,3, 4],

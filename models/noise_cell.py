@@ -28,7 +28,7 @@ class InterpolatedPDF(rv_continuous):
         return self.interp(q)
 
 class Noise_cell(nn.Module):
-    def __init__(self, wbits, cbits, mapping_mode, co_noise=0.01, noise_type='static', res_val='rel', w_format='state', Gmin=1/3e5, ratio=100, max_epoch=-1):
+    def __init__(self, wbits, cbits, mapping_mode, co_noise=0.01, noise_type='static', res_val='rel', w_format='state', shrink=None, Gmin=1/3e5, ratio=100, max_epoch=-1):
         super(Noise_cell, self).__init__()
         """
             This module performs cell variation
@@ -48,6 +48,7 @@ class Noise_cell(nn.Module):
         self.w_format = w_format
         self.ratio = ratio
         self.max_epoch = max_epoch
+        self.shrink = shrink
 
         self.init_state()
 
@@ -106,6 +107,19 @@ class Noise_cell(nn.Module):
         else:
             assert False, "Check co_noise parameter, You only select two option (1, 2) in {}".format(self.noise_type)
         
+        if self.shrink is not None:
+            if ('ref' in self.mapping_mode) or (self.co_noise > 2):
+                self.delta_G = 10
+            else:
+                self.delta_G = 19
+
+            filter = df.filter(like='uS')
+            numbers = [col.split('uS')[1].strip('.,') if 'uS' in col else '0' for col in filter]
+            for i, (col, number) in enumerate(zip(filter.columns, numbers)):
+                number = 0 if i==0 else int(number)
+                shift = self.shrink * number * self.delta_G
+                df[col] = df[col] - shift
+
         self.max_state = df.iloc[:, 0::2].max().to_numpy()
         self.min_state = df.iloc[:, 0::2].min().to_numpy()
         self.Gmin = 10
@@ -153,7 +167,7 @@ class Noise_cell(nn.Module):
 
                 x[index] = samples
             
-            # # for graph
+            # for graph
             # else:
             #     samples = torch.tensor([], dtype=x.dtype, device=x.device)
 
@@ -192,11 +206,11 @@ class Noise_cell(nn.Module):
         # ax[1].set_yticks(ax_ylabels)
 
         # # setting x-axis figure ax
-        # ax[0].set_title(f'ReRAM Noise Sampling (Case 2, Step=10uS)', loc='right', fontsize=16)
+        # ax[0].set_title('ReRAM Noise Sampling (Case 1, Step=20uS, Shrink={})'.format(self.shrink), loc='right', fontsize=16)
         # ax[0].set_xlabel('Conductance [uS]')
         # ax[0].set_xlabel(ax[0].get_xlabel(), fontsize=16)
         # xlabels = ax[0].get_xticks()
-        # ax[0].set_xlim(0, np.ceil(xlabels.max()))
+        # ax[0].set_xlim(0, 225)
         # ax[0].set_xticks(ax[0].get_xticks())
         # ax[0].set_xticklabels(ax[0].get_xticks(), fontsize=14)
 
@@ -204,10 +218,10 @@ class Noise_cell(nn.Module):
         # ax[1].set_xlabel('Conductance [uS]')
         # # xlabels = ax[1].get_xticks()
         # ax[1].set_xlabel(ax[1].get_xlabel(), fontsize=16)
-        # ax[1].set_xlim(0, np.ceil(xlabels.max()))
+        # ax[1].set_xlim(0, 225)
         # ax[1].set_xticks(ax[1].get_xticks())
         # ax[1].set_xticklabels(ax[1].get_xticks(), fontsize=14)
-        # plt.savefig(os.getcwd() +"/graph/ReRAM/pdf_sample.png")
+        # plt.savefig(os.getcwd() +"/graph/ReRAM/Layer0_pdf_sample_shrink_{}.png".format(self.shrink))
         # import pdb; pdb.set_trace()
 
         return x 

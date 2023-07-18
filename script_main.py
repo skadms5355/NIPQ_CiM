@@ -23,6 +23,7 @@ parser.add_argument('--pbits', type=float, nargs='+', default=[32, 8, 7, 6, 5, 4
 parser.add_argument('--pclip', type=str, nargs='+', default=['sigma'],
                     help='pclip list')
 parser.add_argument('--co_noise', type=float, nargs='+', default=[0, 0.03, 0.05])
+parser.add_argument('--shrink', type=float, default=None)
 parser.add_argument('--noise_type', default='interp', type=str,
                     choices=['static', 'grad', 'prop', 'interp'])
 parser.add_argument('--iter', default=1, type=int,
@@ -125,14 +126,21 @@ else:
                         pretrained = './checkpoints/{}/quant/lsq_{}/FL_a:4_w:4/{}/no_psum_c:4/{}_{}_{}/KD_best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tres_val, args.tco_noise)
                     else:
                         tn_file = '{}_{}_{}'.format(args.tnoise_type, args.tres_val, args.tco_noise)
-                        pretrained = './checkpoints/{}/quant/lsq_{}/FL_a:4_w:4/{}/no_psum_c:4/{}_{}_{}/best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tres_val, args.tco_noise)
+                        if args.shrink is not None:
+                            tn_file = '{}_shrink_{}'.format(tn_file, args.shrink)
+                            pretrained = './checkpoints/{}/quant/lsq_{}/a:4_w:4/{}/no_psum_c:4/{}_{}_{}_shrink_{}/best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tres_val, args.tco_noise, args.shrink)
+                        else:
+                            pretrained = './checkpoints/{}/quant/lsq_{}/FL_a:4_w:4/{}/no_psum_c:4/{}_{}_{}/best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tres_val, args.tco_noise)
                 else:
                     if args.KD:
                         tn_file = 'KD_{}_{}_{}'.format(args.tnoise_type, args.tres_val, args.tco_noise)
                         pretrained = './checkpoints/{}/quant/lsq_{}/a:4_w:4/{}/no_psum_c:4/{}_{}_{}/KD_best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tres_val, args.tco_noise)
                     else:
                         tn_file = '{}_{}_{}'.format(args.tnoise_type, args.tres_val, args.tco_noise)
-                        pretrained = './checkpoints/{}/quant/lsq_{}/a:4_w:4/{}/no_psum_c:4/{}_{}_{}/best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tres_val, args.tco_noise)
+                        if args.shrink is not None:
+                            pretrained = './checkpoints/{}/quant/lsq_{}/a:4_w:4/{}/no_psum_c:4/{}_{}_{}_shrink_{}/best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tres_val, args.tco_noise, args.shrink)
+                        else:
+                            pretrained = './checkpoints/{}/quant/lsq_{}/a:4_w:4/{}/no_psum_c:4/{}_{}_{}/best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tres_val, args.tco_noise)
         else:
             tn_file = None
 
@@ -152,6 +160,7 @@ else:
                     noise_name = noise_type
                 else:
                     noise_name = '{}_{}'.format(tn_file, noise_type)
+
                 if "nipq" in args.argfile:
                     if is_noise:
                         log_path = os.path.join("checkpoints", args.dataset, "nipq", arch, "eval", "{}_fix:4".format(nipq_noise), mapping_mode, "{}_c:4/{}_type_{}/log_bitserial_info/hist".format(a_size, noise_name, co_noise), check_file)
@@ -165,11 +174,13 @@ else:
                             log_path = os.path.join("checkpoints", args.dataset, "quant", arch, "eval/FL_a:4_w:4", mapping_mode, "{}_c:4/log_bitserial_info/hist".format(a_size), check_file)
                     else:
                         if is_noise:
-                            log_path = os.path.join("checkpoints", args.dataset, "quant", arch, "eval/a:4_w:4", mapping_mode, "{}_c:4/{}_type_{}/log_bitserial_info/hist".format(a_size, noise_name, co_noise), check_file)
+                            if args.shrink is not None:
+                                log_path = os.path.join("checkpoints", args.dataset, "quant", arch, "eval/a:4_w:4", mapping_mode, "{}_c:4/{}_type_{}_shrink_{}/log_bitserial_info/hist".format(a_size, noise_name, co_noise, args.shrink), check_file)
+                            else:
+                                log_path = os.path.join("checkpoints", args.dataset, "quant", arch, "eval/a:4_w:4", mapping_mode, "{}_c:4/{}_type_{}/log_bitserial_info/hist".format(a_size, noise_name, co_noise), check_file)
                         else:
                             log_path = os.path.join("checkpoints", args.dataset, "quant", arch, "eval/a:4_w:4", mapping_mode, "{}_c:4/log_bitserial_info/hist".format(a_size), check_file)
 
-                # import pdb; pdb.set_trace()
                 if os.path.isfile(log_path):
                     log_file=False
                 else:
@@ -189,19 +200,19 @@ else:
                                 else:
                                     os.system('python main.py  --argfile {} --gpu-id {} --psum_comp {} --arraySize {} --mapping_mode {} \
                                                 --pbits {} --per_class {} --testlog_reset {} --log_file {} --pretrained {} \
-                                                --is_noise y --tn_file {} --nipq_noise {} --co_noise {} --noise_type {}'
-                                                .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, tn_file, nipq_noise, co_noise, noise_type))
+                                                --is_noise y --tn_file {} --nipq_noise {} --co_noise {} --noise_type {} --shrink {}'
+                                                .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, tn_file, nipq_noise, co_noise, noise_type, args.shrink))
                             else:
                                 if args.FL_quant:
                                     os.system('python main.py  --argfile {} --gpu-id {} --psum_comp {} --arraySize {} --mapping_mode {} \
                                                 --pbits {} --per_class {} --testlog_reset {} --log_file {} --pretrained {} \
-                                                --is_noise y --nipq_noise {} --co_noise {} --noise_type {} --FL_quant y'
-                                                .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, nipq_noise, co_noise, noise_type))
+                                                --is_noise y --nipq_noise {} --co_noise {} --noise_type {} --shrink {} --FL_quant y'
+                                                .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, nipq_noise, co_noise, noise_type, args.shrink))
                                 else:
                                     os.system('python main.py  --argfile {} --gpu-id {} --psum_comp {} --arraySize {} --mapping_mode {} \
                                                 --pbits {} --per_class {} --testlog_reset {} --log_file {} --pretrained {} \
-                                                --is_noise y --nipq_noise {} --co_noise {} --noise_type {}'
-                                                .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, nipq_noise, co_noise, noise_type))
+                                                --is_noise y --nipq_noise {} --co_noise {} --noise_type {} --shrink {}'
+                                                .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, nipq_noise, co_noise, noise_type, args.shrink))
 
                         else:
                             if args.FL_quant:

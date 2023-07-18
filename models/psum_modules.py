@@ -258,13 +258,13 @@ class PsumQConv(SplitConv):
         out_mag = int(w_mag * (2**abit))
         return out_mag, multi_scale
     
-    def _cell_noise_init(self, cbits, mapping_mode, co_noise=0.01, noise_type='prop', res_val='rel', w_format="weight", max_epoch=-1):
+    def _cell_noise_init(self, cbits, mapping_mode, co_noise=0.01, noise_type='prop', res_val='rel', shrink=None, w_format="weight", max_epoch=-1):
         self.w_format = 'state' if res_val == 'abs' or noise_type == 'meas' else 'weight'
         # wbits = Parameter(torch.Tensor(1).fill_(self.wbits), requires_grad=False).round().squeeze()
         # for inference 
         if not (noise_type == 'prop' or 'interp'):
             noise_type = 'prop'
-        self.noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val=res_val, w_format=self.w_format)
+        self.noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val=res_val, shrink=shrink, w_format=self.w_format)
     
     def _bitserial_log_forward(self, input, weight=None, short_path=None):
         print(f'[layer{self.layer_idx}]: bitserial mac log')
@@ -924,13 +924,13 @@ class PsumQLinear(SplitLinear):
         out_mag = int(w_mag * (2**abit))
         return out_mag, multi_scale
 
-    def _cell_noise_init(self, cbits, mapping_mode, co_noise=0.01, noise_type='prop', res_val='rel', w_format="weight", max_epoch=-1):
+    def _cell_noise_init(self, cbits, mapping_mode, co_noise=0.01, noise_type='prop', res_val='rel', shrink=None, max_epoch=-1):
         self.w_format = 'state' if res_val == 'abs' or noise_type == 'meas' else 'weight'
         # wbits = Parameter(torch.Tensor(1).fill_(self.wbits), requires_grad=False).round().squeeze()
         # for inference 
         if not (noise_type == 'prop' or 'interp'):
             noise_type = 'prop'
-        self.noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val=res_val, w_format=self.w_format)
+        self.noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val=res_val, shrink=shrink, w_format=self.w_format)
     
     def _bitserial_log_forward(self, input):
         print(f'[layer{self.layer_idx}]: bitserial mac log')
@@ -1381,7 +1381,7 @@ def set_Qact_bitserial(model, pquant_idx, abit_serial=True):
             counter += 1
     print("finish setting quantact bitserial ")
 
-def set_Noise_injection(model, weight=False, hwnoise=True, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', w_format='weight', max_epoch=-1):
+def set_Noise_injection(model, weight=False, hwnoise=True, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', shrink=None, max_epoch=-1):
     for name, module in model.named_modules():
         if isinstance(module, (PsumQConv, PsumQLinear)) and weight and hwnoise:
             if module.wbits != 32:
@@ -1390,7 +1390,7 @@ def set_Noise_injection(model, weight=False, hwnoise=True, cbits=4, mapping_mode
                 if noise_type == 'grad':
                     assert max_epoch != -1, "Enter max_epoch in hwnoise_initialize function"
                 if hwnoise:
-                    module._cell_noise_init(cbits=cbits, mapping_mode=mapping_mode, co_noise=co_noise, noise_type=noise_type, res_val=res_val, w_format=w_format, max_epoch=max_epoch)
+                    module._cell_noise_init(cbits=cbits, mapping_mode=mapping_mode, co_noise=co_noise, noise_type=noise_type, res_val=res_val, shrink=shrink, max_epoch=max_epoch)
 
 def count_ArrayMaxV(wbits, cbits, mapping_mode, arraySize):
     if mapping_mode == '2T2R':
