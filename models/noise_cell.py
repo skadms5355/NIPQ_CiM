@@ -7,7 +7,7 @@ import os
 import numpy as np
 import pandas as pd
 
-# Define a discrete random variable using the PDF function (Hynix ReRAM Noise)
+# Define a discrete random variable using the PDF function
 class InterpolatedPDF(rv_continuous):
     def __init__(self, pdf_func, kind='linear', samples=1000, a=None, b=None, **kwargs):
         super().__init__(a=a, b=b, **kwargs)
@@ -27,95 +27,8 @@ class InterpolatedPDF(rv_continuous):
     def _ppf(self, q):
         return self.interp(q)
 
-class KIST_MRAM():
-    def __init__(self, clevel):
-        super(KIST_MRAM, self).__init__()
-        self.TMR_std = 0.05
-        self.Rp_100 = torch.tensor([1054, 753, 538, 384, 274, 196, 140, 100], dtype=torch.float32)
-        self.Rp_std = torch.tensor([6.83, 6.45, 6.06, 5.71, 5.51, 5.41, 5.26, 5.21])/100 * self.Rp_100
-        self.Rap = self.Rp_100*3
-        self.Rap_std = torch.tensor([7.55, 7.26, 6.87, 6.61, 6.47, 6.40, 6.19, 6.15])/100 * self.Rap 
-        # self.Rap = torch.normal(mean, self.TMR_std*mean)
-
-        self.clevel = clevel
-        self.step = 1
-        # self.step = int(self.Rp_100.shape[0]/clevel)
-        self.delta_R = 7.91 * self.step # ideal computed delta R
-
-    def make_res(self, state, num, device):
-        #Random AP 
-        idx = self.Rp_100.shape[0] - self.step * state
-        expand_Rp = self.Rp_100.unsqueeze(dim=0).expand(num, -1)
-        expand_Rap = self.Rap.unsqueeze(dim=0).expand(num, -1)
-        Rp_n = torch.normal(expand_Rp, self.Rp_std).to(device=device)
-        Rap_n = torch.normal(expand_Rap, self.Rap_std).to(device=device)
-        rRp_sum = torch.sum((1/Rp_n).transpose(1,0)[:idx], dim=0)
-        rRap_sum = torch.sum((1/Rap_n).transpose(1,0)[idx:], dim=0)
-        samples = 1/(rRp_sum+rRap_sum)
-        # import pdb; pdb.set_trace()
-
-        return samples
-
-    def forward(self, x):
-        # Resistor is linearity (not Conductance), so using V=IR (voltage detection)
-        # states has resistor values
-        rseed = torch.randint(0, 32765, (1,))
-        np.random.seed(rseed)
-        # import matplotlib.pyplot as plt
-        # import seaborn as sns
-        # fig, ax = plt.subplots(nrows=2, figsize=(20, 12))
-        
-        for c in range(self.clevel):
-            if torch.where(x==c)[0].shape[0] != 0:
-                index = torch.where(x==c)
-                samples = self.make_res(c, index[0].shape[0], x.device)
-                x[index] = samples
-
-            if torch.any(x<0):
-                import pdb; pdb.set_trace()
-            
-        #     sns.histplot(samples.cpu().numpy(), ax=ax[0], bins=200, alpha=0.2, element='step', fill=True, stat='density')
-        #     sns.histplot(samples.cpu().numpy(), ax=ax[1], bins=200, alpha=0.2, element='step', fill=True, stat='count')
-        
-        # # setting y-axis figure ax[0]
-        # ax[0].set_ylabel(ax[0].get_ylabel(), fontsize=16)
-        # ax[0].legend(('state 0', 'state 1', 'state 2', 'state 3', 'state 4', 'state 5', 'state 6', 'state 7'), loc='upper center', ncol=9, fontsize=12, frameon=False)
-        # ax_ylabels = np.round(np.linspace(ax[0].get_yticks()[0], ax[0].get_yticks()[-2], num=5), 2)
-        # ax[0].set_yticks(ax_ylabels)
-        # ax[0].set_yticklabels(ax[0].get_yticks(), fontsize=14)
-
-        # # setting y-axis figure ax[0]
-        # ax[1].set_ylabel(ax[1].get_ylabel(), fontsize=16)
-        # ax[1].legend(('state 0', 'state 1', 'state 2', 'state 3', 'state 4', 'state 5', 'state 6', 'state 7'), loc='upper center', ncol=9, fontsize=12, frameon=False)
-        # ax_ylabels = np.linspace(ax[1].get_yticks()[0], ax[1].get_yticks()[-2], num=5, dtype=int)
-        # ax[1].set_yticks(ax_ylabels)
-        # ax[1].set_yticklabels(ax[1].get_yticks(), fontsize=14)
-        # ax[1].set_yticks(ax_ylabels)
-
-        # # setting x-axis figure ax
-        # ax[0].set_title(f'MRAM Noise', loc='right', fontsize=16)
-        # ax[0].set_xlabel('Resistance [kohm]')
-        # ax[0].set_xlabel(ax[0].get_xlabel(), fontsize=16)
-        # xlabels = ax[0].get_xticks()
-        # ax[0].set_xlim(20, np.ceil(xlabels.max()))
-        # ax[0].set_xticks(ax[0].get_xticks())
-        # ax[0].set_xticklabels(ax[0].get_xticks(), fontsize=14)
-
-        # # setting x-axis figure ax[1]
-        # ax[1].set_xlabel('Resistance [kohm]')
-        # # xlabels = ax[1].get_xticks()
-        # ax[1].set_xlabel(ax[1].get_xlabel(), fontsize=16)
-        # ax[1].set_xlim(20, np.ceil(xlabels.max()))
-        # ax[1].set_xticks(ax[1].get_xticks())
-        # ax[1].set_xticklabels(ax[1].get_xticks(), fontsize=14)
-        # plt.savefig(os.getcwd() +"/graph/MRAM/sample.png")
-        # import pdb; pdb.set_trace()
-
-        return x / self.delta_R
-
-
 class Noise_cell(nn.Module):
-    def __init__(self, wbits, cbits, mapping_mode, wsym=False, co_noise=0.01, noise_type='static', res_val='rel', w_format='state', Gmin=1/3e5, ratio=100, max_epoch=-1):
+    def __init__(self, wbits, cbits, mapping_mode, co_noise=0.01, noise_type='static', res_val='rel', w_format='state', shrink=None, Gmin=1/3e5, ratio=100, max_epoch=-1):
         super(Noise_cell, self).__init__()
         """
             This module performs cell variation
@@ -135,8 +48,7 @@ class Noise_cell(nn.Module):
         self.w_format = w_format
         self.ratio = ratio
         self.max_epoch = max_epoch
-        
-        self.wsymmetric = wsym
+        self.shrink = shrink
 
         self.init_state()
 
@@ -144,8 +56,7 @@ class Noise_cell(nn.Module):
         self.effective_clevel()
         if self.noise_type == 'meas':
             self.G = torch.tensor([43.9e-6, 96.16e-6])
-            self.G_std = torch.tensor([5.02e-6, 9.52e-6]) #SAMSUNG MRAM data
-
+            self.G_std = torch.tensor([5.02e-6, 9.52e-6]) #MRAM data
         if self.res_val == 'rel':
             self.std_offset = torch.Tensor(1).fill_((self.clevel - 1) / (self.ratio - 1))
             self.init_std(self.max_epoch)
@@ -162,8 +73,6 @@ class Noise_cell(nn.Module):
                 self.delta_G = self.G[-1] - self.G[0]
             elif self.noise_type == 'interp':
                 self.interp_init()
-            elif self.noise_type == 'kist':
-                self.kist = KIST_MRAM(self.clevel)
             else:
                 assert False, 'In the {} mode, the {} noise type is not supported, you have to choose static or prop'.format(self.res_val, self.noise_type)
         else:
@@ -178,13 +87,8 @@ class Noise_cell(nn.Module):
             else:
                 assert False, 'This file does not support that cbits are lower than wbits-1'
         elif (self.mapping_mode == '2T2R') or (self.mapping_mode == 'PN'):
-            if self.wbits == 1:
-                self.clevel = 2
-            elif self.cbits >= (self.wbits-1):
-                if self.wsymmetric:
-                    self.clevel = 2**(self.wbits - 1) # cell can represent self.wbits-1 levels (4bits: 8 levels)
-                else:
-                    self.clevel = 2**(self.wbits - 1) + 1 # cell can represent self.wbits-1 + 1 levels (4bits: 9 levels)
+            if self.cbits >= (self.wbits-1):
+                self.clevel = 2**(self.wbits - 1) + 1 # cell can represent self.wbits-1 + 1 levels (4bits: 9 levels)
             else:
                 assert False, 'This file does not support that cbits are lower than wbits-1'
         elif (self.mapping_mode == 'ref_d') or (self.mapping_mode == 'ref_a'):
@@ -203,6 +107,19 @@ class Noise_cell(nn.Module):
         else:
             assert False, "Check co_noise parameter, You only select two option (1, 2) in {}".format(self.noise_type)
         
+        if self.shrink is not None:
+            if ('ref' in self.mapping_mode) or (self.co_noise > 2):
+                self.delta_G = 10
+            else:
+                self.delta_G = 19
+            
+            filter = df.filter(like='uS')
+            numbers = [col.split('uS')[1].strip('.,') if 'uS' in col else '0' for col in filter]
+            for i, (col, number) in enumerate(zip(filter.columns, numbers)):
+                number = 0 if i==0 else int(number)
+                shift = self.shrink * number * self.delta_G
+                df[col] = df[col] - shift
+
         self.max_state = df.iloc[:, 0::2].max().to_numpy()
         self.min_state = df.iloc[:, 0::2].min().to_numpy()
         self.Gmin = 10
@@ -250,7 +167,7 @@ class Noise_cell(nn.Module):
 
                 x[index] = samples
             
-            # # for graph
+            # for graph
             # else:
             #     samples = torch.tensor([], dtype=x.dtype, device=x.device)
 
@@ -289,11 +206,11 @@ class Noise_cell(nn.Module):
         # ax[1].set_yticks(ax_ylabels)
 
         # # setting x-axis figure ax
-        # ax[0].set_title(f'ReRAM Noise Sampling (Case 2, Step=10uS)', loc='right', fontsize=16)
+        # ax[0].set_title('ReRAM Noise Sampling (Case 1, Step=20uS, Shrink={})'.format(self.shrink), loc='right', fontsize=16)
         # ax[0].set_xlabel('Conductance [uS]')
         # ax[0].set_xlabel(ax[0].get_xlabel(), fontsize=16)
         # xlabels = ax[0].get_xticks()
-        # ax[0].set_xlim(0, np.ceil(xlabels.max()))
+        # ax[0].set_xlim(0, 225)
         # ax[0].set_xticks(ax[0].get_xticks())
         # ax[0].set_xticklabels(ax[0].get_xticks(), fontsize=14)
 
@@ -301,10 +218,10 @@ class Noise_cell(nn.Module):
         # ax[1].set_xlabel('Conductance [uS]')
         # # xlabels = ax[1].get_xticks()
         # ax[1].set_xlabel(ax[1].get_xlabel(), fontsize=16)
-        # ax[1].set_xlim(0, np.ceil(xlabels.max()))
+        # ax[1].set_xlim(0, 225)
         # ax[1].set_xticks(ax[1].get_xticks())
         # ax[1].set_xticklabels(ax[1].get_xticks(), fontsize=14)
-        # plt.savefig(os.getcwd() +"/graph/ReRAM/pdf_sample.png")
+        # plt.savefig(os.getcwd() +"/graph/ReRAM/Layer0_pdf_sample_shrink_{}.png".format(self.shrink))
         # import pdb; pdb.set_trace()
 
         return x 
@@ -434,8 +351,6 @@ class Noise_cell(nn.Module):
                     # Need G_std setting! 
                 elif noise_type == 'interp':
                     output = self.interp_sample(x)
-                elif noise_type == 'kist':
-                    output = self.kist.forward(x) * self.delta_G
                 assert torch.all(output > 0), "Do not set negative cell value"
             
                 return output / self.delta_G
@@ -467,6 +382,7 @@ class Noise_cell(nn.Module):
 
                     if self.mapping_mode == '2T2R':
                         output = torch.where(x<0, -1 * output, output)
+
                 else:
                     output = x + (self.G_std[0]**2 * torch.randn_like(x, device=x.device))
         return output

@@ -187,8 +187,7 @@ class SplitConv(nn.Conv2d):
                 if i < self.split_groups - 1:
                     input_channel += self.group_move_in_channels[i]
 
-            out_tmp = torch.cat(out_tmp, 1)
-            output = out_tmp
+            output = torch.cat(out_tmp, 1)
 
         return output
  

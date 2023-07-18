@@ -39,6 +39,7 @@
 # --dropout	    0.0
 
 --wbits         3
+--wsymmetric    y
 --weight-decay  5e-5
 --lr            0.001
 
