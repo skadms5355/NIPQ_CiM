@@ -200,8 +200,8 @@ else:
                                 else:
                                     os.system('python main.py  --argfile {} --gpu-id {} --psum_comp {} --arraySize {} --mapping_mode {} \
                                                 --pbits {} --per_class {} --testlog_reset {} --log_file {} --pretrained {} \
-                                                --is_noise y --tn_file {} --nipq_noise {} --co_noise {} --noise_type {} --shrink {}'
-                                                .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, tn_file, nipq_noise, co_noise, noise_type, args.shrink))
+                                                --is_noise y --tn_file {} --nipq_noise {} --co_noise {} --noise_type {}'
+                                                .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, tn_file, nipq_noise, co_noise, noise_type))
                             else:
                                 if args.FL_quant:
                                     os.system('python main.py  --argfile {} --gpu-id {} --psum_comp {} --arraySize {} --mapping_mode {} \
@@ -211,8 +211,8 @@ else:
                                 else:
                                     os.system('python main.py  --argfile {} --gpu-id {} --psum_comp {} --arraySize {} --mapping_mode {} \
                                                 --pbits {} --per_class {} --testlog_reset {} --log_file {} --pretrained {} \
-                                                --is_noise y --nipq_noise {} --co_noise {} --noise_type {} --shrink {}'
-                                                .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, nipq_noise, co_noise, noise_type, args.shrink))
+                                                --is_noise y --nipq_noise {} --co_noise {} --noise_type {}'
+                                                .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, nipq_noise, co_noise, noise_type))
 
                         else:
                             if args.FL_quant:

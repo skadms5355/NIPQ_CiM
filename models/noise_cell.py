@@ -119,6 +119,7 @@ class Noise_cell(nn.Module):
                 number = 0 if i==0 else int(number)
                 shift = self.shrink * number * self.delta_G
                 df[col] = df[col] - shift
+            df[df<0] = 0.02
 
         self.max_state = df.iloc[:, 0::2].max().to_numpy()
         self.min_state = df.iloc[:, 0::2].min().to_numpy()
@@ -186,6 +187,7 @@ class Noise_cell(nn.Module):
         # # setting y-axis figure ax[0]
         # ax[0].set_ylabel(ax[0].get_ylabel(), fontsize=16)
         # ax[0].legend(('state 0', 'state 1', 'state 2', 'state 3', 'state 4', 'state 5', 'state 6', 'state 7', 'state 8'), loc='upper center', ncol=9, fontsize=12, frameon=False)
+        # # ax[0].legend(('state 0', 'state 1', 'state 2', 'state 3', 'state 4', 'state 5', 'state 6', 'state 7', 'state 8', 'state 9', 'state 10', 'state 11', 'state 12', 'state 13', 'state 14', 'state 15'), loc='upper center', ncol=8, fontsize=12, frameon=False)
         # ax_ylabels = np.round(np.linspace(ax[0].get_yticks()[0], ax[0].get_yticks()[-2], num=5), 2)
         # ax[0].set_yticks(ax_ylabels)
         # ax[0].set_yticklabels(ax[0].get_yticks(), fontsize=14)
@@ -200,17 +202,19 @@ class Noise_cell(nn.Module):
         # # setting y-axis figure ax[0]
         # ax[1].set_ylabel(ax[1].get_ylabel(), fontsize=16)
         # ax[1].legend(('state 0', 'state 1', 'state 2', 'state 3', 'state 4', 'state 5', 'state 6', 'state 7', 'state 8'), loc='upper center', ncol=9, fontsize=12, frameon=False)
+        # # ax[1].legend(('state 0', 'state 1', 'state 2', 'state 3', 'state 4', 'state 5', 'state 6', 'state 7', 'state 8', 'state 9', 'state 10', 'state 11', 'state 12', 'state 13', 'state 14', 'state 15'), loc='upper center', ncol=8, fontsize=12, frameon=False)
         # ax_ylabels = np.linspace(ax[1].get_yticks()[0], ax[1].get_yticks()[-2], num=5, dtype=int)
         # ax[1].set_yticks(ax_ylabels)
         # ax[1].set_yticklabels(ax[1].get_yticks(), fontsize=14)
         # ax[1].set_yticks(ax_ylabels)
 
         # # setting x-axis figure ax
-        # ax[0].set_title('ReRAM Noise Sampling (Case 1, Step=20uS, Shrink={})'.format(self.shrink), loc='right', fontsize=16)
+        # ax[0].set_title('ReRAM Noise Sampling (Case 1, Step=10uS, Shrink={})'.format(self.shrink), loc='right', fontsize=16)
+        # # ax[0].set_title('ReRAM Noise Sampling (Case 1, Step=10uS)', loc='right', fontsize=16)
         # ax[0].set_xlabel('Conductance [uS]')
         # ax[0].set_xlabel(ax[0].get_xlabel(), fontsize=16)
         # xlabels = ax[0].get_xticks()
-        # ax[0].set_xlim(0, 225)
+        # ax[0].set_xlim(0, 200)
         # ax[0].set_xticks(ax[0].get_xticks())
         # ax[0].set_xticklabels(ax[0].get_xticks(), fontsize=14)
 
@@ -218,10 +222,10 @@ class Noise_cell(nn.Module):
         # ax[1].set_xlabel('Conductance [uS]')
         # # xlabels = ax[1].get_xticks()
         # ax[1].set_xlabel(ax[1].get_xlabel(), fontsize=16)
-        # ax[1].set_xlim(0, 225)
+        # ax[1].set_xlim(0, 200)
         # ax[1].set_xticks(ax[1].get_xticks())
         # ax[1].set_xticklabels(ax[1].get_xticks(), fontsize=14)
-        # plt.savefig(os.getcwd() +"/graph/ReRAM/Layer0_pdf_sample_shrink_{}.png".format(self.shrink))
+        # plt.savefig(os.getcwd() +"/graph/ReRAM/Layer0_pdf_sample_shrink_{}(step10).png".format(self.shrink))
         # import pdb; pdb.set_trace()
 
         return x 

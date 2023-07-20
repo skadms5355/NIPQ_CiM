@@ -325,7 +325,7 @@ class BinAct(nn.Module):
         return s.format(**self.__dict__)
 
 
-def nonlinear(abits, mode='signed', ste='hardtanh', offset=0, width=1):
+def Binnonlinear(abits, mode='signed', ste='hardtanh', offset=0, width=1):
     """An activation that can be used as either FP or binary precision
 
     Args:

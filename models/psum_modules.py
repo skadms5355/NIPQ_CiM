@@ -647,13 +647,33 @@ class PsumQConv(SplitConv):
                         else:
                             out_wsum = out_adc if wbit == 0 else out_wsum + out_adc
                         out_adc = None
+                        output_real = F.conv2d(input_s, qweight/w_scale, bias=self.bias,
+                                                stride=self.stride, dilation=self.dilation, groups=self.groups)
+                        
+                        import matplotlib.pyplot as plt
+                        import seaborn as sns
+                        fig, ax = plt.subplots(nrows=1, figsize=(18, 10))
+                        if self.mapping_mode == 'ref_a':
+                            sns.histplot(torch.sub(output_real, out_wsum).cpu().numpy().ravel(), color='darkgreen', ax=ax, bins=200, alpha=0.2, element='step', fill=True, stat='percent')
+                            ax.set_title('1T1R (RC) structure', loc='right', fontsize=18)
+                        elif self.mapping_mode == '2T2R':
+                            sns.histplot(torch.sub(output_real, out_wsum).cpu().numpy().ravel(), color='cornflowerblue', ax=ax, bins=200, alpha=0.2, element='step', fill=True, stat='percent')
+                            ax.set_title('2T2R structure', loc='right', fontsize=18)
+                        ax.set_ylabel(ax.get_ylabel(), fontsize=18)
+                        ax.set_yticklabels(ax.get_yticks(), fontsize=16)
+                        ax.set_xlabel('MAC Subtraction')
+                        ax.set_xlabel(ax.get_xlabel(), fontsize=18)
+                        xlabels = [int(x) for x in ax.get_xticks()]
+                        ax.set_xticks(xlabels)
+                        ax.set_xticklabels(ax.get_xticks(), fontsize=16)
+
+                        plt.savefig('test_{}.png'.format(self.mapping_mode), bbox_inches='tight')
+                        import pdb; pdb.set_trace()
+
                     if self.is_noise and not ((self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a')):
                         out_one = (-G_min/delta_G) * self._split_forward(input_s, w_one, padded=True, ignore_bias=True, cat_output=False,
                                                 weight_is_split=True, infer_only=True, merge_group=True)
                         out_wsum -= out_one
-                    # output_real = F.conv2d(input_s, qweight, bias=self.bias,
-                    #                         stride=self.stride, dilation=self.dilation, groups=self.groups)
-                    # import pdb; pdb.set_trace()
                     output = out_wsum if abit == 0 else output+out_wsum
 
                 # restore output's scale
