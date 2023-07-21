@@ -3,11 +3,9 @@
 --augment	    False
 --zca		    True
 
---epochs        500
+--epochs        200
 --train-batch   200
 --test-batch    200
-
-# --epoch         200
 
 --optimizer     adamax
 # --lr-method     lr_cosineanneal

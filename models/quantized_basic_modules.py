@@ -85,7 +85,7 @@ class QuantWeightFunc(torch.autograd.Function):
     """ Method to quantize weight with torch.autograd extension."""
     @staticmethod
     @torch.cuda.amp.custom_fwd
-    def forward(ctx, input, wbits, wquant="fixed", weight_mask=None):
+    def forward(ctx, input, wbits, wquant="fixed", weight_mask=None, wsymmetric=False):
         """Performs weight Quantization
         """
         # mask the weight if it exist
@@ -138,15 +138,19 @@ class QuantWeightFunc(torch.autograd.Function):
 
         # scale & shift the weight to make sure quantized values are integer with distance 1
         w_q = input / w_step
-        w_q.add_(0.5)
+        
+        if wsymmetric:
+            w_q.round_()
+            w_q.clamp_(-1*half_num_level + 1, half_num_level-1)
+        else:
+            w_q.add_(0.5)
+            # quantize the weight with round function
+            w_q.round_()
+            # clamp the weight values to have (2^wbits) levels
+            w_q.clamp_(-1*half_num_level + 1, half_num_level)
 
-        # quantize the weight with round function
-        w_q.round_()
-        # clamp the weight values to have (2^wbits) levels
-        w_q.clamp_(-1*half_num_level + 1, half_num_level)
-
-        # return the weight values
-        w_q.add_(-0.5)
+            # return the weight values
+            w_q.add_(-0.5)
 
         # mask the weight if it exist
         if weight_mask is not None:
@@ -166,7 +170,7 @@ class QuantWeightReturnScaleFunc(torch.autograd.Function):
     """ Method to quantize weight with torch.autograd extension."""
     @staticmethod
     @torch.cuda.amp.custom_fwd
-    def forward(ctx, input, wbits, wquant="fixed", weight_mask=None):
+    def forward(ctx, input, wbits, wquant="fixed", weight_mask=None, wsymmetric=False):
         """Performs weight Quantization
             1. wquant: fixed
             determine the steps of quantized weights based on Fixed Point Quant (ICML 2016) - 2b ~ 5b
@@ -242,22 +246,27 @@ class QuantWeightReturnScaleFunc(torch.autograd.Function):
 
         # scale & shift the weight to make sure quantized values are integer with distance 1
         w_q = input / w_step
-        w_q.add_(0.5)
+        if wsymmetric:
+            w_q.round_()
+            w_q.clamp_(-1*half_num_level + 1, half_num_level-1)
+            #ctx.wbits = wbits
+            ctx.wscale = w_step
+        else:
+            w_q.add_(0.5)
+            # quantize the weight with round function
+            w_q.round_()
+            # clamp the weight values to have (2^wbits) levels
+            w_q.clamp_(-1*half_num_level + 1, half_num_level)
 
-        # quantize the weight with round function
-        w_q.round_()
-        # clamp the weight values to have (2^wbits) levels
-        w_q.clamp_(-1*half_num_level + 1, half_num_level)
-
-        # return the weight values
-        w_q.add_(-0.5)
+            # return the weight values
+            w_q.add_(-0.5)
+            #ctx.wbits = wbits
+            ctx.wscale = w_step/2
 
         # mask the weight if it exist
         if weight_mask is not None:
             w_q.mul_(weight_mask)
 
-        #ctx.wbits = wbits
-        ctx.wscale = w_step/2
         return w_q * w_step, ctx.wscale
 
     @staticmethod
@@ -333,15 +342,16 @@ class MaskWeight(torch.autograd.Function):
         return grad, None
 
 
-def fw(x, wbits, weight_clip, weight_scale, fan_in, groups=1, wquant="fixed", return_scale=False, weight_mask=None):
+def fw(x, wbits, weight_clip, weight_scale, fan_in=1, groups=1, wquant="fixed", return_scale=False, wsymmetric=False, weight_mask=None):
     """Performs weight quantization in regard to wbits."""
     if wbits == 32:
         x = MaskWeight.apply(x, weight_mask)
     elif wbits > 1:
         if return_scale:
-            x = QuantWeightReturnScaleFunc.apply(x, wbits, wquant, weight_mask)
+            x, w_scale = QuantWeightReturnScaleFunc.apply(x, wbits, wquant, weight_mask, wsymmetric)
+            return x, w_scale
         else:
-            x = QuantWeightFunc.apply(x, wbits, wquant, weight_mask)
+            x = QuantWeightFunc.apply(x, wbits, wquant, weight_mask, wsymmetric=wsymmetric)
     else:
         x = BinWeightFunc.apply(x, weight_clip, weight_scale, fan_in, groups, return_scale, weight_mask)
     return x
@@ -374,7 +384,7 @@ class QuantConv(nn.Conv2d):
         - Input:
         - Output:
     """
-    def __init__(self, in_channels, out_channels, wbits, weight_clip=0, weight_scale=True, kernel_size=3, stride=1, padding=0, padding_mode='zeros', groups=1, bias=False, wquant="fixed"):
+    def __init__(self, in_channels, out_channels, wbits, weight_clip=0, weight_scale=True, wsymmetric=False, kernel_size=3, stride=1, padding=0, padding_mode='zeros', groups=1, bias=False, wquant="fixed"):
         super(QuantConv, self).__init__(in_channels, out_channels, kernel_size,
                                        stride=stride, padding=padding, groups=groups, bias=bias)
         self.wbits = wbits
@@ -384,6 +394,7 @@ class QuantConv(nn.Conv2d):
         self.glr = 1/math.sqrt(1.5/(in_channels + out_channels)*kernel_size)
         self.weight_clip = weight_clip
         self.weight_scale = weight_scale
+        self.wsymmetric = wsymmetric
         self.fan_in = in_channels * kernel_size * kernel_size
         self.wquant = wquant
 
@@ -401,7 +412,7 @@ class QuantConv(nn.Conv2d):
             padding_shape = (self.padding, self.padding, self.padding, self.padding)
             input = Pad.pad(input, padding_shape, self.padding_mode, self.padding_value)
         # weight quantization
-        weight_q = fw(self.weight, self.wbits, self.weight_clip, self.weight_scale, self.fan_in, wquant=self.wquant)
+        weight_q = fw(self.weight, self.wbits, self.weight_clip, self.weight_scale, self.fan_in, wquant=self.wquant, wsymmetric=self.wsymmetric)
         #print('weight_q: {}'.format(weight_q.dtype))
         #print(weight_q)
         # Conv2D
@@ -428,7 +439,7 @@ class QuantConv(nn.Conv2d):
             s += ', bias=False'
         if self.padding_mode != 'zeros':
             s += ', padding_mode={padding_mode}'
-        s += ', wbits={wbits}, wquant={wquant}'
+        s += ', wbits={wbits}, wquant={wquant}, wsymmetric={wsymmetric}'
         return s.format(**self.__dict__)
 
 
@@ -447,25 +458,26 @@ class QuantLinear(nn.Linear):
         - Input:
         - Output:
     """
-    def __init__(self, in_features, out_features, wbits, weight_clip=0, weight_scale=True, bias=False, wquant="fixed"):
+    def __init__(self, in_features, out_features, wbits, weight_clip=0, weight_scale=True, wsymmetric=False, bias=False, wquant="fixed"):
         super(QuantLinear, self).__init__(in_features, out_features, bias=bias)
         self.wbits = wbits
         self.glr = 1/math.sqrt(1.5/(in_features + out_features))
         self.weight_clip = weight_clip
         self.weight_scale = weight_scale
+        self.wsymmetric = wsymmetric
         self.wquant = wquant
 
     def forward(self, input):
         # weight quantization
-        weight_q = fw(self.weight, self.wbits, self.weight_clip, self.weight_scale, self.in_features, wquant=self.wquant)
+        weight_q = fw(self.weight, self.wbits, self.weight_clip, self.weight_scale, self.in_features, wquant=self.wquant, wsymmetric=self.wsymmetric)
         # Linear
         output = F.linear(input, weight_q, bias=self.bias)
         return output
 
     def extra_repr(self):
         """Provides layer information, including wbits, when print(model) is called."""
-        return 'in_features={}, out_features={}, bias={}, wbits={}, wquant={}'.format(
-            self.in_features, self.out_features, self.bias is not None, self.wbits, self.wquant
+        return 'in_features={}, out_features={}, bias={}, wbits={}, wquant={}, wsymmetric={}'.format(
+            self.in_features, self.out_features, self.bias is not None, self.wbits, self.wquant, self.wsymmetric
         )
 
 

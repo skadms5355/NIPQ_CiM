@@ -45,7 +45,7 @@
 
 # noise option
 --is_noise      y
---nipq_noise    hwnoise
+--nipq_noise    qhwnoise
 --co_noise      1
 --noise_type    interp
 --res_val       abs
