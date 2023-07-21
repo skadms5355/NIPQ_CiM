@@ -29,7 +29,7 @@ args = set_arguments()
 from utils import data_loader, initialize, logging, misc, tensorboard, eval
 from utils.schedule_train import set_optimizer, set_scheduler
 
-from models.psum_modules import set_BitSerial_log, set_Noise_injection, unset_BitSerial_log
+from models.psum_modules import set_BitSerial_log, set_Noise_injection, unset_BitSerial_log, set_Quant_param
 from models.binarized_psum_modules import set_PsumBinary_log, set_PsumBin_Noise_injection, unset_PsumBinary_log
 from models.nipq_quantization_module import bops_cal
 
@@ -456,6 +456,8 @@ def main_worker(gpu, ngpus_per_node, args):
                     PQ.hwnoise_initialize(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
                                         noise_type=args.noise_type, res_val=args.res_val)
             elif (args.model_mode == 'quant') or (args.model_mode == 'hn_quant'):
+                if 'quant' in args.arch:
+                    set_Quant_param(model, weight_clip=args.weight_clip, weight_scale=args.weight_scale, wsymmetric=args.wsymmetric)
                 set_BitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, log_file=args.log_file,\
                     pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma)
                 if args.is_noise:

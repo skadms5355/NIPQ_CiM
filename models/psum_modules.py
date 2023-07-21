@@ -9,7 +9,7 @@ import pandas as pd
 from .noise_cell import Noise_cell
 import utils.padding as Pad
 from .quantized_lsq_modules import *
-from .quantized_basic_modules import psum_quant_merge
+from .quantized_basic_modules import psum_quant_merge, fw
 from .bitserial_modules import *
 from .split_modules import *
 # custom kernel
@@ -72,7 +72,13 @@ class PsumQConv(SplitConv):
         elif self.padding_mode == 'neg':
             self.padding_value = None
 
+        self.quant_mode = 'lsq'
         self.quan_w_fn = LSQReturnScale(bit=self.wbits, half_range=False, symmetric=symmetric, per_channel=False)
+
+        self.weight_clip = 0
+        self.weight_scale = True
+        self.wsymmetric = False
+        self.wquant = 'fixed'
 
         # for split
         # self.split_nIC = split_conv(self.weight, arraySize)
@@ -282,7 +288,11 @@ class PsumQConv(SplitConv):
             # get quantization parameter and input bitserial 
             if weight is None:
                 weight = self.weight
-            qweight, w_scale = self.quan_w_fn(weight)
+            
+            if self.quant_mode == 'quant':
+                qweight, w_scale = fw(weight, self.wbits, self.weight_clip, self.weight_scale, wquant=self.wquant, wsymmetric=self.wsymmetric, return_scale=True)
+            else:
+                qweight, w_scale = self.quan_w_fn(weight)
 
             if short_path is None:
                 sinput, a_scale, abits = Bitserial.bitserial_act(input, debug=False) # short_path parameter does not exist
@@ -562,7 +572,12 @@ class PsumQConv(SplitConv):
         # get quantization parameter and input bitserial
         if weight is None:
             weight = self.weight
-        qweight, w_scale = self.quan_w_fn(weight)
+
+        if self.quant_mode == 'quant':
+            qweight, w_scale = fw(weight, self.wbits, self.weight_clip, self.weight_scale, wquant=self.wquant, wsymmetric=self.wsymmetric, return_scale=True)
+            import pdb; pdb.set_trace()
+        else:
+            qweight, w_scale = self.quan_w_fn(weight)
 
         if self.wbit_serial:
             with torch.no_grad():
@@ -781,7 +796,13 @@ class PsumQLinear(SplitLinear):
         self.wbit_serial = wbit_serial
         self.abit_serial = True if wbit_serial else False
 
+        self.quant_mode = 'lsq'
         self.quan_w_fn = LSQReturnScale(bit=self.wbits, half_range=False, symmetric=symmetric, per_channel=False)
+
+        self.weight_clip = 0
+        self.weight_scale = True
+        self.wsymmetric = False
+        self.wquant = 'fixed'
 
         # for split
         # self.split_nIF = split_linear(self.weight, arraySize)
@@ -939,7 +960,11 @@ class PsumQLinear(SplitLinear):
         bitplane_idx = 0
 
         # get quantization parameter and input bitserial 
-        qweight, w_scale = self.quan_w_fn(self.weight)
+        if self.quant_mode == 'quant':
+            qweight, w_scale = fw(self.weight, self.wbits, self.weight_clip, self.weight_scale, wquant=self.wquant, wsymmetric=self.wsymmetric, return_scale=True)
+        else:
+            qweight, w_scale = self.quan_w_fn(self.weight)
+
         sinput, a_scale, abits = Bitserial.bitserial_act(input, debug=False)
         psum_scale = w_scale * a_scale
 
@@ -1181,7 +1206,10 @@ class PsumQLinear(SplitLinear):
     def _bitserial_comp_forward(self, input):
 
         # get quantization parameter and input bitserial 
-        qweight, w_scale = self.quan_w_fn(self.weight)
+        if self.quant_mode == 'quant':
+            qweight, w_scale = fw(self.weight, self.wbits, self.weight_clip, self.weight_scale, wquant=self.wquant, wsymmetric=self.wsymmetric, return_scale=True)
+        else:
+            qweight, w_scale = self.quan_w_fn(self.weight)
 
         if self.wbit_serial:
             with torch.no_grad():
@@ -1330,6 +1358,15 @@ def get_statistics_from_hist(df_hist):
     std_val = math.sqrt(var_val)
 
     return [mean_val, std_val, min_val, max_val] 
+
+def set_Quant_param(model, weight_clip=0, weight_scale=True, wquant="fixed", wsymmetric=False):
+    for m in model.modules():
+        if type(m).__name__ in ['PsumQConv', 'PsumQLinear']:
+            m.weight_clip = weight_clip
+            m.weight_scale = weight_scale
+            m.wquant = wquant
+            m.wsymmetric = wsymmetric
+            m.quant_mode = 'quant'
 
 def set_BitSerial_log(model, pbits, pclipmode, abit_serial=None, pclip=None, psigma=None, checkpoint=None, pquant_idx=None, pbound=None, center=None, log_file=False):
     print("start setting Bitserial layers log bitplane info")

@@ -238,7 +238,6 @@ class PsumBinConv(SplitConv):
 
         self.setting_pquant_func(pbits=self.pbits)
         assert self.mapping_mode == '2T2R', "Only support 1bit (SA) when mapping mode is 2T2R"
-
         ### Cell noise injection + Cell conductance value change
         ### in-mem computation programming (weight constant-noise)
         with torch.no_grad():
@@ -252,9 +251,8 @@ class PsumBinConv(SplitConv):
                 qweight = weight_chunk[0] - weight_chunk[1]
                 wsplit_num = 1
 
-        out_tmp = self._split_forward(input, qweight, padded=True, ignore_bias=True, weight_is_split=True, binary=True)
+        output = self._split_forward(input, qweight, padded=True, ignore_bias=True, weight_is_split=True, binary=True)
         # output = bfp(out_tmp)
-        output = out_tmp
         # import pdb; pdb.set_trace()
         return output
 
@@ -457,9 +455,8 @@ class PsumBinLinear(SplitLinear):
 
             qweight.copy_(bweight)
 
-        out_tmp = self._split_forward(input, qweight, ignore_bias=True, binary=True)
-        # output = bfp(out_tmp)
-        output = out_tmp
+        output = self._split_forward(input, qweight, ignore_bias=True, binary=True)
+
         return output
 
     def forward(self, input):

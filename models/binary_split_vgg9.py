@@ -16,6 +16,9 @@ class PConv_BN_Merge(nn.Module):
             self.pooling = nn.MaxPool2d(kernel_size=2, stride=2)
             # self.pooling = nn.AvgPool2d(kernel_size=2, stride=2)
         self.split_groups = self.pconv.split_groups
+        if pool:
+            self.pooling = nn.MaxPool2d(kernel_size=2, stride=2)
+            # self.pooling = nn.AvgPool2d(kernel_size=2, stride=2)
         self.BN = nn.BatchNorm2d(outplane*self.pconv.split_groups)
         self.hardtanh = nn.Hardtanh(-1, 1, inplace=True)
         self.binarized = BinarizedNeurons(mode='signed')

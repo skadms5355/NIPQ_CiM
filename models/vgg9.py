@@ -119,44 +119,44 @@ class Quant_vgg9(nn.Module):
         super(Quant_vgg9, self).__init__()
 
         self.features = nn.Sequential(
-            QuantConv(3, 128, wbits=32 if kwargs['FL_quant']==32 else 32, weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode'], bias=False),
+            QuantConv(3, 128, wbits=32 if kwargs['FL_quant']==32 else 32, weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], wsymmetric=kwargs['wsymmetric'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode'], bias=False),
             nn.BatchNorm2d(128),
             nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
 
-            QuantConv(128, 128, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode'], bias=False),
+            QuantConv(128, 128, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], wsymmetric=kwargs['wsymmetric'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode'], bias=False),
             nn.MaxPool2d(kernel_size=2, stride=2),
             nn.BatchNorm2d(128),
             nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
 
-            QuantConv(128, 256, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode'], bias=False),
+            QuantConv(128, 256, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], wsymmetric=kwargs['wsymmetric'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode'], bias=False),
             nn.BatchNorm2d(256),
             nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
 
-            QuantConv(256, 256, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode'], bias=False),
+            QuantConv(256, 256, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], wsymmetric=kwargs['wsymmetric'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode'], bias=False),
             nn.MaxPool2d(kernel_size=2, stride=2),
             nn.BatchNorm2d(256),
             nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
 
-            QuantConv(256, 512, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode'], bias=False),
+            QuantConv(256, 512, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], wsymmetric=kwargs['wsymmetric'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode'], bias=False),
             nn.BatchNorm2d(512),
             nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
 
-            QuantConv(512, 512, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode'], bias=False),
+            QuantConv(512, 512, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], wsymmetric=kwargs['wsymmetric'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode'], bias=False),
             nn.MaxPool2d(kernel_size=2, stride=2),
             nn.BatchNorm2d(512),
             nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),    
         )
         self.classifier = nn.Sequential(
-            QuantLinear(512 * 4 * 4, 1024, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale']),
+            QuantLinear(512 * 4 * 4, 1024, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], wsymmetric=kwargs['wsymmetric']),
             nn.BatchNorm1d(1024),
             nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']), 
 
-            QuantLinear(1024, 1024, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale']),
+            QuantLinear(1024, 1024, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], wsymmetric=kwargs['wsymmetric']),
             nn.BatchNorm1d(1024),
             nonlinear(abits=32 if kwargs['FL_quant']==32 else 32, mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']), 
 
             nn.Dropout(kwargs['drop']),
-            QuantLinear(1024, kwargs['num_classes'], wbits=32 if kwargs['FL_quant']==32 else 32, weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], bias=True),
+            QuantLinear(1024, kwargs['num_classes'], wbits=32 if kwargs['FL_quant']==32 else 32, weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], wsymmetric=kwargs['wsymmetric'], bias=True),
             nn.BatchNorm1d(kwargs['num_classes']),
         )
 

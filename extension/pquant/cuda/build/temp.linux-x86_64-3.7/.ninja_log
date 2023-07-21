@@ -8,3 +8,5 @@
 215	66494	1681369627172146598	/mnt/nfs/yulhwakim/yulhwakim/QNN/CIM_QNN/codes/extension/pquant/cuda/build/temp.linux-x86_64-3.7/pquant_cuda_kernel.o	7583b2aa684c88c8
 214	22142	1681370140007626113	/mnt/nfs/yulhwakim/yulhwakim/QNN/CIM_QNN/codes/extension/pquant/cuda/build/temp.linux-x86_64-3.7/pquant_cuda.o	6f0324ef398fb522
 215	67784	1681370185646045027	/mnt/nfs/yulhwakim/yulhwakim/QNN/CIM_QNN/codes/extension/pquant/cuda/build/temp.linux-x86_64-3.7/pquant_cuda_kernel.o	7583b2aa684c88c8
+0	17324	1689648640114028585	/mnt/nfs/nameunkang/Project/NIPQ_CiM/extension/pquant/cuda/build/temp.linux-x86_64-3.7/pquant_cuda.o	94b57393b8f10a79
+0	34847	1689648657631794018	/mnt/nfs/nameunkang/Project/NIPQ_CiM/extension/pquant/cuda/build/temp.linux-x86_64-3.7/pquant_cuda_kernel.o	129ad96803499841
