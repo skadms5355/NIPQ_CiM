@@ -52,7 +52,6 @@ class KIST_MRAM():
         rRp_sum = torch.sum((1/Rp_n).transpose(1,0)[:idx], dim=0)
         rRap_sum = torch.sum((1/Rap_n).transpose(1,0)[idx:], dim=0)
         samples = 1/(rRp_sum+rRap_sum)
-        # import pdb; pdb.set_trace()
 
         return samples
 
