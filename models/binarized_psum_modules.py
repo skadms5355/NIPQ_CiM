@@ -64,6 +64,7 @@ class PsumBinConv(SplitConv):
         else:
             self.weight_clip = weight_clip
             self.weight_scale = weight_scale
+
         self.padding = padding
         self.stride = stride
         self.padding_mode = padding_mode
@@ -96,8 +97,8 @@ class PsumBinConv(SplitConv):
         self._group_move_offset()
         
         # sweight
-        # self.sweight = nn.Parameter(torch.Tensor(self.out_channels*self.split_groups, self.group_in_channels, kernel_size, kernel_size))
-        # self.register_buffer('sweight', sweight)
+        self.sweight = nn.Parameter(torch.zeros(self.out_channels*self.split_groups, self.group_in_channels, kernel_size, kernel_size, requires_grad=True))
+        self._split_weight(self.weight)
         # self.ks = kernel_size
 
         # for psum quantization
@@ -218,13 +219,26 @@ class PsumBinConv(SplitConv):
 
         return output.round_(), split_num 
     
-    def _cell_noise_init(self, cbits, mapping_mode, wsym=False, co_noise=0.01, noise_type='prop', res_val='rel', w_format="weight", max_epoch=-1):
+    def _cell_noise_init(self, cbits, mapping_mode, co_noise=0.01, noise_type='prop', res_val='rel', w_format="weight", max_epoch=-1):
         self.w_format = 'state' if res_val == 'abs' or noise_type == 'meas' else 'weight'
         # wbits = Parameter(torch.Tensor(1).fill_(self.wbits), requires_grad=False).round().squeeze()
         # for inference 
         if not (noise_type == 'prop' or 'interp'):
             noise_type = 'prop'
-        self.noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, wsym, co_noise, noise_type, res_val=res_val, w_format=self.w_format)
+        self.noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val=res_val, w_format=self.w_format)
+
+    def _split_weight(self, weight):
+        # self.sweight 
+        weight_split = torch.chunk(weight.view(weight.shape[0], -1), self.split_groups, dim=1)
+        sweight = torch.chunk(torch.zeros_like(self.sweight).view(weight.shape[0], -1), self.split_groups, dim=1)
+        # sweight_split = torch.chunk(sweight.view(weight.shape[0], -1), self.split_groups, dim=1)
+        # sweight = torch.zeros(weight.shape[0], self.group_in_channels*self.kSpatial, requires_grad=True)
+        for g in range(self.split_groups):
+            mask = torch.zeros_like(sweight[0], dtype=torch.bool)
+            mask[:, self.group_in_offset[g]:self.group_in_offset[g] + self.group_fan_in] = 1
+            sweight[g].data.masked_scatter_(mask, weight_split[g])
+        
+        self.sweight.data = torch.cat(sweight, 0).view(self.sweight.shape).to("cuda")
 
     def _bitserial_comp_forward(self, input):
         # delete padding_shpe & additional padding operation by matching padding/stride format with nn.Conv2d
@@ -234,7 +248,7 @@ class PsumBinConv(SplitConv):
             padding_shape = (self.padding, self.padding, self.padding, self.padding)
             input = Pad.pad(input, padding_shape, self.padding_mode, self.padding_value)
 
-        qweight = fw(self.weight, self.wbits, self.weight_clip, self.weight_scale, self.fan_in)
+        qweight = fw(self.sweight, self.wbits, self.weight_clip, self.weight_scale, self.fan_in)
 
         self.setting_pquant_func(pbits=self.pbits)
         assert self.mapping_mode == '2T2R', "Only support 1bit (SA) when mapping mode is 2T2R"
@@ -242,18 +256,21 @@ class PsumBinConv(SplitConv):
         ### in-mem computation programming (weight constant-noise)
         with torch.no_grad():
             if self.is_noise:
-                qweight, wsplit_num = self._weight_bitserial(qweight, 1, cbits=self.cbits)
-                qweight = self.noise_cell(qweight)
+                nweight, wsplit_num = self._weight_bitserial(qweight, 1, cbits=self.cbits)
+                nweight = self.noise_cell(nweight)
                 
-                weight_chunk = torch.chunk(qweight, wsplit_num, dim=1)
+                weight_chunk = torch.chunk(nweight, wsplit_num, dim=1)
                 
                 ## make the same weight size as qweight (only 2T2R design)
-                qweight = weight_chunk[0] - weight_chunk[1]
+                nweight = weight_chunk[0] - weight_chunk[1]
+                qweight.copy_(nweight)
                 wsplit_num = 1
 
+        # split_weight = self._split_weight(qweight)
+
         output = self._split_forward(input, qweight, padded=True, ignore_bias=True, weight_is_split=True, binary=True)
+        # out_tmp = self._split_forward(input, self.sweight, padded=True, ignore_bias=True, weight_is_split=True, binary=True)
         # output = bfp(out_tmp)
-        # import pdb; pdb.set_trace()
         return output
 
     def forward(self, input):
@@ -424,13 +441,13 @@ class PsumBinLinear(SplitLinear):
 
         return output.round_(), split_num 
 
-    def _cell_noise_init(self, cbits, mapping_mode, wsym=False, co_noise=0.01, noise_type='prop', res_val='rel', w_format="weight", max_epoch=-1):
+    def _cell_noise_init(self, cbits, mapping_mode, co_noise=0.01, noise_type='prop', res_val='rel', w_format="weight", max_epoch=-1):
         self.w_format = 'state' if res_val == 'abs' or noise_type == 'meas' else 'weight'
         # wbits = Parameter(torch.Tensor(1).fill_(self.wbits), requires_grad=False).round().squeeze()
         # for inference 
         if not (noise_type == 'prop' or 'interp'):
             noise_type = 'prop'
-        self.noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, wsym, co_noise, noise_type, res_val=res_val, w_format=self.w_format)
+        self.noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val=res_val, w_format=self.w_format)
     
 
     def _bitserial_comp_forward(self, input):
@@ -444,16 +461,16 @@ class PsumBinLinear(SplitLinear):
 
         ### in-mem computation mimic (split conv & psum quant/merge)
         with torch.no_grad():
-            bweight, wsplit_num = self._weight_bitserial(qweight, 1, cbits=self.cbits)
-
             ### Cell noise injection + Cell conductance value change
             if self.is_noise:
+                bweight, wsplit_num = self._weight_bitserial(qweight, 1, cbits=self.cbits)
+
                 bweight = self.noise_cell(bweight)
                 weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
                 
                 bweight = weight_chunk[0] - weight_chunk[1]
 
-            qweight.copy_(bweight)
+                qweight.copy_(bweight)
 
         output = self._split_forward(input, qweight, ignore_bias=True, binary=True)
 
@@ -543,7 +560,7 @@ def set_Qact_bitserial(model, pquant_idx, abit_serial=True):
             counter += 1
     print("finish setting quantact bitserial ")
 
-def set_PsumBin_Noise_injection(model, weight=False, wsym=False, hwnoise=True, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', w_format='weight', max_epoch=-1):
+def set_PsumBin_Noise_injection(model, weight=False, hwnoise=True, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', w_format='weight', max_epoch=-1):
     for name, module in model.named_modules():
         if isinstance(module, (PsumBinConv, PsumBinLinear)) and weight and hwnoise:
             if module.wbits != 32:
@@ -552,4 +569,4 @@ def set_PsumBin_Noise_injection(model, weight=False, wsym=False, hwnoise=True, c
                 if noise_type == 'grad':
                     assert max_epoch != -1, "Enter max_epoch in hwnoise_initialize function"
                 if hwnoise:
-                    module._cell_noise_init(cbits=cbits, mapping_mode=mapping_mode, wsym=wsym, co_noise=co_noise, noise_type=noise_type, res_val=res_val, w_format=w_format, max_epoch=max_epoch)
+                    module._cell_noise_init(cbits=cbits, mapping_mode=mapping_mode, co_noise=co_noise, noise_type=noise_type, res_val=res_val, w_format=w_format, max_epoch=max_epoch)

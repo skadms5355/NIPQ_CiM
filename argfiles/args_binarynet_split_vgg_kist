@@ -8,20 +8,21 @@
 --test-batch    200
 
 
---arch          psum_binary_vgg9
+--arch          binary_split_vgg9
 
 --evaluate      y
---model_mode    binary
+--model_mode    binary_split
 --gpu-id        0
 
 --binary-mode   unsigned
---ste           hardtanh
+--ste           vanilla
 --abits         1
 --wbits         1
 --weight-clip	1
 --weight-scale	False
 
---pretrained    ./checkpoints/cifar10/binary/binarynet_vgg/a:1_w:1/2023-Jun-08-13-37-33/model_best.pth.tar
+--pretrained    ./checkpoints/cifar10/binary_split/binary_split_vgg9/a:1_w:1/2T2R/128_c:4/2023-Jul-19-01-46-30/model_best.pth.tar
+
 
 --psum_comp     y
 --arraySize     128

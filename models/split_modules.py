@@ -113,7 +113,7 @@ class SplitConv(nn.Conv2d):
                'end_in_channels and self.in_channels should be the same'
 
 
-    def _split_forward(self, input, weight, padded=False, ignore_bias=False, cat_output=True, weight_is_split=False, infer_only=False, merge_group=False, binary=True):
+    def _split_forward(self, input, weight, padded=False, ignore_bias=False, cat_output=True, weight_is_split=False, infer_only=False, merge_group=False, binary=False):
         """Before this opertaion, weights should be masked!"""
         # pad the input if it is not padded 
         if padded is False:
@@ -169,19 +169,27 @@ class SplitConv(nn.Conv2d):
             if (ignore_bias is False) and (self.bias is not None):
                 output += self.bias
         else:
-            with torch.no_grad():
-                masking = torch.zeros(self.split_groups, self.group_in_channels, self.kernel_size[0], self.kernel_size[1], device=weight.device)
-                one_w = torch.ones(1, self.weight.shape[1], self.weight.shape[2], self.weight.shape[3], device=weight.device)
-                masking = conv_sweight_cuda.forward(masking, one_w, self.group_in_offset, self.split_groups)
-                split_masking = masking.chunk(self.split_groups, dim=0)
+            # weight_split = torch.chunk(weight.view(weight.shape[0], -1), self.split_groups, dim=1)
+            # sweight_split = torch.chunk(self.sweight.view(weight.shape[0], -1).to(weight.device), self.split_groups, dim=1)
+            if weight_is_split:
+                split_weight = weight.chunk(self.split_groups, dim=0)
+            else:
+                self.sweight = conv_sweight_cuda.forward(self.sweight, weight, self.group_in_offset, self.split_groups)
+                split_weight = self.sweight.chunk(self.split_groups, dim=0)
+            # with torch.no_grad():
+                # masking = torch.zeros(self.split_groups, self.group_in_channels, self.kernel_size[0], self.kernel_size[1], device=weight.device)
+                # one_w = torch.ones(1, self.weight.shape[1], self.weight.shape[2], self.weight.shape[3], device=weight.device)
+                # masking = conv_sweight_cuda.forward(masking, one_w, self.group_in_offset, self.split_groups)
+                # split_masking = masking.chunk(self.split_groups, dim=0)
 
             input_channel = 0
             out_tmp = []
             for i in range(0, self.split_groups):
                 split_input = input.narrow(1, input_channel, self.group_in_channels)
-                split_weight = weight.narrow(1, input_channel, self.group_in_channels) * split_masking[i]
-                # import pdb; pdb.set_trace()
-                out_tmp.append(F.conv2d(split_input, split_weight, bias=None,\
+                mask = torch.zeros_like(split_weight[0], dtype=torch.bool, device=weight.device)
+                mask.view(split_weight[0].shape[0], -1)[:,self.group_in_offset[i]:self.group_in_offset[i] + self.group_fan_in] = 1 
+                # split_weight = weight.narrow(1, input_channel, self.group_in_channels) * split_masking[i]
+                out_tmp.append(F.conv2d(split_input, torch.mul(mask, split_weight[i]), bias=None,\
                             stride=self.stride, padding=padding, dilation=self.dilation))
                 # prepare for the next stage
                 if i < self.split_groups - 1:
@@ -193,7 +201,7 @@ class SplitConv(nn.Conv2d):
  
 
     def forward(self, input):
-        self._mask_weight()
+        # self._mask_weight()
         return self._split_forward(input, self.weight, padded=False, cat_output=True)
 
     def extra_repr(self):

@@ -357,7 +357,7 @@ class BinaryPsum(torch.autograd.Function):
         Returns:
             A scaled binarized tensor(usually weight), optionally clipped with a specified value.
         """
-        import pdb; pdb.set_trace
+
         if mode=='signed':
             output = x.ge_(0).mul_(2).add_(-1)
         elif mode == 'unsigned':

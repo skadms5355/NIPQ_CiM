@@ -338,7 +338,7 @@ def main_worker(gpu, ngpus_per_node, args):
         model_dict = model.state_dict()
         model_keys = model_dict.keys()
 
-        if ('binary_split' in args.arch):
+        if ('binary_split' in args.arch) and not args.evaluate:
             conv_num = ['3', '7', '10', '14', '17']
             linear_num = ['0', '3']
             c_i = 0
@@ -349,7 +349,7 @@ def main_worker(gpu, ngpus_per_node, args):
                 name_list = name.split('.')
                 name_list[-2] = str(int(name_list[4])+1)
                 name = ".".join(name_list)
-            elif ('binary_split' in args.arch):
+            elif ('binary_split' in args.arch) and not args.evaluate:
                 if ('features' in name) and (conv_num[c_i] in name):
                     name_list = name.split('.')
                     name_list[-2] = str(3 + c_i)+'.pconv'
@@ -457,17 +457,24 @@ def main_worker(gpu, ngpus_per_node, args):
                                         noise_type=args.noise_type, res_val=args.res_val)
             elif (args.model_mode == 'quant') or (args.model_mode == 'hn_quant'):
                 if 'quant' in args.arch:
-                    set_Quant_param(model, weight_clip=args.weight_clip, weight_scale=args.weight_scale, wsymmetric=args.wsymmetric)
+                    set_Quant_param(model, weight_clip=args.weight_clip, weight_scale=args.weight_scale, wsymmetric=args.wsymmetric, quant_mode='quant')
                 set_BitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, log_file=args.log_file,\
                     pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma)
                 if args.is_noise:
-                    set_Noise_injection(model, weight=True, hwnoise=True, wsym=args.wsymmetric, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
+                    set_Noise_injection(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
                                         noise_type=args.noise_type, res_val=args.res_val)
             elif args.model_mode == 'binary':
+                set_Quant_param(model, weight_clip=args.weight_clip, weight_scale=args.weight_scale, wsymmetric=args.wsymmetric, quant_mode='binary')
+                set_BitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, log_file=args.log_file,\
+                    pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma)
+                if args.is_noise:
+                    set_Noise_injection(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
+                                        noise_type=args.noise_type, res_val=args.res_val)
+            elif args.model_mode == 'binary_split':
                 set_PsumBinary_log(model, checkpoint=args.checkpoint, log_file=args.log_file,\
                     pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma)
                 if args.is_noise:
-                    set_PsumBin_Noise_injection(model, weight=True, hwnoise=True, wsym=args.wsymmetric, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
+                    set_PsumBin_Noise_injection(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
                                         noise_type=args.noise_type, res_val=args.res_val)
             else:
                 assert False, "This mode is not supported psum computation"
@@ -480,9 +487,9 @@ def main_worker(gpu, ngpus_per_node, args):
 
             if args.model_mode == 'nipq':
                 PQ.unset_bitserial_log(model)
-            elif (args.model_mode == 'quant') or (args.model_mode == 'hn_quant'):
+            elif (args.model_mode == 'quant') or (args.model_mode == 'hn_quant' or (args.model_mode == 'binary')):
                 unset_BitSerial_log(model)
-            elif args.model_mode == 'binary':
+            elif args.model_mode == 'binary_split':
                 unset_PsumBinary_log(model)
 
         else:

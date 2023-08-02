@@ -264,13 +264,13 @@ class PsumQConv(SplitConv):
         out_mag = int(w_mag * (2**abit))
         return out_mag, multi_scale
     
-    def _cell_noise_init(self, cbits, mapping_mode, wsym=False, co_noise=0.01, noise_type='prop', res_val='rel', w_format="weight", max_epoch=-1):
+    def _cell_noise_init(self, cbits, mapping_mode, co_noise=0.01, noise_type='prop', res_val='rel', w_format="weight", max_epoch=-1):
         self.w_format = 'state' if res_val == 'abs' or noise_type == 'meas' else 'weight'
         # wbits = Parameter(torch.Tensor(1).fill_(self.wbits), requires_grad=False).round().squeeze()
         # for inference 
         if not (noise_type == 'prop' or 'interp'):
             noise_type = 'prop'
-        self.noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, wsym, co_noise, noise_type, res_val=res_val, w_format=self.w_format)
+        self.noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val=res_val, w_format=self.w_format, symmetric=self.wsymmetric)
     
     def _bitserial_log_forward(self, input, weight=None, short_path=None):
         print(f'[layer{self.layer_idx}]: bitserial mac log')
@@ -291,14 +291,28 @@ class PsumQConv(SplitConv):
             
             if self.quant_mode == 'quant':
                 qweight, w_scale = fw(weight, self.wbits, self.weight_clip, self.weight_scale, wquant=self.wquant, wsymmetric=self.wsymmetric, return_scale=True)
+            elif self.quant_mode == 'binary':
+                qweight = fw(weight, self.wbits, self.weight_clip, self.weight_scale)
+                w_scale = 1
             else:
                 qweight, w_scale = self.quan_w_fn(weight)
 
-            if short_path is None:
-                sinput, a_scale, abits = Bitserial.bitserial_act(input, debug=False) # short_path parameter does not exist
+            if (self.quant_mode == 'quant') or (self.quant_mode == 'binary'):
+                sinput = input
+                a_scale = 1
                 a_shift = None
+                abits = 1
             else:
-                sinput, a_scale, abits = Bitserial.bitserial_act(input, debug=False) # short_path parameter does not exist
+                if self.abit_serial:
+                    if short_path is None:
+                        sinput, a_scale, abits = Bitserial.bitserial_act(input, debug=False) # short_path parameter does not exist
+                        a_shift = None
+                    else:
+                        sinput, a_scale, abits = Bitserial.bitserial_act(input, debug=False) # short_path parameter does not exist
+                else:
+                    a_scale = Bitserial.abit_scale()
+                    sinput = input / a_scale
+                    a_shift = None
 
             if self.is_noise and self.w_format=="weight":
                 qweight = self.noise_cell(qweight/w_scale)
@@ -575,23 +589,31 @@ class PsumQConv(SplitConv):
 
         if self.quant_mode == 'quant':
             qweight, w_scale = fw(weight, self.wbits, self.weight_clip, self.weight_scale, wquant=self.wquant, wsymmetric=self.wsymmetric, return_scale=True)
-            import pdb; pdb.set_trace()
+        elif self.quant_mode == 'binary':
+            qweight = fw(weight, self.wbits, self.weight_clip, self.weight_scale)
+            w_scale = 1
         else:
             qweight, w_scale = self.quan_w_fn(weight)
 
         if self.wbit_serial:
             with torch.no_grad():
-                if self.abit_serial:
-                    if short_path is None:
-                        sinput, a_scale, abits = Bitserial.bitserial_act(input, debug=False) # short_path parameter does not exist
-                        a_shift = None
-                    else:
-                        sinput, a_scale, abits = Bitserial.bitserial_act(input, debug=False) # short_path parameter does not exist
-                else:
-                    a_scale = Bitserial.abit_scale()
-                    sinput = input / a_scale
+                if (self.quant_mode == 'quant') or (self.quant_mode == 'binary'):
+                    sinput = input
+                    a_scale = 1
                     a_shift = None
                     abits = 1
+                else:
+                    if self.abit_serial:
+                        if short_path is None:
+                            sinput, a_scale, abits = Bitserial.bitserial_act(input, debug=False) # short_path parameter does not exist
+                            a_shift = None
+                        else:
+                            sinput, a_scale, abits = Bitserial.bitserial_act(input, debug=False) # short_path parameter does not exist
+                    else:
+                        a_scale = Bitserial.abit_scale()
+                        sinput = input / a_scale
+                        a_shift = None
+                        abits = 1
 
                 if self.psum_mode == 'sigma':
                     minVal, maxVal, midVal = self._ADC_clamp_value()
@@ -634,8 +656,8 @@ class PsumQConv(SplitConv):
                     weight_chunk = self.weight_chunk
                     wsplit_num = 1
 
-
                 # parameter computing
+
                 psum_scale = w_scale * a_scale
 
                 out_adc = None
@@ -945,13 +967,13 @@ class PsumQLinear(SplitLinear):
         out_mag = int(w_mag * (2**abit))
         return out_mag, multi_scale
 
-    def _cell_noise_init(self, cbits, mapping_mode, wsym=False, co_noise=0.01, noise_type='prop', res_val='rel', w_format="weight", max_epoch=-1):
+    def _cell_noise_init(self, cbits, mapping_mode, co_noise=0.01, noise_type='prop', res_val='rel', w_format="weight", max_epoch=-1):
         self.w_format = 'state' if res_val == 'abs' or noise_type == 'meas' else 'weight'
         # wbits = Parameter(torch.Tensor(1).fill_(self.wbits), requires_grad=False).round().squeeze()
         # for inference 
         if not (noise_type == 'prop' or 'interp'):
             noise_type = 'prop'
-        self.noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, wsym, co_noise, noise_type, res_val=res_val, w_format=self.w_format)
+        self.noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val=res_val, w_format=self.w_format, symmetric=self.wsymmetric)
     
     def _bitserial_log_forward(self, input):
         print(f'[layer{self.layer_idx}]: bitserial mac log')
@@ -962,10 +984,24 @@ class PsumQLinear(SplitLinear):
         # get quantization parameter and input bitserial 
         if self.quant_mode == 'quant':
             qweight, w_scale = fw(self.weight, self.wbits, self.weight_clip, self.weight_scale, wquant=self.wquant, wsymmetric=self.wsymmetric, return_scale=True)
+        elif self.quant_mode == 'binary':
+            qweight = fw(self.weight, self.wbits, self.weight_clip, self.weight_scale)
+            w_scale = 1
         else:
             qweight, w_scale = self.quan_w_fn(self.weight)
 
-        sinput, a_scale, abits = Bitserial.bitserial_act(input, debug=False)
+        if (self.quant_mode == 'quant') or (self.quant_mode == 'binary'):
+            sinput = input
+            a_scale = 1
+            abits = 1
+        else:
+            if self.abit_serial:
+                sinput, a_scale, abits = Bitserial.bitserial_act(input, debug=False) # short_path parameter does not exist
+            else:
+                a_scale = Bitserial.abit_scale()
+                sinput = input / a_scale
+                abits = 1
+
         psum_scale = w_scale * a_scale
 
         if self.is_noise and self.w_format=="weight":
@@ -1208,17 +1244,25 @@ class PsumQLinear(SplitLinear):
         # get quantization parameter and input bitserial 
         if self.quant_mode == 'quant':
             qweight, w_scale = fw(self.weight, self.wbits, self.weight_clip, self.weight_scale, wquant=self.wquant, wsymmetric=self.wsymmetric, return_scale=True)
+        elif self.quant_mode == 'binary':
+            qweight = fw(self.weight, self.wbits, self.weight_clip, self.weight_scale)
+            w_scale = 1
         else:
             qweight, w_scale = self.quan_w_fn(self.weight)
 
         if self.wbit_serial:
             with torch.no_grad():
-                if self.abit_serial:
-                    sinput, a_scale, abits = Bitserial.bitserial_act(input, debug=False) # short_path parameter does not exist
-                else:
-                    a_scale = Bitserial.abit_scale()
-                    sinput = input / a_scale
+                if (self.quant_mode == 'quant') or (self.quant_mode == 'binary'):
+                    sinput = input
+                    a_scale = 1
                     abits = 1
+                else:
+                    if self.abit_serial:
+                        sinput, a_scale, abits = Bitserial.bitserial_act(input, debug=False) # short_path parameter does not exist
+                    else:
+                        a_scale = Bitserial.abit_scale()
+                        sinput = input / a_scale
+                        abits = 1
 
                 psum_scale = w_scale * a_scale
 
@@ -1359,14 +1403,14 @@ def get_statistics_from_hist(df_hist):
 
     return [mean_val, std_val, min_val, max_val] 
 
-def set_Quant_param(model, weight_clip=0, weight_scale=True, wquant="fixed", wsymmetric=False):
+def set_Quant_param(model, weight_clip=0, weight_scale=True, wquant="fixed", quant_mode='quant', wsymmetric=False):
     for m in model.modules():
         if type(m).__name__ in ['PsumQConv', 'PsumQLinear']:
             m.weight_clip = weight_clip
             m.weight_scale = weight_scale
             m.wquant = wquant
             m.wsymmetric = wsymmetric
-            m.quant_mode = 'quant'
+            m.quant_mode = quant_mode
 
 def set_BitSerial_log(model, pbits, pclipmode, abit_serial=None, pclip=None, psigma=None, checkpoint=None, pquant_idx=None, pbound=None, center=None, log_file=False):
     print("start setting Bitserial layers log bitplane info")
@@ -1418,7 +1462,7 @@ def set_Qact_bitserial(model, pquant_idx, abit_serial=True):
             counter += 1
     print("finish setting quantact bitserial ")
 
-def set_Noise_injection(model, weight=False, wsym=False, hwnoise=True, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', w_format='weight', max_epoch=-1):
+def set_Noise_injection(model, weight=False, hwnoise=True, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', w_format='weight', max_epoch=-1):
     for name, module in model.named_modules():
         if isinstance(module, (PsumQConv, PsumQLinear)) and weight and hwnoise:
             if module.wbits != 32:
@@ -1427,7 +1471,7 @@ def set_Noise_injection(model, weight=False, wsym=False, hwnoise=True, cbits=4, 
                 if noise_type == 'grad':
                     assert max_epoch != -1, "Enter max_epoch in hwnoise_initialize function"
                 if hwnoise:
-                    module._cell_noise_init(cbits=cbits, mapping_mode=mapping_mode, wsym=wsym, co_noise=co_noise, noise_type=noise_type, res_val=res_val, w_format=w_format, max_epoch=max_epoch)
+                    module._cell_noise_init(cbits=cbits, mapping_mode=mapping_mode, co_noise=co_noise, noise_type=noise_type, res_val=res_val, w_format=w_format, max_epoch=max_epoch)
 
 def count_ArrayMaxV(wbits, cbits, mapping_mode, arraySize):
     if mapping_mode == '2T2R':

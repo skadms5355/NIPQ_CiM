@@ -3,7 +3,7 @@
 --augment	    False
 --zca		    True
 
---epochs        200
+--epochs        500
 --train-batch   200
 --test-batch    200
 
@@ -23,12 +23,12 @@
 
 --lr-method     lr_step
 --schedule      50 100 150 200 250 300 350 400 450
---schedule      100 200 300 400
+# --schedule      100 200 300 400
 --gamma         0.5
 --lr            0.01
---glr		    True
+--glr		    False
 
---model_mode    binary
+--model_mode    binary_split
 --arch          binary_split_vgg9
 --gpu-id        1
 

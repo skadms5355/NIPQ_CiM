@@ -145,7 +145,7 @@ class PQuant_vgg9(nn.Module):
             # nn.Conv2d(3, 128, kernel_size=3, stride=1, padding=1, bias=False),
             QConv(3, 128, wbits=kwargs['wbits'] if kwargs['FL_quant'] else 32, kernel_size=3, stride=1, padding=1, bias=False),
             nn.BatchNorm2d(128),
-            add_act(abits=kwargs['abits'], bitserial=kwargs['abit_serial']),
+            add_act(abits=kwargs['abits'], bitserial=kwargs['abit_serial'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
 
             PsumQConv(128, 128, wbits=kwargs['wbits'], kernel_size=3, stride=1, padding=1, bias=False,
                     arraySize=kwargs['arraySize'], wbit_serial=kwargs['wbit_serial'], mapping_mode=kwargs['mapping_mode'], 
@@ -153,14 +153,14 @@ class PQuant_vgg9(nn.Module):
                     is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type']),
             nn.MaxPool2d(kernel_size=2, stride=2),
             nn.BatchNorm2d(128),
-            add_act(abits=kwargs['abits'], bitserial=kwargs['abit_serial']),
+            add_act(abits=kwargs['abits'], bitserial=kwargs['abit_serial'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
 
             PsumQConv(128, 256, wbits=kwargs['wbits'], kernel_size=3, stride=1, padding=1, bias=False,
                     arraySize=kwargs['arraySize'], wbit_serial=kwargs['wbit_serial'], mapping_mode=kwargs['mapping_mode'], 
                     psum_mode=kwargs['psum_mode'], cbits=kwargs['cbits'], 
                     is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type']),
             nn.BatchNorm2d(256),
-            add_act(abits=kwargs['abits'], bitserial=kwargs['abit_serial']),
+            add_act(abits=kwargs['abits'], bitserial=kwargs['abit_serial'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
 
             PsumQConv(256, 256, wbits=kwargs['wbits'], kernel_size=3, stride=1, padding=1, bias=False,
                     arraySize=kwargs['arraySize'], wbit_serial=kwargs['wbit_serial'], mapping_mode=kwargs['mapping_mode'], 
@@ -168,14 +168,14 @@ class PQuant_vgg9(nn.Module):
                     is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type']),
             nn.MaxPool2d(kernel_size=2, stride=2),
             nn.BatchNorm2d(256),
-            add_act(abits=kwargs['abits'], bitserial=kwargs['abit_serial']),
+            add_act(abits=kwargs['abits'], bitserial=kwargs['abit_serial'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
 
             PsumQConv(256, 512, wbits=kwargs['wbits'], kernel_size=3, stride=1, padding=1, bias=False,
                     arraySize=kwargs['arraySize'], wbit_serial=kwargs['wbit_serial'], mapping_mode=kwargs['mapping_mode'], 
                     psum_mode=kwargs['psum_mode'], cbits=kwargs['cbits'], 
                     is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type']),
             nn.BatchNorm2d(512),
-            add_act(abits=kwargs['abits'], bitserial=kwargs['abit_serial']),
+            add_act(abits=kwargs['abits'], bitserial=kwargs['abit_serial'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
 
             PsumQConv(512, 512, wbits=kwargs['wbits'], kernel_size=3, stride=1, padding=1, bias=False,
                     arraySize=kwargs['arraySize'], wbit_serial=kwargs['wbit_serial'], mapping_mode=kwargs['mapping_mode'], 
@@ -183,7 +183,7 @@ class PQuant_vgg9(nn.Module):
                     is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type']),
             nn.MaxPool2d(kernel_size=2, stride=2),
             nn.BatchNorm2d(512),
-            add_act(abits=kwargs['abits'], bitserial=kwargs['abit_serial']),    
+            add_act(abits=kwargs['abits'], bitserial=kwargs['abit_serial'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),    
         )
         self.classifier = nn.Sequential(
             PsumQLinear(512 * 4 * 4, 1024, wbits=kwargs['wbits'], arraySize=kwargs['arraySize'], 
@@ -191,14 +191,14 @@ class PQuant_vgg9(nn.Module):
                         psum_mode=kwargs['psum_mode'], cbits=kwargs['cbits'], 
                         is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type']),
             nn.BatchNorm1d(1024),
-            add_act(abits=kwargs['abits'], bitserial=kwargs['abit_serial']), 
+            add_act(abits=kwargs['abits'], bitserial=kwargs['abit_serial'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']), 
 
             PsumQLinear(1024, 1024, wbits=kwargs['wbits'], arraySize=kwargs['arraySize'], 
                         wbit_serial=kwargs['wbit_serial'], mapping_mode=kwargs['mapping_mode'], 
                         psum_mode=kwargs['psum_mode'], cbits=kwargs['cbits'], 
                         is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type']),
             nn.BatchNorm1d(1024),
-            add_act(abits=kwargs['abits'] if kwargs['FL_quant'] else 32), 
+            add_act(abits=kwargs['abits'] if kwargs['FL_quant'] else 32, mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']), 
 
             nn.Dropout(kwargs['drop']),
             PsumQLinear(1024, kwargs['num_classes'], wbits=kwargs['wbits'] if kwargs['FL_quant'] else 32, arraySize=kwargs['arraySize'], 
@@ -225,33 +225,33 @@ class PBin_vgg(nn.Module):
             nn.BatchNorm2d(128),
             nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
 
-            PsumBinConv(128, 128, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode'],
+            PsumQConv(128, 128, wbits=kwargs['wbits'], wbit_serial=kwargs['wbit_serial'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode'],
                         arraySize=kwargs['arraySize'], mapping_mode=kwargs['mapping_mode'], psum_mode=kwargs['psum_mode'], cbits=kwargs['cbits'], 
                         is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type']),
             nn.MaxPool2d(kernel_size=2, stride=2),
             nn.BatchNorm2d(128),
             nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
 
-            PsumBinConv(128, 256, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode'],
+            PsumQConv(128, 256, wbits=kwargs['wbits'], wbit_serial=kwargs['wbit_serial'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode'],
                         arraySize=kwargs['arraySize'], mapping_mode=kwargs['mapping_mode'], psum_mode=kwargs['psum_mode'], cbits=kwargs['cbits'], 
                         is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type']),
             nn.BatchNorm2d(256),
             nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
 
-            PsumBinConv(256, 256, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode'],
+            PsumQConv(256, 256, wbits=kwargs['wbits'], wbit_serial=kwargs['wbit_serial'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode'],
                         arraySize=kwargs['arraySize'], mapping_mode=kwargs['mapping_mode'], psum_mode=kwargs['psum_mode'], cbits=kwargs['cbits'], 
                         is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type']),
             nn.MaxPool2d(kernel_size=2, stride=2),
             nn.BatchNorm2d(256),
             nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
 
-            PsumBinConv(256, 512, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode'],
+            PsumQConv(256, 512, wbits=kwargs['wbits'], wbit_serial=kwargs['wbit_serial'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode'],
                         arraySize=kwargs['arraySize'], mapping_mode=kwargs['mapping_mode'], psum_mode=kwargs['psum_mode'], cbits=kwargs['cbits'], 
                         is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type']),
             nn.BatchNorm2d(512),
             nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
 
-            PsumBinConv(512, 512, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode'],
+            PsumQConv(512, 512, wbits=kwargs['wbits'], wbit_serial=kwargs['wbit_serial'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode'],
                         arraySize=kwargs['arraySize'], mapping_mode=kwargs['mapping_mode'], psum_mode=kwargs['psum_mode'], cbits=kwargs['cbits'], 
                         is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type']),
             nn.MaxPool2d(kernel_size=2, stride=2),
@@ -260,13 +260,13 @@ class PBin_vgg(nn.Module):
 
         )
         self.classifier = nn.Sequential(
-            PsumBinLinear(512 * 4 * 4, 1024, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale = kwargs['weight_scale'],
+            PsumQLinear(512 * 4 * 4, 1024, wbits=kwargs['wbits'], wbit_serial=kwargs['wbit_serial'],
                             arraySize=kwargs['arraySize'], mapping_mode=kwargs['mapping_mode'], psum_mode=kwargs['psum_mode'], cbits=kwargs['cbits'], 
                             is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type']),
             nn.BatchNorm1d(1024),
             nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
 
-            PsumBinLinear(1024, 1024, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'],
+            PsumQLinear(1024, 1024, wbits=kwargs['wbits'], wbit_serial=kwargs['wbit_serial'],
                             arraySize=kwargs['arraySize'], mapping_mode=kwargs['mapping_mode'], psum_mode=kwargs['psum_mode'], cbits=kwargs['cbits'], 
                             is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type']),
             nn.BatchNorm1d(1024),

@@ -108,13 +108,12 @@ class KIST_MRAM():
         # ax[1].set_xticks(ax[1].get_xticks())
         # ax[1].set_xticklabels(ax[1].get_xticks(), fontsize=14)
         # plt.savefig(os.getcwd() +"/graph/MRAM/sample.png")
-        # import pdb; pdb.set_trace()
 
         return x / self.delta_R
 
 
 class Noise_cell(nn.Module):
-    def __init__(self, wbits, cbits, mapping_mode, co_noise=0.01, noise_type='static', res_val='rel', w_format='state', shrink=None, Gmin=1/3e5, ratio=100, max_epoch=-1):
+    def __init__(self, wbits, cbits, mapping_mode, co_noise=0.01, noise_type='static', res_val='rel', w_format='state', symmetric=False, shrink=None, Gmin=1/3e5, ratio=100, max_epoch=-1):
         super(Noise_cell, self).__init__()
         """
             This module performs cell variation
@@ -135,6 +134,7 @@ class Noise_cell(nn.Module):
         self.ratio = ratio
         self.max_epoch = max_epoch
         self.shrink = shrink
+        self.symmetric = symmetric
 
         self.init_state()
 
@@ -159,29 +159,35 @@ class Noise_cell(nn.Module):
                 self.delta_G = self.G[-1] - self.G[0]
             elif self.noise_type == 'interp':
                 self.interp_init()
+            elif self.noise_type == 'kist':
+                self.kist_noise = KIST_MRAM(self.clevel)
             else:
                 assert False, 'In the {} mode, the {} noise type is not supported, you have to choose static or prop'.format(self.res_val, self.noise_type)
         else:
             assert False, 'You must choose the one of two options [rel, abs], but got {}'.format(self.res_val)
 
     def effective_clevel(self):
-        if self.mapping_mode == 'two_com':
-            if self.cbits >= (self.wbits-1):
-                self.clevel = 2**(self.wbits - 1) # cell can represent self.wbits-1 bits
-            elif self.cbits == 1:
-                self.clevel = 2
-            else:
-                assert False, 'This file does not support that cbits are lower than wbits-1'
-        elif (self.mapping_mode == '2T2R') or (self.mapping_mode == 'PN'):
-            if self.cbits >= (self.wbits-1):
-                self.clevel = 2**(self.wbits - 1) + 1 # cell can represent self.wbits-1 + 1 levels (4bits: 9 levels)
-            else:
-                assert False, 'This file does not support that cbits are lower than wbits-1'
-        elif (self.mapping_mode == 'ref_d') or (self.mapping_mode == 'ref_a'):
-            if self.cbits >= self.wbits:
-                self.clevel = 2**self.wbits # cell can represent self.wbits-1 bits
-            else:
-                assert False, 'This file does not support that cbits are lower than wbits'
+        if self.cbits==1:
+            self.clevel=2
+        else:
+            if self.mapping_mode == 'two_com':
+                if self.cbits >= (self.wbits-1):
+                    self.clevel = 2**(self.wbits - 1) # cell can represent self.wbits-1 bits
+                else:
+                    assert False, 'This file does not support that cbits are lower than wbits-1'
+            elif (self.mapping_mode == '2T2R') or (self.mapping_mode == 'PN'):
+                if self.cbits >= (self.wbits-1):
+                    if self.symmetric:
+                        self.clevel = 2**(self.wbits - 1)# cell can represent self.wbits-1 + 1 levels (4bits: 9 levels)
+                    else:
+                        self.clevel = 2**(self.wbits - 1) + 1 # cell can represent self.wbits-1 + 1 levels (4bits: 9 levels)
+                else:
+                    assert False, 'This file does not support that cbits are lower than wbits-1'
+            elif (self.mapping_mode == 'ref_d') or (self.mapping_mode == 'ref_a'):
+                if self.cbits >= self.wbits:
+                    self.clevel = 2**self.wbits # cell can represent self.wbits-1 bits
+                else:
+                    assert False, 'This file does not support that cbits are lower than wbits'
     
     def interp_init(self):
 
@@ -437,6 +443,9 @@ class Noise_cell(nn.Module):
                     # Need G_std setting! 
                 elif noise_type == 'interp':
                     output = self.interp_sample(x)
+                elif noise_type == 'kist':
+                    output = self.kist_noise.forward(x)
+                    return output 
                 assert torch.all(output > 0), "Do not set negative cell value"
             
                 return output / self.delta_G
