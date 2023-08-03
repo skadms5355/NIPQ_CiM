@@ -594,7 +594,11 @@ class PsumQConv(SplitConv):
                 if (self.weight_chunk is None) or self.training:
                     if self.is_noise:
                         bweight, wsplit_num = self._weight_bitserial(qweight, w_scale, cbits=self.cbits)
+                        # qweight = bweight.clone()
                         bweight = self.noise_cell(bweight)
+                        mean = []
+                        std = []
+                        density = []
                         
                         weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
                         
@@ -602,11 +606,17 @@ class PsumQConv(SplitConv):
                         if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
                             bweight = weight_chunk[0] - weight_chunk[1]
                             wsplit_num = 1
+                            # for c in range(-8, 8, 1):
+                            #     index = torch.where((qweight/w_scale)==c)
+                            #     mean.append(bweight[index].mean().item())
+                            #     std.append(bweight[index].std().item())
+                            #     density.append((bweight[index].numel()/qweight.numel())*100)
+                            # print(f"{mean}\n, {std}\n, {density}")
+                            # import pdb; pdb.set_trace()
                         else:
                             ## [TODO] two_com split weight format check
                             delta_G, G_min = self.noise_cell.get_deltaG(G_min=True)
                             w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
-
                         self.sweight = conv_sweight_cuda.forward(self.sweight, bweight, self.group_in_offset, self.split_groups)
                         weight_chunk = torch.chunk(self.sweight, wsplit_num, dim=1)
                     else:
@@ -650,25 +660,25 @@ class PsumQConv(SplitConv):
                         output_real = F.conv2d(input_s, qweight/w_scale, bias=self.bias,
                                                 stride=self.stride, dilation=self.dilation, groups=self.groups)
                         
-                        import matplotlib.pyplot as plt
-                        import seaborn as sns
-                        fig, ax = plt.subplots(nrows=1, figsize=(18, 10))
-                        if self.mapping_mode == 'ref_a':
-                            sns.histplot(torch.sub(output_real, out_wsum).cpu().numpy().ravel(), color='darkgreen', ax=ax, bins=200, alpha=0.2, element='step', fill=True, stat='percent')
-                            ax.set_title('1T1R (RC) structure', loc='right', fontsize=18)
-                        elif self.mapping_mode == '2T2R':
-                            sns.histplot(torch.sub(output_real, out_wsum).cpu().numpy().ravel(), color='cornflowerblue', ax=ax, bins=200, alpha=0.2, element='step', fill=True, stat='percent')
-                            ax.set_title('2T2R structure', loc='right', fontsize=18)
-                        ax.set_ylabel(ax.get_ylabel(), fontsize=18)
-                        ax.set_yticklabels(ax.get_yticks(), fontsize=16)
-                        ax.set_xlabel('MAC Subtraction')
-                        ax.set_xlabel(ax.get_xlabel(), fontsize=18)
-                        xlabels = [int(x) for x in ax.get_xticks()]
-                        ax.set_xticks(xlabels)
-                        ax.set_xticklabels(ax.get_xticks(), fontsize=16)
+                        # import matplotlib.pyplot as plt
+                        # import seaborn as sns
+                        # fig, ax = plt.subplots(nrows=1, figsize=(18, 10))
+                        # if self.mapping_mode == 'ref_a':
+                        #     sns.histplot(torch.sub(output_real, out_wsum).cpu().numpy().ravel(), color='darkgreen', ax=ax, bins=200, alpha=0.2, element='step', fill=True, stat='percent')
+                        #     ax.set_title('1T1R (RC) structure', loc='right', fontsize=18)
+                        # elif self.mapping_mode == '2T2R':
+                        #     sns.histplot(torch.sub(output_real, out_wsum).cpu().numpy().ravel(), color='cornflowerblue', ax=ax, bins=200, alpha=0.2, element='step', fill=True, stat='percent')
+                        #     ax.set_title('2T2R structure', loc='right', fontsize=18)
+                        # ax.set_ylabel(ax.get_ylabel(), fontsize=18)
+                        # ax.set_yticklabels(ax.get_yticks(), fontsize=16)
+                        # ax.set_xlabel('MAC Subtraction')
+                        # ax.set_xlabel(ax.get_xlabel(), fontsize=18)
+                        # xlabels = [int(x) for x in ax.get_xticks()]
+                        # ax.set_xticks(xlabels)
+                        # ax.set_xticklabels(ax.get_xticks(), fontsize=16)
 
-                        plt.savefig('test_{}.png'.format(self.mapping_mode), bbox_inches='tight')
-                        import pdb; pdb.set_trace()
+                        # plt.savefig('test_{}.png'.format(self.mapping_mode), bbox_inches='tight')
+                        # import pdb; pdb.set_trace()
 
                     if self.is_noise and not ((self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a')):
                         out_one = (-G_min/delta_G) * self._split_forward(input_s, w_one, padded=True, ignore_bias=True, cat_output=False,

@@ -111,7 +111,7 @@ class Noise_cell(nn.Module):
             if ('ref' in self.mapping_mode) or (self.co_noise > 2):
                 self.delta_G = 10
             else:
-                self.delta_G = 19
+                self.delta_G = 20
 
             filter = df.filter(like='uS')
             numbers = [col.split('uS')[1].strip('.,') if 'uS' in col else '0' for col in filter]
@@ -129,7 +129,7 @@ class Noise_cell(nn.Module):
                 state = [df.iloc[:, 2*i:2*i+2].dropna(axis=0).to_numpy().transpose() for i in range(self.clevel)]
                 self.delta_G = 10 # G_min = 10us, delta_G = 10uS
             elif self.mapping_mode == '2T2R':
-                self.delta_G = 19 # G_min = 10us, delta_G = 10uS (not evenly uniform)
+                self.delta_G = 20 # G_min = 10us, delta_G = 10uS (not evenly uniform)
                 index = [0, 4, 8, 12, 16, 20, 24, 28, 30] # location of state
                 state = [df.iloc[:, i:i+2].dropna(axis=0).to_numpy().transpose() for i in index]
                 self.max_state = df.iloc[:, index].max().to_numpy()
@@ -151,7 +151,6 @@ class Noise_cell(nn.Module):
         # ax1 = ax[0].twinx()
         rseed = torch.randint(0, 32765, (1,))
         np.random.seed(rseed)
-        
         for c in range(self.clevel):
             if torch.where(x==c)[0].shape[0] != 0:
                 index = torch.where(x==c)

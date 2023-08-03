@@ -43,7 +43,7 @@
 # noise option
 --is_noise      y
 --nipq_noise    hwnoise
---co_noise      1
+--co_noise      3
 --noise_type    interp
 --res_val       rel
 
