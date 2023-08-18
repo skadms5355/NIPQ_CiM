@@ -251,11 +251,11 @@ class PsumBinConv(SplitConv):
         qweight = fw(self.sweight, self.wbits, self.weight_clip, self.weight_scale, self.fan_in)
 
         self.setting_pquant_func(pbits=self.pbits)
-        assert self.mapping_mode == '2T2R', "Only support 1bit (SA) when mapping mode is 2T2R"
         ### Cell noise injection + Cell conductance value change
         ### in-mem computation programming (weight constant-noise)
         with torch.no_grad():
             if self.is_noise:
+                assert self.mapping_mode == '2T2R', "Only support 1bit (SA) when mapping mode is 2T2R"
                 nweight, wsplit_num = self._weight_bitserial(qweight, 1, cbits=self.cbits)
                 nweight = self.noise_cell(nweight)
                 
@@ -457,12 +457,12 @@ class PsumBinLinear(SplitLinear):
 
         # output = F.linear(input, qweight, bias=None)
         self.setting_pquant_func(pbits=self.pbits)
-        assert self.mapping_mode == '2T2R', "Only support 1bit (SA) when mapping mode is 2T2R"
 
         ### in-mem computation mimic (split conv & psum quant/merge)
         with torch.no_grad():
             ### Cell noise injection + Cell conductance value change
             if self.is_noise:
+                assert self.mapping_mode == '2T2R', "Only support 1bit (SA) when mapping mode is 2T2R"
                 bweight, wsplit_num = self._weight_bitserial(qweight, 1, cbits=self.cbits)
 
                 bweight = self.noise_cell(bweight)

@@ -49,8 +49,8 @@ class BinActFunc(torch.autograd.Function):
             # return torch._C._nn.hardtanh(x, 0, 1).round()
 	    
 	    ## This version uses th=0. threshold will be covered by higher level class using offset.
-            return x.ge(0).type_as(x)
-            # return x.sign().add(1).mul(0.5)
+            # return x.ge(0).type_as(x)
+            return x.sign().add(1).mul(0.5)
 
         else:
             assert False, "Binary activation mode {} is not supported.".format(mode)

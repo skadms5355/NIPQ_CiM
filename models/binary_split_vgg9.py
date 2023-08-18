@@ -16,9 +16,10 @@ class PConv_BN_Merge(nn.Module):
             self.pooling = nn.MaxPool2d(kernel_size=2, stride=2)
             # self.pooling = nn.AvgPool2d(kernel_size=2, stride=2)
         self.split_groups = self.pconv.split_groups
-        self.BN = nn.BatchNorm2d(outplane*self.pconv.split_groups)
+        self.split_BN = nn.BatchNorm2d(outplane*self.pconv.split_groups)
         self.hardtanh = nn.Hardtanh(-1, 1, inplace=True)
         self.binarized = BinarizedNeurons(mode='signed')
+        self.BN = nn.BatchNorm2d(outplane)
         self.qrelu = nonlinear(abits=abits, mode=mode, ste=ste, offset=offset, width=width)
 
     def merge_output(self, x):
@@ -34,10 +35,11 @@ class PConv_BN_Merge(nn.Module):
         x = self.pconv(x)
         if self.pooling is not None:
             x = self.pooling(x)
-        x = self.BN(x)
+        x = self.split_BN(x)
         x = self.hardtanh(x)
         x = self.binarized(x)
         x = self.merge_output(x)
+        x = self.BN(x)
         x = self.qrelu(x)
 
         return x 
@@ -49,9 +51,10 @@ class PLinear_BN_Merge(nn.Module):
         self.plinear = PsumBinLinear(infeatures, outfeatures, wbits=wbits, weight_clip=weight_clip, weight_scale=weight_scale,
                         arraySize=arraySize, mapping_mode=mapping_mode, pbits=1, cbits=1, is_noise=is_noise, noise_type=noise_type)
         self.split_groups = self.plinear.split_groups
-        self.BN = nn.BatchNorm1d(outfeatures*self.plinear.split_groups)
+        self.split_BN = nn.BatchNorm1d(outfeatures*self.plinear.split_groups)
         self.hardtanh = nn.Hardtanh(-1, 1, inplace=True)
         self.binarized = BinarizedNeurons(mode='signed')
+        self.BN = nn.BatchNorm1d(outfeatures)
         self.qrelu = nonlinear(abits=abits, mode=mode, ste=ste, offset=offset, width=width)
 
     def merge_output(self, x):
@@ -64,10 +67,11 @@ class PLinear_BN_Merge(nn.Module):
 
     def forward(self, x):
         x = self.plinear(x)
-        x = self.BN(x)
+        x = self.split_BN(x)
         x = self.hardtanh(x)
         x = self.binarized(x)
         x = self.merge_output(x)
+        x = self.BN(x)
         x = self.qrelu(x)
 
         return x 
@@ -82,69 +86,69 @@ class BinarySplit_vgg(nn.Module):
             nn.BatchNorm2d(128),
             nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
 
-            BinConv(128, 128, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode']),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.BatchNorm2d(128),
-            nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
+            # BinConv(128, 128, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode']),
+            # nn.MaxPool2d(kernel_size=2, stride=2),
+            # nn.BatchNorm2d(128),
+            # nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
 
-            BinConv(128, 256, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode']),
-            nn.BatchNorm2d(256),
-            nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
+            # BinConv(128, 256, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode']),
+            # nn.BatchNorm2d(256),
+            # nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
 
-            BinConv(256, 256, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode']),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.BatchNorm2d(256),
-            nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
+            # BinConv(256, 256, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode']),
+            # nn.MaxPool2d(kernel_size=2, stride=2),
+            # nn.BatchNorm2d(256),
+            # nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
 
-            BinConv(256, 512, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode']),
-            nn.BatchNorm2d(512),
-            nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
+            # BinConv(256, 512, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode']),
+            # nn.BatchNorm2d(512),
+            # nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
 
-            BinConv(512, 512, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode']),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.BatchNorm2d(512),
-            nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
-            # PConv_BN_Merge(128, 128, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], padding_mode=kwargs['padding_mode'],
-            #             arraySize=kwargs['arraySize'], mapping_mode=kwargs['mapping_mode'], is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type'],
-            #             abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width'],
-            #             pool=True),
+            # BinConv(512, 512, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], kernel_size=3, stride=1, padding=1, padding_mode=kwargs['padding_mode']),
+            # nn.MaxPool2d(kernel_size=2, stride=2),
+            # nn.BatchNorm2d(512),
+            # nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
+            PConv_BN_Merge(128, 128, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], padding_mode=kwargs['padding_mode'],
+                        arraySize=kwargs['arraySize'], mapping_mode=kwargs['mapping_mode'], is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type'],
+                        abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width'],
+                        pool=True),
 
-            # PConv_BN_Merge(128, 256, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], padding_mode=kwargs['padding_mode'],
-            #             arraySize=kwargs['arraySize'], mapping_mode=kwargs['mapping_mode'], is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type'],
-            #             abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width'],
-            #             pool=False),
+            PConv_BN_Merge(128, 256, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], padding_mode=kwargs['padding_mode'],
+                        arraySize=kwargs['arraySize'], mapping_mode=kwargs['mapping_mode'], is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type'],
+                        abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width'],
+                        pool=False),
 
-            # PConv_BN_Merge(256, 256, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], padding_mode=kwargs['padding_mode'],
-            #             arraySize=kwargs['arraySize'], mapping_mode=kwargs['mapping_mode'], is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type'],
-            #             abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width'],
-            #             pool=True),
+            PConv_BN_Merge(256, 256, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], padding_mode=kwargs['padding_mode'],
+                        arraySize=kwargs['arraySize'], mapping_mode=kwargs['mapping_mode'], is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type'],
+                        abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width'],
+                        pool=True),
 
-            # PConv_BN_Merge(256, 512, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], padding_mode=kwargs['padding_mode'],
-            #             arraySize=kwargs['arraySize'], mapping_mode=kwargs['mapping_mode'], is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type'],
-            #             abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width'],
-            #             pool=False),
+            PConv_BN_Merge(256, 512, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], padding_mode=kwargs['padding_mode'],
+                        arraySize=kwargs['arraySize'], mapping_mode=kwargs['mapping_mode'], is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type'],
+                        abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width'],
+                        pool=False),
 
-            # PConv_BN_Merge(512, 512, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], padding_mode=kwargs['padding_mode'],
-            #             arraySize=kwargs['arraySize'], mapping_mode=kwargs['mapping_mode'], is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type'],
-            #             abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width'],
-            #             pool=True)
+            PConv_BN_Merge(512, 512, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale'], padding_mode=kwargs['padding_mode'],
+                        arraySize=kwargs['arraySize'], mapping_mode=kwargs['mapping_mode'], is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type'],
+                        abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width'],
+                        pool=True)
         )
         self.classifier = nn.Sequential(
-            # PLinear_BN_Merge(512 * 4 * 4, 1024, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale = kwargs['weight_scale'],
-            #                 arraySize=kwargs['arraySize'], mapping_mode=kwargs['mapping_mode'], is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type'],
-            #                 abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
+            PLinear_BN_Merge(512 * 4 * 4, 1024, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale = kwargs['weight_scale'],
+                            arraySize=kwargs['arraySize'], mapping_mode=kwargs['mapping_mode'], is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type'],
+                            abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
             
-            # PLinear_BN_Merge(1024, 1024, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale = kwargs['weight_scale'],
-            #                 arraySize=kwargs['arraySize'], mapping_mode=kwargs['mapping_mode'], is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type'],
-            #                 abits=32, mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
-            BinLinear(512 * 4 * 4, 1024, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale = kwargs['weight_scale']),
-            nn.BatchNorm1d(1024),
-            nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
-
-            BinLinear(1024, 1024, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale']),
-            nn.BatchNorm1d(1024),
+            PLinear_BN_Merge(1024, 1024, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale = kwargs['weight_scale'],
+                            arraySize=kwargs['arraySize'], mapping_mode=kwargs['mapping_mode'], is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type'],
+                            abits=32, mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
+            # BinLinear(512 * 4 * 4, 1024, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale = kwargs['weight_scale']),
+            # nn.BatchNorm1d(1024),
             # nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
-            nonlinear(abits=32, mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
+
+            # BinLinear(1024, 1024, wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale']),
+            # nn.BatchNorm1d(1024),
+            # # nonlinear(abits=kwargs['abits'], mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
+            # nonlinear(abits=32, mode=kwargs['binary_mode'], ste=kwargs['ste'], offset=kwargs['x_offset'], width=kwargs['width']),
 
             nn.Linear(1024, kwargs['num_classes'], bias=True),
             # BinLinear(1024, kwargs['num_classes'], wbits=kwargs['wbits'], weight_clip=kwargs['weight_clip'], weight_scale=kwargs['weight_scale']),
