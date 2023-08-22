@@ -1,6 +1,7 @@
 # noisy cifar-10 in LSQ model 
 # python script_main.py --argfile ./argfiles/args_psum_vgg9_lsq -g 0 --psum_comp --co_noise 1 --noise_type interp --iter 5
-
+# noisy imangeNet 
+# python script_main.py --argfile ./argfiles/args_psum_resnet18 --dataset imagenet --psum_comp -g 0 --co_noise 1 --noise_type interp --iter 10
 import os
 import sys
 import getopt
