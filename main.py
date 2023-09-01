@@ -408,6 +408,8 @@ def main_worker(gpu, ngpus_per_node, args):
             graph_path = os.path.join(str(pathlib.Path().resolve()), 'graph', args.dataset, f'Psum_{args.arch}', args.mapping_mode, args.psum_mode, 'class_{}'.format(args.per_class))
             if not args.psum_comp:
                 report_path = '/'.join(report_path.split('/')[:-1]) # time folder remove
+            if args.retention:
+                report_path = os.path.join(report_path, 'retention_{}'.format(args.reten_val))
             os.makedirs(report_path, exist_ok=True)
             report_file = os.path.join(report_path, 'model_report.pkl')
 
@@ -429,7 +431,7 @@ def main_worker(gpu, ngpus_per_node, args):
                     pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma)
                 if args.is_noise:
                     set_Noise_injection(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
-                                        noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink)
+                                        noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink, retention=args.retention, reten_value=args.reten_val)
             else:
                 assert False, "This mode is not supported psum computation"
 
@@ -456,7 +458,8 @@ def main_worker(gpu, ngpus_per_node, args):
                 if args.is_noise:
                     from models.quantized_lsq_modules import hwnoise_initialize
                     hwnoise_initialize(model, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
-                                        noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink, max_epoch=(args.epochs - args.ft_epoch))
+                                        noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink, max_epoch=(args.epochs - args.ft_epoch), \
+                                        retention=args.retention, reten_value=args.reten_val)
         log_time = time.time()
 
         if args.rank == 0:
@@ -506,6 +509,9 @@ def main_worker(gpu, ngpus_per_node, args):
                 "pclip":            args.pclip if args.psum_comp else "No_psum",
                 "coefficient_noise":  args.co_noise if args.is_noise else "No_noise",
                 "res_val":          args.res_val if args.is_noise else "No_noise",
+                "coeffi_shrink":    args.shrink if args.shrink else "No_shrink",
+                "retention_type":   args.reten_type if args.retention else "No_retention",
+                "retention_value":   args.reten_val if args.retention else "No_retention",
                 "Valid Top1":       top1['valid'],
                 "Test Top1":        top1['test'],
                 "Test Top5":        top5['test'],

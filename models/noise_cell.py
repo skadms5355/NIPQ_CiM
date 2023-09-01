@@ -28,7 +28,7 @@ class InterpolatedPDF(rv_continuous):
         return self.interp(q)
 
 class Noise_cell(nn.Module):
-    def __init__(self, wbits, cbits, mapping_mode, co_noise=0.01, noise_type='static', res_val='rel', w_format='state', shrink=None, Gmin=1/3e5, ratio=100, max_epoch=-1):
+    def __init__(self, wbits, cbits, mapping_mode, co_noise=0.01, noise_type='static', res_val='rel', w_format='state', shrink=None, retention=False, Gmin=1/3e5, ratio=100, max_epoch=-1):
         super(Noise_cell, self).__init__()
         """
             This module performs cell variation
@@ -49,6 +49,7 @@ class Noise_cell(nn.Module):
         self.ratio = ratio
         self.max_epoch = max_epoch
         self.shrink = shrink
+        self.retention = retention
 
         self.init_state()
 
@@ -77,6 +78,14 @@ class Noise_cell(nn.Module):
                 assert False, 'In the {} mode, the {} noise type is not supported, you have to choose static or prop'.format(self.res_val, self.noise_type)
         else:
             assert False, 'You must choose the one of two options [rel, abs], but got {}'.format(self.res_val)
+
+    def retention_init(self, kind='linear', type='percent', value=0):
+        if type == 'percent':
+            self.reten_val = value
+        elif type == 'static':
+            self.reten_val = value
+        else:
+            assert False, "You must check retention type {}".format(type)
 
     def effective_clevel(self):
         if self.mapping_mode == 'two_com':
@@ -145,10 +154,16 @@ class Noise_cell(nn.Module):
         self.rv = [InterpolatedPDF(self.pdf[c], kind='quadratic', samples=1000, a=state[c][0].min(), b=state[c][0].max(), name='interpolated') for c in range(self.clevel)]
 
     def interp_sample(self, x):
-        # import matplotlib.pyplot as plt
-        # import seaborn as sns
-        # fig, ax = plt.subplots(nrows=2, figsize=(20, 12))
-        # ax1 = ax[0].twinx()
+        graph = False
+        if graph:
+            import matplotlib.pyplot as plt
+            import seaborn as sns
+            fig, ax = plt.subplots(nrows=1, figsize=(20, 12))
+            ax1 = ax[0].twinx()
+            if self.retention:
+                import pandas as pd
+                df = pd.DataFrame(columns=['state', 'Conductance', 'retention'])
+
         rseed = torch.randint(0, 32765, (1,))
         np.random.seed(rseed)
         for c in range(self.clevel):
@@ -166,66 +181,96 @@ class Noise_cell(nn.Module):
                         samples[max_index] = torch.tensor(self.rv[c].rvs(size=max_index[0].shape[0]), dtype=x.dtype, device=x.device)
 
                 x[index] = samples
+
+                # df_temp = pd.DataFrame(columns=["Conductance"], data=samples.cpu())
+                # df= pd.concat([df, df_temp], ignore_index=True)
+                # df["retention"]=df["retention"].fillna(0)
+                if self.retention:
+                    # reten_list = [0.1, 0.2, 0.3, 0.4]
+                    # for reten in reten_list:
+                    x[index] -=  x[index]*self.reten_val
+                        # x[index] = samples - samples*reten
+                        # df_temp = pd.DataFrame(columns=["Conductance"], data=x[index].cpu())
+                        # df = pd.concat([df, df_temp], ignore_index=True)
+                        # df["retention"]=df["retention"].fillna(reten)
+                # df["state"]=df["state"].fillna(int(c))
             
             # for graph
-            # else:
-            #     samples = torch.tensor([], dtype=x.dtype, device=x.device)
+            else:
+                samples = torch.tensor([], dtype=x.dtype, device=x.device)
 
             if torch.any(x<0):
                 import pdb; pdb.set_trace()
-            
             # else:
             #     index = torch.where(x==c)
             #     samples = torch.tensor(self.rv[c].rvs(size=x[index].numel()), dtype=x.dtype, device=x.device)
+            
+            # if graph:
+            #     sns.histplot(samples.cpu().numpy(), ax=ax[0], bins=200, alpha=0.2, element='step', fill=True, stat='density')
+            #     plt_x = np.linspace(self.min_state[c], self.max_state[c], num=1000)
+            #     sns.lineplot(x=plt_x, y=self.pdf[c](plt_x), ax=ax1)
+            #     sns.histplot(samples.cpu().numpy(), ax=ax[1], bins=200, alpha=0.2, element='step', fill=True, stat='count')
+        # sns.relplot(ax=ax, data=df, kind='line', x='retention', y='Conductance', style="state", hue="state", markers=True, errorbar=("pi", 100))
+        # sns.set_theme(context="poster", font_scale=1.1)
+        if graph and self.retention:
+            sns.set_style('whitegrid', {"grid.linestyle": "--"})
+            palet= sns.color_palette('husl', 5)
+            palet.insert(0, sns.color_palette('Set2')[-1])
+            g = sns.catplot(data=df, x='state', y='Conductance', hue="retention", errorbar=("pi", 100), kind="violin", inner=None, aspect=2, palette=palet, linewidth=0.6)
+            sns.move_legend(g, "upper center", bbox_to_anchor=(0.48, 0.97), ncol=5, frameon=False, title=None)
+            step = 20 if self.co_noise <=2 else 10
+            case = 2 if self.co_noise % 2 == 0 else 1
+            g.tick_params(axis='both', direction='out', length=4)
+            g.set(ylim=(0, 200))
+            g.fig.suptitle(f'[Mapping Mode: {self.mapping_mode}, Step: {step}uS, Case: {case}]', x=0.75, y=0.17, color='gray')
+            # g.add_legend(title='retention', loc='upper center', ncol=4, bbox_to_anchor=(0.35, 1.07))
+            plt.savefig(os.getcwd() +"/graph/ReRAM/retention_step{}_case{}.png".format(step, case), bbox_inches='tight')
+            import pdb; pdb.set_trace()
 
-        #     sns.histplot(samples.cpu().numpy(), ax=ax[0], bins=200, alpha=0.2, element='step', fill=True, stat='density')
-        #     plt_x = np.linspace(self.min_state[c], self.max_state[c], num=1000)
-        #     sns.lineplot(x=plt_x, y=self.pdf[c](plt_x), ax=ax1)
-        #     sns.histplot(samples.cpu().numpy(), ax=ax[1], bins=200, alpha=0.2, element='step', fill=True, stat='count')
+        if graph:
+            # setting y-axis figure ax[0]
+            ax[0].set_ylabel(ax[0].get_ylabel(), fontsize=16)
+            ax[0].legend(('state 0', 'state 1', 'state 2', 'state 3', 'state 4', 'state 5', 'state 6', 'state 7', 'state 8'), loc='upper center', ncol=9, fontsize=12, frameon=False)
+            # ax[0].legend(('state 0', 'state 1', 'state 2', 'state 3', 'state 4', 'state 5', 'state 6', 'state 7', 'state 8', 'state 9', 'state 10', 'state 11', 'state 12', 'state 13', 'state 14', 'state 15'), loc='upper center', ncol=8, fontsize=12, frameon=False)
+            ax_ylabels = np.round(np.linspace(ax[0].get_yticks()[0], ax[0].get_yticks()[-2], num=5), 2)
+            ax[0].set_yticks(ax_ylabels)
+            ax[0].set_yticklabels(ax[0].get_yticks(), fontsize=14)
 
-        # # setting y-axis figure ax[0]
-        # ax[0].set_ylabel(ax[0].get_ylabel(), fontsize=16)
-        # ax[0].legend(('state 0', 'state 1', 'state 2', 'state 3', 'state 4', 'state 5', 'state 6', 'state 7', 'state 8'), loc='upper center', ncol=9, fontsize=12, frameon=False)
-        # # ax[0].legend(('state 0', 'state 1', 'state 2', 'state 3', 'state 4', 'state 5', 'state 6', 'state 7', 'state 8', 'state 9', 'state 10', 'state 11', 'state 12', 'state 13', 'state 14', 'state 15'), loc='upper center', ncol=8, fontsize=12, frameon=False)
-        # ax_ylabels = np.round(np.linspace(ax[0].get_yticks()[0], ax[0].get_yticks()[-2], num=5), 2)
-        # ax[0].set_yticks(ax_ylabels)
-        # ax[0].set_yticklabels(ax[0].get_yticks(), fontsize=14)
+            # setting y-axis figure ax1 (ax[0] twinx)
+            ylabels = ax1.get_yticks()
+            ax1.set_ylabel('Probability [%]')
+            ax1.set_ylabel(ax1.get_ylabel(), fontsize=16)
+            ax1.set_ylim(0, ylabels[-1])
+            ax1.set_yticklabels(ax1.get_yticks(), fontsize=14)
 
-        # # setting y-axis figure ax1 (ax[0] twinx)
-        # ylabels = ax1.get_yticks()
-        # ax1.set_ylabel('Probability [%]')
-        # ax1.set_ylabel(ax1.get_ylabel(), fontsize=16)
-        # ax1.set_ylim(0, ylabels[-1])
-        # ax1.set_yticklabels(ax1.get_yticks(), fontsize=14)
+            # setting y-axis figure ax[0]
+            ax[1].set_ylabel(ax[1].get_ylabel(), fontsize=16)
+            ax[1].legend(('state 0', 'state 1', 'state 2', 'state 3', 'state 4', 'state 5', 'state 6', 'state 7', 'state 8'), loc='upper center', ncol=9, fontsize=12, frameon=False)
+            # ax[1].legend(('state 0', 'state 1', 'state 2', 'state 3', 'state 4', 'state 5', 'state 6', 'state 7', 'state 8', 'state 9', 'state 10', 'state 11', 'state 12', 'state 13', 'state 14', 'state 15'), loc='upper center', ncol=8, fontsize=12, frameon=False)
+            ax_ylabels = np.linspace(ax[1].get_yticks()[0], ax[1].get_yticks()[-2], num=5, dtype=int)
+            ax[1].set_yticks(ax_ylabels)
+            ax[1].set_yticklabels(ax[1].get_yticks(), fontsize=14)
+            ax[1].set_yticks(ax_ylabels)
 
-        # # setting y-axis figure ax[0]
-        # ax[1].set_ylabel(ax[1].get_ylabel(), fontsize=16)
-        # ax[1].legend(('state 0', 'state 1', 'state 2', 'state 3', 'state 4', 'state 5', 'state 6', 'state 7', 'state 8'), loc='upper center', ncol=9, fontsize=12, frameon=False)
-        # # ax[1].legend(('state 0', 'state 1', 'state 2', 'state 3', 'state 4', 'state 5', 'state 6', 'state 7', 'state 8', 'state 9', 'state 10', 'state 11', 'state 12', 'state 13', 'state 14', 'state 15'), loc='upper center', ncol=8, fontsize=12, frameon=False)
-        # ax_ylabels = np.linspace(ax[1].get_yticks()[0], ax[1].get_yticks()[-2], num=5, dtype=int)
-        # ax[1].set_yticks(ax_ylabels)
-        # ax[1].set_yticklabels(ax[1].get_yticks(), fontsize=14)
-        # ax[1].set_yticks(ax_ylabels)
+            # setting x-axis figure ax
+            ax[0].set_title('ReRAM Noise Sampling (Case 1, Step=10uS)', loc='right', fontsize=16)
+            # ax[0].set_title('ReRAM Noise Sampling (Case 1, Step=10uS)', loc='right', fontsize=16)
+            ax[0].set_xlabel('Conductance [uS]')
+            ax[0].set_xlabel(ax[0].get_xlabel(), fontsize=16)
+            xlabels = ax[0].get_xticks()
+            ax[0].set_xlim(0, 200)
+            ax[0].set_xticks(ax[0].get_xticks())
+            ax[0].set_xticklabels(ax[0].get_xticks(), fontsize=14)
 
-        # # setting x-axis figure ax
-        # ax[0].set_title('ReRAM Noise Sampling (Case 1, Step=10uS, Shrink={})'.format(self.shrink), loc='right', fontsize=16)
-        # # ax[0].set_title('ReRAM Noise Sampling (Case 1, Step=10uS)', loc='right', fontsize=16)
-        # ax[0].set_xlabel('Conductance [uS]')
-        # ax[0].set_xlabel(ax[0].get_xlabel(), fontsize=16)
-        # xlabels = ax[0].get_xticks()
-        # ax[0].set_xlim(0, 200)
-        # ax[0].set_xticks(ax[0].get_xticks())
-        # ax[0].set_xticklabels(ax[0].get_xticks(), fontsize=14)
-
-        # # setting x-axis figure ax[1]
-        # ax[1].set_xlabel('Conductance [uS]')
-        # # xlabels = ax[1].get_xticks()
-        # ax[1].set_xlabel(ax[1].get_xlabel(), fontsize=16)
-        # ax[1].set_xlim(0, 200)
-        # ax[1].set_xticks(ax[1].get_xticks())
-        # ax[1].set_xticklabels(ax[1].get_xticks(), fontsize=14)
-        # plt.savefig(os.getcwd() +"/graph/ReRAM/Layer0_pdf_sample_shrink_{}(step10).png".format(self.shrink))
-        # import pdb; pdb.set_trace()
+            # setting x-axis figure ax[1]
+            ax[1].set_xlabel('Conductance [uS]')
+            # xlabels = ax[1].get_xticks()
+            ax[1].set_xlabel(ax[1].get_xlabel(), fontsize=16)
+            ax[1].set_xlim(0, 200)
+            ax[1].set_xticks(ax[1].get_xticks())
+            ax[1].set_xticklabels(ax[1].get_xticks(), fontsize=14)
+            plt.savefig(os.getcwd() +"/graph/ReRAM/Layer0_pdf_sample(step10).png")
+            import pdb; pdb.set_trace()
 
         return x 
 
@@ -280,10 +325,14 @@ class Noise_cell(nn.Module):
             if (self.mapping_mode == '2T2R') or (self.mapping_mode == 'PN'):
                 self.G_std = torch.tensor([np.sqrt(np.power(state_std[c], 2) + np.power(state_std[0], 2)) for c in range(self.clevel)])
                 self.G = torch.tensor([state_mean[c] - state_mean[0] for c in range(self.clevel)])
+                if self.retention:
+                    self.G = torch.tensor(self.G[c]*(1-self.reten_val) for c in range(self.clevel))
             elif 'ref' in self.mapping_mode:   
                 w_ref = int(self.clevel/2)
                 self.G_std = torch.tensor([np.sqrt(np.power(state_std[c], 2) + np.power(state_std[w_ref], 2)) for c in range(self.clevel)])
                 self.G = torch.tensor([state_mean[c] - state_mean[w_ref] for c in range(self.clevel)])
+                if self.retention:
+                    self.G = torch.tensor(self.G[c]*(1-self.reten_val) for c in range(self.clevel))
             else:
                 assert False, "Only support 2T2R mapping mode"
 

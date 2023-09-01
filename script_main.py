@@ -25,6 +25,10 @@ parser.add_argument('--pclip', type=str, nargs='+', default=['sigma'],
                     help='pclip list')
 parser.add_argument('--co_noise', type=float, nargs='+', default=[0, 0.03, 0.05])
 parser.add_argument('--shrink', type=float, default=None)
+parser.add_argument('--retention', type=bool, default=False)
+parser.add_argument('--reten_type', type=str, default='percent',
+                    choices=['percent', 'static'])
+parser.add_argument('--reten_val', type=float, default=0)
 parser.add_argument('--noise_type', default='interp', type=str,
                     choices=['static', 'grad', 'prop', 'interp'])
 parser.add_argument('--iter', default=1, type=int,
@@ -116,36 +120,38 @@ if not args.psum_comp:
 # psum_operation
 else:
     for mapping_mode in mapping_mode_list:
-        if args.tnipq=="qhwnoise":
-            if "nipq" in arch:
-                tn_file = 't_{}_{}'.format(args.tnoise_type, args.tco_noise)
-                pretrained = './checkpoints/{}/nipq/nipq_{}/qhwnoise_fix:4/{}/no_psum_c:4/{}_{}/best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tco_noise)
-            elif "lsq" in arch:
-                if args.FL_quant:
-                    if args.KD:
-                        tn_file = 'KD_{}_{}_{}'.format(args.tnoise_type, args.tres_val, args.tco_noise)
-                        pretrained = './checkpoints/{}/quant/lsq_{}/FL_a:4_w:4/{}/no_psum_c:4/{}_{}_{}/KD_best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tres_val, args.tco_noise)
-                    else:
-                        tn_file = '{}_{}_{}'.format(args.tnoise_type, args.tres_val, args.tco_noise)
-                        if args.shrink is not None:
-                            tn_file = '{}_shrink_{}'.format(tn_file, args.shrink)
-                            pretrained = './checkpoints/{}/quant/lsq_{}/a:4_w:4/{}/no_psum_c:4/{}_{}_{}_shrink_{}/best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tres_val, args.tco_noise, args.shrink)
-                        else:
-                            pretrained = './checkpoints/{}/quant/lsq_{}/FL_a:4_w:4/{}/no_psum_c:4/{}_{}_{}/best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tres_val, args.tco_noise)
-                else:
-                    if args.KD:
-                        tn_file = 'KD_{}_{}_{}'.format(args.tnoise_type, args.tres_val, args.tco_noise)
-                        pretrained = './checkpoints/{}/quant/lsq_{}/a:4_w:4/{}/no_psum_c:4/{}_{}_{}/KD_best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tres_val, args.tco_noise)
-                    else:
-                        tn_file = '{}_{}_{}'.format(args.tnoise_type, args.tres_val, args.tco_noise)
-                        if args.shrink is not None:
-                            pretrained = './checkpoints/{}/quant/lsq_{}/a:4_w:4/{}/no_psum_c:4/{}_{}_{}_shrink_{}/best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tres_val, args.tco_noise, args.shrink)
-                        else:
-                            pretrained = './checkpoints/{}/quant/lsq_{}/a:4_w:4/{}/no_psum_c:4/{}_{}_{}/best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tres_val, args.tco_noise)
-        else:
-            tn_file = None
-
         for co_noise in co_noise_list:
+            if args.tnipq=="qhwnoise":
+                if "nipq" in arch:
+                    tco_noise = co_noise if args.tco_noise == 0 else args.tco_noise
+                    tn_file = 't_{}_{}'.format(args.tnoise_type, tco_noise)
+                    pretrained = './checkpoints/{}/nipq/nipq_{}/qhwnoise_fix:4/{}/no_psum_c:4/{}_{}/best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, tco_noise)
+                elif "lsq" in arch:
+                    tco_noise = co_noise if args.tco_noise == 0 else args.tco_noise
+                    if args.FL_quant:
+                        if args.KD:
+                            tn_file = 'KD_{}_{}_{}'.format(args.tnoise_type, args.tres_val, tco_noise)
+                            pretrained = './checkpoints/{}/quant/lsq_{}/FL_a:4_w:4/{}/no_psum_c:4/{}_{}_{}/KD_best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tres_val, tco_noise)
+                        else:
+                            tn_file = '{}_{}_{}'.format(args.tnoise_type, args.tres_val, tco_noise)
+                            if args.shrink is not None:
+                                tn_file = '{}_shrink_{}'.format(tn_file, args.shrink)
+                                pretrained = './checkpoints/{}/quant/lsq_{}/a:4_w:4/{}/no_psum_c:4/{}_{}_{}_shrink_{}/best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tres_val, tco_noise, args.shrink)
+                            else:
+                                pretrained = './checkpoints/{}/quant/lsq_{}/FL_a:4_w:4/{}/no_psum_c:4/{}_{}_{}/best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tres_val, tco_noise)
+                    else:
+                        if args.KD:
+                            tn_file = 'KD_{}_{}_{}'.format(args.tnoise_type, args.tres_val, tco_noise)
+                            pretrained = './checkpoints/{}/quant/lsq_{}/a:4_w:4/{}/no_psum_c:4/{}_{}_{}/KD_best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tres_val, tco_noise)
+                        else:
+                            tn_file = '{}_{}_{}'.format(args.tnoise_type, args.tres_val, tco_noise)
+                            if args.shrink is not None:
+                                pretrained = './checkpoints/{}/quant/lsq_{}/a:4_w:4/{}/no_psum_c:4/{}_{}_{}_shrink_{}/best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tres_val, tco_noise, args.shrink)
+                            else:
+                                pretrained = './checkpoints/{}/quant/lsq_{}/a:4_w:4/{}/no_psum_c:4/{}_{}_{}/best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tres_val, tco_noise)
+            else:
+                tn_file = None
+
             if co_noise == 0:
                 is_noise = False
                 nipq_noise = "qnoise"
@@ -187,7 +193,7 @@ else:
                 else:
                     log_file=True
                     # local = "/home/nameunkang/Project/QNN_CIM"
-
+                # import pdb; pdb.set_trace()
                 for pbit in pbits_list:
                     for i in range(args.iter):
                         if is_noise:
@@ -196,36 +202,42 @@ else:
                                 if args.FL_quant:
                                     os.system('python main.py  --argfile {} --gpu-id {} --psum_comp {} --arraySize {} --mapping_mode {} \
                                                 --pbits {} --per_class {} --testlog_reset {} --log_file {} --pretrained {} \
-                                                --is_noise y --tn_file {} --nipq_noise {} --co_noise {} --noise_type {}  --FL_quant y'
-                                                .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, tn_file, nipq_noise, co_noise, noise_type))
+                                                --is_noise y --tn_file {} --nipq_noise {} --co_noise {} --noise_type {}  --FL_quant y \
+                                                --retention {} --reten_type {} --reten_val {}'
+                                                .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, tn_file, nipq_noise, co_noise, noise_type, args.retention, args.reten_type, args.reten_val))
                                 else:
                                     if args.shrink is None:
                                         os.system('python main.py  --argfile {} --gpu-id {} --psum_comp {} --arraySize {} --mapping_mode {} \
                                                     --pbits {} --per_class {} --testlog_reset {} --log_file {} --pretrained {} \
-                                                    --is_noise y --tn_file {} --nipq_noise {} --co_noise {} --noise_type {}'
-                                                    .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, tn_file, nipq_noise, co_noise, noise_type))
+                                                    --is_noise y --tn_file {} --nipq_noise {} --co_noise {} --noise_type {} \
+                                                    --retention {} --reten_type {} --reten_val {}'
+                                                    .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, tn_file, nipq_noise, co_noise, noise_type, args.retention, args.reten_type, args.reten_val))
                                     else:
                                         os.system('python main.py  --argfile {} --gpu-id {} --psum_comp {} --arraySize {} --mapping_mode {} \
                                                     --pbits {} --per_class {} --testlog_reset {} --log_file {} --pretrained {} \
-                                                    --is_noise y --tn_file {} --nipq_noise {} --co_noise {} --noise_type {} --shrink {}'
-                                                    .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, tn_file, nipq_noise, co_noise, noise_type, args.shrink))
+                                                    --is_noise y --tn_file {} --nipq_noise {} --co_noise {} --noise_type {} --shrink {} \
+                                                    --retention {} --reten_type {} --reten_val {}'
+                                                    .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, tn_file, nipq_noise, co_noise, noise_type, args.shrink, args.retention, args.reten_type, args.reten_val))
                             else:
                                 if args.FL_quant:
                                     os.system('python main.py  --argfile {} --gpu-id {} --psum_comp {} --arraySize {} --mapping_mode {} \
                                                 --pbits {} --per_class {} --testlog_reset {} --log_file {} --pretrained {} \
-                                                --is_noise y --nipq_noise {} --co_noise {} --noise_type {} --shrink {} --FL_quant y'
-                                                .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, nipq_noise, co_noise, noise_type, args.shrink))
+                                                --is_noise y --nipq_noise {} --co_noise {} --noise_type {} --shrink {} --FL_quant y \
+                                                --retention {} --reten_type {} --reten_val {}'
+                                                .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, nipq_noise, co_noise, noise_type, args.shrink, args.retention, args.reten_type, args.reten_val))
                                 else:
                                     if args.shrink is None:
                                         os.system('python main.py  --argfile {} --gpu-id {} --psum_comp {} --arraySize {} --mapping_mode {} \
                                                     --pbits {} --per_class {} --testlog_reset {} --log_file {} --pretrained {} \
-                                                    --is_noise y --nipq_noise {} --co_noise {} --noise_type {}'
-                                                    .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, nipq_noise, co_noise, noise_type))
+                                                    --is_noise y --nipq_noise {} --co_noise {} --noise_type {} \
+                                                    --retention {} --reten_type {} --reten_val {}'
+                                                    .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, nipq_noise, co_noise, noise_type, args.retention, args.reten_type, args.reten_val))
                                     else:
                                         os.system('python main.py  --argfile {} --gpu-id {} --psum_comp {} --arraySize {} --mapping_mode {} \
                                                     --pbits {} --per_class {} --testlog_reset {} --log_file {} --pretrained {} \
-                                                    --is_noise y --nipq_noise {} --co_noise {} --noise_type {} --shrink {}'
-                                                    .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, nipq_noise, co_noise, noise_type, args.shrink))
+                                                    --is_noise y --nipq_noise {} --co_noise {} --noise_type {} --shrink {} \
+                                                    --retention {} --reten_type {} --reten_val {}'
+                                                    .format(args.argfile, args.gpu_id, args.psum_comp, a_size, mapping_mode, pbit, per_class, testlog, log_file, pretrained, nipq_noise, co_noise, noise_type, args.shrink, args.retention, args.reten_type, args.reten_val))
 
                         else:
                             if args.FL_quant:

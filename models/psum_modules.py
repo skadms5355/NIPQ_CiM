@@ -258,14 +258,15 @@ class PsumQConv(SplitConv):
         out_mag = int(w_mag * (2**abit))
         return out_mag, multi_scale
     
-    def _cell_noise_init(self, cbits, mapping_mode, co_noise=0.01, noise_type='prop', res_val='rel', shrink=None, w_format="weight", max_epoch=-1):
+    def _cell_noise_init(self, cbits, mapping_mode, co_noise=0.01, noise_type='prop', res_val='rel', shrink=None, retention=False, w_format="weight", max_epoch=-1):
         self.w_format = 'state' if res_val == 'abs' or noise_type == 'meas' else 'weight'
         # wbits = Parameter(torch.Tensor(1).fill_(self.wbits), requires_grad=False).round().squeeze()
         # for inference 
         if not (noise_type == 'prop' or 'interp'):
             noise_type = 'prop'
-        self.noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val=res_val, shrink=shrink, w_format=self.w_format)
-    
+        self.noise_cell_log = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val=res_val, shrink=shrink, retention=False, w_format=self.w_format)
+        self.noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val=res_val, shrink=shrink, retention=retention, w_format=self.w_format)
+
     def _bitserial_log_forward(self, input, weight=None, short_path=None):
         print(f'[layer{self.layer_idx}]: bitserial mac log')
         # delete padding_shpe & additional padding operation by matching padding/stride format with nn.Conv2d
@@ -291,7 +292,7 @@ class PsumQConv(SplitConv):
                 sinput, a_scale, abits = Bitserial.bitserial_act(input, debug=False) # short_path parameter does not exist
 
             if self.is_noise and self.w_format=="weight":
-                qweight = self.noise_cell(qweight/w_scale)
+                qweight = self.noise_cell_log(qweight/w_scale)
 
 
             ## get dataframe
@@ -311,7 +312,7 @@ class PsumQConv(SplitConv):
             ### Cell noise injection + Cell conductance value change
             if self.is_noise:
                 bweight, wsplit_num = self._weight_bitserial(qweight, w_scale, cbits=self.cbits)
-                bweight = self.noise_cell(bweight)
+                bweight = self.noise_cell_log(bweight)
                 
                 weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
                 
@@ -321,7 +322,7 @@ class PsumQConv(SplitConv):
                     wsplit_num = 1
                 else:
                     ## [TODO] two_com split weight format check
-                    delta_G, G_min = self.noise_cell.get_deltaG(G_min=True)
+                    delta_G, G_min = self.noise_cell_log.get_deltaG(G_min=True)
                     w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
 
                 self.sweight = conv_sweight_cuda.forward(self.sweight, bweight, self.group_in_offset, self.split_groups)
@@ -563,6 +564,14 @@ class PsumQConv(SplitConv):
         if weight is None:
             weight = self.weight
         qweight, w_scale = self.quan_w_fn(weight)
+        
+        
+        # if self.info_print:
+        #     import collections
+        #     weight_num = dict(collections.Counter(abs(qweight/w_scale).cpu().detach().numpy().ravel()))
+        #     weight_num.update((key, value * 100 / qweight.numel()) for key, value in weight_num.items())
+        #     weight_num = sorted(weight_num.items())
+        #     print(weight_num)
 
         if self.wbit_serial:
             with torch.no_grad():
@@ -595,16 +604,19 @@ class PsumQConv(SplitConv):
                     if self.is_noise:
                         bweight, wsplit_num = self._weight_bitserial(qweight, w_scale, cbits=self.cbits)
                         # qweight = bweight.clone()
+                        # qweight = self.noise_cell_log(qweight)
                         bweight = self.noise_cell(bweight)
                         mean = []
                         std = []
                         density = []
                         
                         weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
+                        weight_chunk_no = torch.chunk(qweight, wsplit_num, dim=1)
                         
                         ## make the same weight size as qweight
                         if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
                             bweight = weight_chunk[0] - weight_chunk[1]
+                            qweight = weight_chunk_no[0] - weight_chunk_no[1]
                             wsplit_num = 1
                             # for c in range(-8, 8, 1):
                             #     index = torch.where((qweight/w_scale)==c)
@@ -618,7 +630,9 @@ class PsumQConv(SplitConv):
                             delta_G, G_min = self.noise_cell.get_deltaG(G_min=True)
                             w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
                         self.sweight = conv_sweight_cuda.forward(self.sweight, bweight, self.group_in_offset, self.split_groups)
-                        weight_chunk = torch.chunk(self.sweight, wsplit_num, dim=1)
+                        weight_chunk = torch.chunk(self.sweight.clone(), wsplit_num, dim=1)
+                        # self.sweight = conv_sweight_cuda.forward(self.sweight, qweight, self.group_in_offset, self.split_groups)
+                        # weight_chunk_no = torch.chunk(self.sweight, wsplit_num, dim=1)
                     else:
                         self.sweight = conv_sweight_cuda.forward(self.sweight, qweight, self.group_in_offset, self.split_groups)
                         sweight, wsplit_num = self._weight_bitserial(self.sweight, w_scale, cbits=self.cbits)
@@ -638,6 +652,8 @@ class PsumQConv(SplitConv):
                     for wbit, weight_s in enumerate(weight_chunk):
                         out_tmp = self._split_forward(input_s, weight_s, padded=True, ignore_bias=True, cat_output=False,
                                                 weight_is_split=True, infer_only=True)
+                        # out_no = self._split_forward(input_s, weight_chunk_no[wbit], padded=True, ignore_bias=True, cat_output=True,
+                                                # weight_is_split=True, infer_only=True)
 
                         out_mag, multi_scale = self._output_magnitude(abit, wbit, wsplit_num)
                         out_adc = psum_quant_merge(out_adc, out_tmp,
@@ -657,28 +673,45 @@ class PsumQConv(SplitConv):
                         else:
                             out_wsum = out_adc if wbit == 0 else out_wsum + out_adc
                         out_adc = None
-                        output_real = F.conv2d(input_s, qweight/w_scale, bias=self.bias,
-                                                stride=self.stride, dilation=self.dilation, groups=self.groups)
-                        
+                        # output_real = F.conv2d(input_s, qweight/w_scale, bias=self.bias,
+                        #                         stride=self.stride, dilation=self.dilation, groups=self.groups)
                         # import matplotlib.pyplot as plt
                         # import seaborn as sns
+                        # palet= sns.color_palette('husl', 5)
+                        # out_tmp_cat = torch.cat(out_tmp, dim=1)
                         # fig, ax = plt.subplots(nrows=1, figsize=(18, 10))
-                        # if self.mapping_mode == 'ref_a':
-                        #     sns.histplot(torch.sub(output_real, out_wsum).cpu().numpy().ravel(), color='darkgreen', ax=ax, bins=200, alpha=0.2, element='step', fill=True, stat='percent')
-                        #     ax.set_title('1T1R (RC) structure', loc='right', fontsize=18)
-                        # elif self.mapping_mode == '2T2R':
-                        #     sns.histplot(torch.sub(output_real, out_wsum).cpu().numpy().ravel(), color='cornflowerblue', ax=ax, bins=200, alpha=0.2, element='step', fill=True, stat='percent')
-                        #     ax.set_title('2T2R structure', loc='right', fontsize=18)
+                        # if self.noise_cell.reten_val == 0.1:
+                        #     reten_val = 1
+                        # elif self.noise_cell.reten_val == 0.2:
+                        #     reten_val = 2 
+                        # elif self.noise_cell.reten_val == 0.3:
+                        #     reten_val = 3
+                        # elif self.noise_cell.reten_val == 0.4:
+                        #     reten_val = 4 
+                        # sns.histplot(out_no.cpu().numpy().ravel(), color='gray', ax=ax, bins=200, alpha=0.2, element='step', fill=True)
+                        # sns.histplot(out_tmp_cat.cpu().numpy().ravel(), color=palet[reten_val-1], ax=ax, bins=200, alpha=0.2, element='step', fill=True)
+                        # ref = np.arange(1-2**(self.pbits-1), 2**(self.pbits-1), 1)*self.pstep + self.pstep/2
+                        # for xc in ref:
+                        #     plt.axvline(x=xc, color='gray', linestyle=':')
                         # ax.set_ylabel(ax.get_ylabel(), fontsize=18)
                         # ax.set_yticklabels(ax.get_yticks(), fontsize=16)
-                        # ax.set_xlabel('MAC Subtraction')
+                        # ax.set_xlabel('Partial Sum')
                         # ax.set_xlabel(ax.get_xlabel(), fontsize=18)
                         # xlabels = [int(x) for x in ax.get_xticks()]
                         # ax.set_xticks(xlabels)
                         # ax.set_xticklabels(ax.get_xticks(), fontsize=16)
+                        # # ax.set_yscale("log")
+                        # ax.legend(['0', f'{self.noise_cell.reten_val}'], title='retention', fontsize='x-large', title_fontsize='x-large', frameon=False)
+                        # step = 20 if self.noise_cell.co_noise <=2 else 10
+                        # case = 2 if self.noise_cell.co_noise % 2 == 0 else 1
+                        # if 'cifar10' in self.checkpoint:
+                        #     dataset = 'Cifar10'
+                        # elif 'imagenet' in self.checkpoint:
+                        #     dataset = 'ImageNet'
+                        # ax.set_title(f'[Mapping Mode: {self.mapping_mode}, Case: {case}, Step: {step}uS]', loc='right', fontdict={'fontsize': 17}, color='gray')
 
-                        # plt.savefig('test_{}.png'.format(self.mapping_mode), bbox_inches='tight')
-                        # import pdb; pdb.set_trace()
+                        # plt.savefig(os.getcwd() +"/graph/ReRAM/{}/{}/Case{}/Layer{}_step{}_reten_val{}_pbits{}.png".format(self.mapping_mode, dataset, case, self.layer_idx, step, reten_val, self.pbits), bbox_inches='tight')
+                        # exit()
 
                     if self.is_noise and not ((self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a')):
                         out_one = (-G_min/delta_G) * self._split_forward(input_s, w_one, padded=True, ignore_bias=True, cat_output=False,
@@ -954,13 +987,14 @@ class PsumQLinear(SplitLinear):
         out_mag = int(w_mag * (2**abit))
         return out_mag, multi_scale
 
-    def _cell_noise_init(self, cbits, mapping_mode, co_noise=0.01, noise_type='prop', res_val='rel', shrink=None, max_epoch=-1):
+    def _cell_noise_init(self, cbits, mapping_mode, co_noise=0.01, noise_type='prop', res_val='rel', shrink=None, retention=False, max_epoch=-1):
         self.w_format = 'state' if res_val == 'abs' or noise_type == 'meas' else 'weight'
         # wbits = Parameter(torch.Tensor(1).fill_(self.wbits), requires_grad=False).round().squeeze()
         # for inference 
         if not (noise_type == 'prop' or 'interp'):
             noise_type = 'prop'
-        self.noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val=res_val, shrink=shrink, w_format=self.w_format)
+        self.noise_cell_log = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val=res_val, shrink=shrink, retention=False, w_format=self.w_format)
+        self.noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val=res_val, shrink=shrink, retention=retention, w_format=self.w_format)
     
     def _bitserial_log_forward(self, input):
         print(f'[layer{self.layer_idx}]: bitserial mac log')
@@ -974,7 +1008,7 @@ class PsumQLinear(SplitLinear):
         psum_scale = w_scale * a_scale
 
         if self.is_noise and self.w_format=="weight":
-            qweight = self.noise_cell(qweight/w_scale)
+            qweight = self.noise_cell_log(qweight/w_scale)
 
         ## get dataframe
         logger = f'{self.checkpoint}/layer{self.layer_idx}_mac_static.pkl'
@@ -994,7 +1028,7 @@ class PsumQLinear(SplitLinear):
 
         ### Cell noise injection + Cell conductance value change
         if self.is_noise:
-            bweight = self.noise_cell(bweight)
+            bweight = self.noise_cell_log(bweight)
             weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
             
             if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
@@ -1002,7 +1036,7 @@ class PsumQLinear(SplitLinear):
                 wsplit_num = 1
             else:
                 ## [TODO] two_com split weight format check
-                delta_G, G_min = self.noise_cell.get_deltaG(G_min=True)
+                delta_G, G_min = self.noise_cell_log.get_deltaG(G_min=True)
                 w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
 
         weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
@@ -1411,7 +1445,8 @@ def set_Qact_bitserial(model, pquant_idx, abit_serial=True):
             counter += 1
     print("finish setting quantact bitserial ")
 
-def set_Noise_injection(model, weight=False, hwnoise=True, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', shrink=None, max_epoch=-1):
+def set_Noise_injection(model, weight=False, hwnoise=True, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', shrink=None, max_epoch=-1,
+                        retention=False, reten_kind='linear', reten_type='percent', reten_value=0):
     for name, module in model.named_modules():
         if isinstance(module, (PsumQConv, PsumQLinear)) and weight and hwnoise:
             if module.wbits != 32:
@@ -1420,7 +1455,9 @@ def set_Noise_injection(model, weight=False, hwnoise=True, cbits=4, mapping_mode
                 if noise_type == 'grad':
                     assert max_epoch != -1, "Enter max_epoch in hwnoise_initialize function"
                 if hwnoise:
-                    module._cell_noise_init(cbits=cbits, mapping_mode=mapping_mode, co_noise=co_noise, noise_type=noise_type, res_val=res_val, shrink=shrink, max_epoch=max_epoch)
+                    module._cell_noise_init(cbits=cbits, mapping_mode=mapping_mode, co_noise=co_noise, noise_type=noise_type, res_val=res_val, shrink=shrink, retention=retention, max_epoch=max_epoch)
+                    if retention:
+                        module.noise_cell.retention_init(kind=reten_kind, type=reten_type, value=reten_value)
 
 def count_ArrayMaxV(wbits, cbits, mapping_mode, arraySize):
     if mapping_mode == '2T2R':

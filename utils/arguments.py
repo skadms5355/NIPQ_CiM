@@ -253,6 +253,16 @@ def set_arguments():
                             help='representation methods of resistance (default: relative(rel))).')               
     noise_group.add_argument('--shrink', type=float, default=None,
                             help='Noise state shrink percentage (range: 0 ~ 0.17)')   
+    noise_group.add_argument('--retention', type=bool, default=False,
+                            help='retention Noise in ReRAM Device')   
+    noise_group.add_argument('--reten_kind', type=str, default='linear',
+                            choices=['linear', 'exponential'],
+                            help='amount kind of decreasing conductance per time (default: linear)).')               
+    noise_group.add_argument('--reten_type', type=str, default='percent',
+                            choices=['static', 'percent'],
+                            help='How do this conductance value decrease (default: percent (proportional to conduc))).')               
+    noise_group.add_argument('--reten_val', type=float, default=0,
+                            help='rentention decreasing value (static(int) or percentage(float))')               
 
     # Transfer Learning
     transfer_group.add_argument('--transfer-mode', default=0, type=int, choices=[0,1,2,3, 4],
