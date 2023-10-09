@@ -409,7 +409,7 @@ def main_worker(gpu, ngpus_per_node, args):
             if not args.psum_comp:
                 report_path = '/'.join(report_path.split('/')[:-1]) # time folder remove
             if args.retention:
-                report_path = os.path.join(report_path, 'retention_{}'.format(args.reten_val))
+                report_path = os.path.join(report_path, 'retention_{}_{}'.format(args.reten_type, args.reten_val))
             os.makedirs(report_path, exist_ok=True)
             report_file = os.path.join(report_path, 'model_report.pkl')
 
@@ -431,7 +431,7 @@ def main_worker(gpu, ngpus_per_node, args):
                     pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma)
                 if args.is_noise:
                     set_Noise_injection(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
-                                        noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink, retention=args.retention, reten_value=args.reten_val)
+                                        noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink, retention=args.retention, reten_value=args.reten_val, reten_type=args.reten_type)
             else:
                 assert False, "This mode is not supported psum computation"
 
@@ -459,7 +459,7 @@ def main_worker(gpu, ngpus_per_node, args):
                     from models.quantized_lsq_modules import hwnoise_initialize
                     hwnoise_initialize(model, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
                                         noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink, max_epoch=(args.epochs - args.ft_epoch), \
-                                        retention=args.retention, reten_value=args.reten_val)
+                                        retention=args.retention, reten_value=args.reten_val, reten_type=args.reten_type)
         log_time = time.time()
 
         if args.rank == 0:

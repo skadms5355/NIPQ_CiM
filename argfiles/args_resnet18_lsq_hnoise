@@ -27,7 +27,7 @@
 --wbits         4
 --abits         4
 
---lr            0.01
+--lr            0.06
 --weight-decay  0
 --momentum      0.9
 --dropout	    0.0

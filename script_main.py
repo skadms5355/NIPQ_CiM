@@ -27,7 +27,7 @@ parser.add_argument('--co_noise', type=float, nargs='+', default=[0, 0.03, 0.05]
 parser.add_argument('--shrink', type=float, default=None)
 parser.add_argument('--retention', type=bool, default=False)
 parser.add_argument('--reten_type', type=str, default='percent',
-                    choices=['percent', 'static'])
+                    choices=['percent', 'static', 'invert_p'])
 parser.add_argument('--reten_val', type=float, default=0)
 parser.add_argument('--noise_type', default='interp', type=str,
                     choices=['static', 'grad', 'prop', 'interp'])
@@ -142,7 +142,10 @@ else:
                     else:
                         if args.KD:
                             tn_file = 'KD_{}_{}_{}'.format(args.tnoise_type, args.tres_val, tco_noise)
-                            pretrained = './checkpoints/{}/quant/lsq_{}/a:4_w:4/{}/no_psum_c:4/{}_{}_{}/KD_best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tres_val, tco_noise)
+                            if args.shrink is not None:
+                                pretrained = './checkpoints/{}/quant/lsq_{}/a:4_w:4/{}/no_psum_c:4/{}_{}_{}_shrink_{}/KD_best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tres_val, tco_noise, args.shrink)
+                            else:
+                                pretrained = './checkpoints/{}/quant/lsq_{}/a:4_w:4/{}/no_psum_c:4/{}_{}_{}/KD_best_model/model_best.pth.tar'.format(args.dataset, model, mapping_mode, args.tnoise_type, args.tres_val, tco_noise)
                         else:
                             tn_file = '{}_{}_{}'.format(args.tnoise_type, args.tres_val, tco_noise)
                             if args.shrink is not None:

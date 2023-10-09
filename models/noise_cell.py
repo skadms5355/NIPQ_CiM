@@ -80,12 +80,14 @@ class Noise_cell(nn.Module):
             assert False, 'You must choose the one of two options [rel, abs], but got {}'.format(self.res_val)
 
     def retention_init(self, kind='linear', type='percent', value=0):
-        if type == 'percent':
-            self.reten_val = value
-        elif type == 'static':
-            self.reten_val = value
-        else:
-            assert False, "You must check retention type {}".format(type)
+        self.reten_type = type
+        self.reten_val = value
+        # if type == 'percent':
+        #     self.reten_val = value
+        # elif type == 'static':
+        #     self.reten_val = value
+        # else:
+        #     assert False, "You must check retention type {}".format(type)
 
     def effective_clevel(self):
         if self.mapping_mode == 'two_com':
@@ -154,11 +156,11 @@ class Noise_cell(nn.Module):
         self.rv = [InterpolatedPDF(self.pdf[c], kind='quadratic', samples=1000, a=state[c][0].min(), b=state[c][0].max(), name='interpolated') for c in range(self.clevel)]
 
     def interp_sample(self, x):
-        graph = False
+        graph = True
         if graph:
             import matplotlib.pyplot as plt
             import seaborn as sns
-            fig, ax = plt.subplots(nrows=1, figsize=(20, 12))
+            fig, ax = plt.subplots(nrows=2, figsize=(20, 12))
             ax1 = ax[0].twinx()
             if self.retention:
                 import pandas as pd
@@ -182,18 +184,24 @@ class Noise_cell(nn.Module):
 
                 x[index] = samples
 
-                # df_temp = pd.DataFrame(columns=["Conductance"], data=samples.cpu())
-                # df= pd.concat([df, df_temp], ignore_index=True)
-                # df["retention"]=df["retention"].fillna(0)
+                df_temp = pd.DataFrame(columns=["Conductance"], data=samples.cpu())
+                df= pd.concat([df, df_temp], ignore_index=True)
+                df["retention"]=df["retention"].fillna(0)
                 if self.retention:
-                    # reten_list = [0.1, 0.2, 0.3, 0.4]
-                    # for reten in reten_list:
-                    x[index] -=  x[index]*self.reten_val
-                        # x[index] = samples - samples*reten
-                        # df_temp = pd.DataFrame(columns=["Conductance"], data=x[index].cpu())
-                        # df = pd.concat([df, df_temp], ignore_index=True)
-                        # df["retention"]=df["retention"].fillna(reten)
-                # df["state"]=df["state"].fillna(int(c))
+                    reten_list = [0.0, 0.1, 0.2, 0.3, 0.4]
+                    for reten in reten_list:
+                        if self.reten_type == 'percent':
+                            x[index] -=  x[index]*self.reten_val
+                        elif self.reten_type == 'invert_p':
+                            # x[index] = x[index] - self.co_reten*self.delta_G/(x[index]+self.Gmin)
+                            # x[index] = samples - ((samples - self.delta_G*c)/(c+1))*self.reten_val
+                            x[index] = (1/samples - (1/samples)*self.reten_val)
+                        else:
+                            assert False, 'Check retention type, {} is not in option'.format(self.reten_type)
+                        df_temp = pd.DataFrame(columns=["Conductance"], data=x[index].cpu())
+                        df = pd.concat([df, df_temp], ignore_index=True)
+                        df["retention"]=df["retention"].fillna(reten)
+                df["state"]=df["state"].fillna(int(c))
             
             # for graph
             else:
@@ -205,26 +213,27 @@ class Noise_cell(nn.Module):
             #     index = torch.where(x==c)
             #     samples = torch.tensor(self.rv[c].rvs(size=x[index].numel()), dtype=x.dtype, device=x.device)
             
-            # if graph:
-            #     sns.histplot(samples.cpu().numpy(), ax=ax[0], bins=200, alpha=0.2, element='step', fill=True, stat='density')
-            #     plt_x = np.linspace(self.min_state[c], self.max_state[c], num=1000)
-            #     sns.lineplot(x=plt_x, y=self.pdf[c](plt_x), ax=ax1)
-            #     sns.histplot(samples.cpu().numpy(), ax=ax[1], bins=200, alpha=0.2, element='step', fill=True, stat='count')
+            if graph:
+                sns.histplot(samples.cpu().numpy(), ax=ax[0], bins=200, alpha=0.2, element='step', fill=True, stat='density')
+                plt_x = np.linspace(self.min_state[c], self.max_state[c], num=1000)
+                sns.lineplot(x=plt_x, y=self.pdf[c](plt_x), ax=ax1)
+                sns.histplot(samples.cpu().numpy(), ax=ax[1], bins=200, alpha=0.2, element='step', fill=True, stat='count')
         # sns.relplot(ax=ax, data=df, kind='line', x='retention', y='Conductance', style="state", hue="state", markers=True, errorbar=("pi", 100))
         # sns.set_theme(context="poster", font_scale=1.1)
+
         if graph and self.retention:
             sns.set_style('whitegrid', {"grid.linestyle": "--"})
-            palet= sns.color_palette('husl', 5)
+            palet= sns.color_palette('Set3', 5)
             palet.insert(0, sns.color_palette('Set2')[-1])
             g = sns.catplot(data=df, x='state', y='Conductance', hue="retention", errorbar=("pi", 100), kind="violin", inner=None, aspect=2, palette=palet, linewidth=0.6)
             sns.move_legend(g, "upper center", bbox_to_anchor=(0.48, 0.97), ncol=5, frameon=False, title=None)
             step = 20 if self.co_noise <=2 else 10
             case = 2 if self.co_noise % 2 == 0 else 1
             g.tick_params(axis='both', direction='out', length=4)
-            g.set(ylim=(0, 200))
+            # g.set(ylim=(0, 200))
             g.fig.suptitle(f'[Mapping Mode: {self.mapping_mode}, Step: {step}uS, Case: {case}]', x=0.75, y=0.17, color='gray')
             # g.add_legend(title='retention', loc='upper center', ncol=4, bbox_to_anchor=(0.35, 1.07))
-            plt.savefig(os.getcwd() +"/graph/ReRAM/retention_step{}_case{}.png".format(step, case), bbox_inches='tight')
+            plt.savefig(os.getcwd() +"/graph/ReRAM/retention_step{}_case{}_reverse.png".format(step, case), bbox_inches='tight')
             import pdb; pdb.set_trace()
 
         if graph:
@@ -269,7 +278,7 @@ class Noise_cell(nn.Module):
             ax[1].set_xlim(0, 200)
             ax[1].set_xticks(ax[1].get_xticks())
             ax[1].set_xticklabels(ax[1].get_xticks(), fontsize=14)
-            plt.savefig(os.getcwd() +"/graph/ReRAM/Layer0_pdf_sample(step10).png")
+            plt.savefig(os.getcwd() +"/graph/ReRAM/Layer0_pdf_sample(step10)_shrink{}.png".format(self.shrink))
             import pdb; pdb.set_trace()
 
         return x 
