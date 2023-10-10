@@ -156,7 +156,7 @@ class Noise_cell(nn.Module):
         self.rv = [InterpolatedPDF(self.pdf[c], kind='quadratic', samples=1000, a=state[c][0].min(), b=state[c][0].max(), name='interpolated') for c in range(self.clevel)]
 
     def interp_sample(self, x):
-        graph = True
+        graph = False
         if graph:
             import matplotlib.pyplot as plt
             import seaborn as sns
@@ -184,24 +184,24 @@ class Noise_cell(nn.Module):
 
                 x[index] = samples
 
-                df_temp = pd.DataFrame(columns=["Conductance"], data=samples.cpu())
-                df= pd.concat([df, df_temp], ignore_index=True)
-                df["retention"]=df["retention"].fillna(0)
+                # df_temp = pd.DataFrame(columns=["Conductance"], data=samples.cpu())
+                # df= pd.concat([df, df_temp], ignore_index=True)
+                # df["retention"]=df["retention"].fillna(0)
                 if self.retention:
-                    reten_list = [0.0, 0.1, 0.2, 0.3, 0.4]
-                    for reten in reten_list:
-                        if self.reten_type == 'percent':
-                            x[index] -=  x[index]*self.reten_val
-                        elif self.reten_type == 'invert_p':
-                            # x[index] = x[index] - self.co_reten*self.delta_G/(x[index]+self.Gmin)
-                            # x[index] = samples - ((samples - self.delta_G*c)/(c+1))*self.reten_val
-                            x[index] = (1/samples - (1/samples)*self.reten_val)
-                        else:
-                            assert False, 'Check retention type, {} is not in option'.format(self.reten_type)
-                        df_temp = pd.DataFrame(columns=["Conductance"], data=x[index].cpu())
-                        df = pd.concat([df, df_temp], ignore_index=True)
-                        df["retention"]=df["retention"].fillna(reten)
-                df["state"]=df["state"].fillna(int(c))
+                    # reten_list = [0.0, 0.1, 0.2, 0.3, 0.4]
+                    # for reten in reten_list:
+                    if self.reten_type == 'percent':
+                        x[index] -=  x[index]*self.reten_val
+                    elif self.reten_type == 'invert_p':
+                        # x[index] = x[index] - self.co_reten*self.delta_G/(x[index]+self.Gmin)
+                        # x[index] = samples - ((samples - self.delta_G*c)/(c+1))*self.reten_val
+                        x[index] = (1/x[index] - (1/x[index])*self.reten_val)
+                    else:
+                        assert False, 'Check retention type, {} is not in option'.format(self.reten_type)
+                #         df_temp = pd.DataFrame(columns=["Conductance"], data=x[index].cpu())
+                #         df = pd.concat([df, df_temp], ignore_index=True)
+                #         df["retention"]=df["retention"].fillna(reten)
+                # df["state"]=df["state"].fillna(int(c))
             
             # for graph
             else:
