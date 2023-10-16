@@ -579,6 +579,20 @@ def main_worker(gpu, ngpus_per_node, args):
                     if m.wbits != 32:
                         m.quan_w_fn.s.requires_grad = False
                         print('range gradient fixed')
+
+    elif args.model_mode == 'psnat':
+        set_BitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, pclipmode=args.pclipmode, pbits=args.pbits)
+        for m in model.modules():
+            if type(m).__name__ in ["PsumQConv", "PsumQLinear"]:
+                if m.wbits != 32:
+                    m.quan_w_fn.s.requires_grad = False
+                    m.weight.requires_grad = False
+                    print('Weight parameters are fixed for partial-sum retraining============')
+            # if type(m).__name__ in ["Q_act"]:
+                # if m.bit != 32:
+                    # m.s.requires_grad = False
+                    # print('Activation parameters are fixed for partial-sum retraining============')
+
     # Train and val
     start_time = time.time()
     for epoch in range(start_epoch, args.epochs):
@@ -626,6 +640,11 @@ def main_worker(gpu, ngpus_per_node, args):
 
         # steo firward the scheduler.
         scheduler.step()
+
+        for m in model.modules():
+            if type(m).__name__ in ["PsumQConv", "PsumQLinear"]:
+                if m.wbits != 32:
+                    print('\n [Layer {}] alpha value {} {}'.format(m.layer_idx, m.alpha, m.alpha.requires_grad))
 
         # Logging and saving
         if valid_loader is not None:

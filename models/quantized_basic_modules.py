@@ -639,3 +639,67 @@ def fp(x, pbits, maxVal=256, minVal=0):
         return QuantizePsum.apply(x, pbits, maxVal, minVal)
     else:
         assert False, "QuantPsumFunc does not support {} pbits.".format(pbits)
+
+class QuantPsumMergeTrain(torch.autograd.Function):
+    """ Quantized partial sum functionsi & merge group with torch.autograd extension. & paramter train"""
+
+    @staticmethod
+    @torch.cuda.amp.custom_fwd
+    def forward(ctx, output, input, step, pbits=32, half_num_levels=1, 
+                    pste='clipped', weight=1, center=0, groups=1, pzero=False):
+        """Performs partial sum quantization. (in bitserial layer) & merge conv/linear split group
+
+        Args:
+            ctx: A context ctx is used to store input tensor and ste option.
+            input: An input tensor.
+            bound (int): bound of quantization range ([-bound, +bound])
+            pste (str): An option that decides the gradients in the backward pass.
+        Returns:
+            A tensor containing quantized input tensor.
+
+        """
+        # ctx.mark_dirty(output)
+        ctx.other = half_num_levels, groups
+        ctx.save_for_backward(input)
+
+        input = input / (int(step) * weight)
+        input = list(torch.chunk(input, groups, 1))
+
+        for g in range(groups):
+            input[g]=input[g].contiguous()
+
+        out_adc = pquant_group_merge_cuda.forward(output, input, pbits, 1, half_num_levels, 1, center, groups, pzero) 
+        out_adc = out_adc * (int(step) * weight)
+
+        ##return pquant_merge_cpp.forward(output, input, pbits, step, half_num_levels, weight, center, pzero) 
+        return out_adc 
+
+
+    @staticmethod
+    @torch.cuda.amp.custom_bwd
+    def backward(ctx, grad_output):
+        input_ps = ctx.saved_tensors[0]
+        levels, groups = ctx.other
+        indicate_small = (input_ps < (-levels+1)).float()
+        indicate_big = (input_ps > levels).float()
+        indicate_middle = torch.ones(indicate_small.shape, device=indicate_small.device) - indicate_small - indicate_big
+        grad_step = ((indicate_small * (-levels+1) + indicate_big * (levels) + indicate_middle * (-input_ps +input_ps.round()))*grad_output.repeat_interleave(groups, dim=1)).sum().unsqueeze(dim=0)
+        # indicate_middle = (sum(torch.chunk(indicate_middle, groups, dim=1))>0).float()
+        grad_input = indicate_middle * grad_output.repeat_interleave(groups, dim=1)
+        print(grad_step)
+
+        return grad_output, grad_input, grad_step, None, None, None, None, None, None, None
+
+def psum_quant_merge_train(output, input, step=1, pbits=32, half_num_levels=1, pste='clipped', weight=1, center=None, groups=1, pzero=False):
+    if center is None:
+        center = 0
+    if output is None:
+        if input.ndim > 2:
+            output = torch.zeros((input.shape[0], int(input.shape[1]/groups), input.shape[2], input.shape[3]), device=input.device)
+        else:
+            output = torch.zeros((input.shape[0], int(input.shape[1]/groups)), device=input.device)
+        # output = torch.zeros_like(input[0])
+
+    return QuantPsumMergeTrain.apply(output, input, step, pbits, half_num_levels, 
+                            pste, weight, center, groups, pzero)
+

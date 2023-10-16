@@ -132,37 +132,38 @@ class SplitConv(nn.Conv2d):
             output = F.conv2d(input, weight, bias=None,
                         stride=self.stride, padding=padding, dilation=self.dilation)
 
-        with torch.no_grad():
+        # with torch.no_grad():
             # split weight
-            if weight_is_split:
-                split_weight = weight.chunk(self.split_groups, dim=0)
-            else:
-                self.sweight = conv_sweight_cuda.forward(self.sweight, weight, self.group_in_offset, self.split_groups)
-                split_weight = self.sweight.chunk(self.split_groups, dim=0)
+        if weight_is_split:
+            split_weight = weight.chunk(self.split_groups, dim=0)
+        else:
+            self.sweight = conv_sweight_cuda.forward(self.sweight, weight, self.group_in_offset, self.split_groups)
+            split_weight = self.sweight.chunk(self.split_groups, dim=0)
 
-            input_channel = 0
-            out_tmp = []
-            for i in range(0, self.split_groups):
-                split_input = input.narrow(1, input_channel, self.group_in_channels)
-                out_tmp.append(F.conv2d(split_input, split_weight[i], bias=None,\
-                            stride=self.stride, padding=padding, dilation=self.dilation))
-                # prepare for the next stage
-                if i < self.split_groups - 1:
-                    input_channel += self.group_move_in_channels[i]
+        input_channel = 0
+        out_tmp = []
+        for i in range(0, self.split_groups):
+            split_input = input.narrow(1, input_channel, self.group_in_channels)
+            out_tmp.append(F.conv2d(split_input, split_weight[i], bias=None,\
+                        stride=self.stride, padding=padding, dilation=self.dilation))
+            # prepare for the next stage
+            if i < self.split_groups - 1:
+                input_channel += self.group_move_in_channels[i]
 
-            # concat output or merge group
-            if merge_group:
-                tmp = out_tmp
-                out_tmp = tmp[0]
-                for i in range(1, self.split_groups):
-                    out_tmp += tmp[i]
-            elif cat_output:
-                out_tmp = torch.cat(out_tmp, 1)
+        # concat output or merge group
+        if merge_group:
+            tmp = out_tmp
+            out_tmp = tmp[0]
+            for i in range(1, self.split_groups):
+                out_tmp += tmp[i]
+        elif cat_output:
+            out_tmp = torch.cat(out_tmp, 1)
 
-            if self.training and (not infer_only):
-                output.copy_(out_tmp)
-            else:
-                output = out_tmp
+        if self.training and (not infer_only):
+            import pdb; pdb.set_trace()
+            output.copy_(out_tmp)
+        else:
+            output = out_tmp
 
         # add bias
         if (ignore_bias is False) and (self.bias is not None):
@@ -232,10 +233,14 @@ class SplitLinear(nn.Linear):
         # operation for backward
         if self.training and (not infer_only):
             output = F.linear(input, weight, bias=None)
+            # if self.split_groups > 1 and cat_output:
+            #     output = F.linear(input, weight.repeat_interleave(self.split_groups, dim=1), bias=None)
+            #     # output = output.repeat_interleave(self.split_groups, dim=1)
+            # else:
 
         # split fc
         with torch.no_grad():
-            # split input & weight
+                # split input & weight
             split_input = input.chunk(self.split_groups, dim=-1)
             split_weight = weight.chunk(self.split_groups, dim=1)
 
@@ -261,7 +266,9 @@ class SplitLinear(nn.Linear):
         if (ignore_bias is False) and (self.bias is not None):
             output += self.bias
 
-        return output
+        import pdb; pdb.set_trace()
+
+        return out_tmp
 
     def forward(self, input):
         return self._split_forward(input, self.weight, cat_output=True)
