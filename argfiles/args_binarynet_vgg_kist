@@ -39,8 +39,8 @@
 --psigma        3
 
 # noise option
---is_noise      y
---nipq_noise    hwnoise
+--is_noise      n
+--nipq_noise    qnoise
 --co_noise      100
 --noise_type    kist
 --res_val       abs

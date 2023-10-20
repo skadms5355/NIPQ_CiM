@@ -14,14 +14,14 @@
 --model_mode    binary_split
 --gpu-id        0
 
---binary-mode   unsigned
+--binary-mode   signed
 --ste           vanilla
 --abits         1
 --wbits         1
 --weight-clip	1
 --weight-scale	False
 
---pretrained    ./checkpoints/cifar10/binary_split/binary_split_vgg9/a:1_w:1/2T2R/128_c:4/2023-Jul-19-01-46-30/model_best.pth.tar
+--pretrained    ./checkpoints/cifar10/binary_split/binary_split_vgg9/a:1_w:1/2T2R/128_c:4/2023-Aug-04-16-43-33/model_best.pth.tar
 
 
 --psum_comp     y
@@ -40,8 +40,8 @@
 --psigma        3
 
 # noise option
---is_noise      y
---nipq_noise    hwnoise
+--is_noise      n
+--nipq_noise    qnoise
 --co_noise      100
 --noise_type    kist
 --res_val       abs
