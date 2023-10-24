@@ -232,11 +232,11 @@ class SplitLinear(nn.Linear):
 
         # operation for backward
         if self.training and (not infer_only):
-            output = F.linear(input, weight, bias=None)
-            # if self.split_groups > 1 and cat_output:
-            #     output = F.linear(input, weight.repeat_interleave(self.split_groups, dim=1), bias=None)
-            #     # output = output.repeat_interleave(self.split_groups, dim=1)
-            # else:
+            if self.split_groups > 1 and cat_output:
+                output = F.linear(input, weight.repeat_interleave(self.split_groups, dim=1), bias=None)
+                # output = output.repeat_interleave(self.split_groups, dim=1)
+            else:
+                output = F.linear(input, weight, bias=None)
 
         # split fc
         with torch.no_grad():
@@ -265,8 +265,6 @@ class SplitLinear(nn.Linear):
         # add bias
         if (ignore_bias is False) and (self.bias is not None):
             output += self.bias
-
-        import pdb; pdb.set_trace()
 
         return out_tmp
 

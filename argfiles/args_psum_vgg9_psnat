@@ -36,12 +36,12 @@
 --wbit-serial   y
 
 --psum_comp     y
---psum_mode     retrain
+--psum_mode     sigma
 --pbits         3
 --pclipmode     Layer
 # quant range [max or sigma] in sigma mode
-# --pclip         sigma
-# --psigma        3
+--pclip         sigma
+--psigma        3
 
 # for noise
 --is_noise      n

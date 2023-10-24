@@ -662,22 +662,24 @@ class QuantPsumMergeTrain(torch.autograd.Function):
         ctx.other = half_num_levels, groups
         ctx.save_for_backward(input)
 
-        input = input / (int(step) * weight)
+        input = input / (step * weight)
         input = list(torch.chunk(input, groups, 1))
 
         for g in range(groups):
             input[g]=input[g].contiguous()
 
         out_adc = pquant_group_merge_cuda.forward(output, input, pbits, 1, half_num_levels, 1, center, groups, pzero) 
-        out_adc = out_adc * (int(step) * weight)
+        out_adc = out_adc * (step * weight)
 
         ##return pquant_merge_cpp.forward(output, input, pbits, step, half_num_levels, weight, center, pzero) 
+        import pdb; pdb.set_trace()
         return out_adc 
 
 
     @staticmethod
     @torch.cuda.amp.custom_bwd
     def backward(ctx, grad_output):
+        import pdb; pdb.set_trace()
         input_ps = ctx.saved_tensors[0]
         levels, groups = ctx.other
         indicate_small = (input_ps < (-levels+1)).float()
@@ -687,6 +689,7 @@ class QuantPsumMergeTrain(torch.autograd.Function):
         # indicate_middle = (sum(torch.chunk(indicate_middle, groups, dim=1))>0).float()
         grad_input = indicate_middle * grad_output.repeat_interleave(groups, dim=1)
         print(grad_step)
+        import pdb; pdb.set_trace()
 
         return grad_output, grad_input, grad_step, None, None, None, None, None, None, None
 

@@ -428,7 +428,7 @@ def main_worker(gpu, ngpus_per_node, args):
                                         noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink)
             elif (args.model_mode == 'quant') or (args.model_mode == 'hn_quant'):
                 set_BitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, log_file=args.log_file,\
-                    pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma)
+                    model_mode=args.model_mode, pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma)
                 if args.is_noise:
                     set_Noise_injection(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
                                         noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink, retention=args.retention, reten_value=args.reten_val, reten_type=args.reten_type)
@@ -581,13 +581,33 @@ def main_worker(gpu, ngpus_per_node, args):
                         print('range gradient fixed')
 
     elif args.model_mode == 'psnat':
-        set_BitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, pclipmode=args.pclipmode, pbits=args.pbits)
+        if args.psum_mode == 'sigma':
+            checkpoint = os.path.join(str(pathlib.Path().resolve()), ((args.checkpoint.replace('psnat', 'quant')).replace('{}'.format(args.arch), '{}/eval'.format(args.arch))))
+            set_BitSerial_log(model, abit_serial=args.abit_serial, checkpoint=checkpoint, model_mode=args.model_mode, \
+                            pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma)
+        else:
+            set_BitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, pclipmode=args.pclipmode, model_mode=args.model_mode, pbits=args.pbits)
         for m in model.modules():
-            if type(m).__name__ in ["PsumQConv", "PsumQLinear"]:
-                if m.wbits != 32:
+            if args.psum_mode == 'retrain':
+                if type(m).__name__ in ["QConv", "QLinear"]:
                     m.quan_w_fn.s.requires_grad = False
                     m.weight.requires_grad = False
-                    print('Weight parameters are fixed for partial-sum retraining============')
+                    print('Weight parameters of First & Last Layer are fixed for partial-sum retraining============')
+                
+                if type(m).__name__ in ["PsumQConv", "PsumQLinear"]:
+                    if m.wbits != 32:
+                        m.quan_w_fn.s.requires_grad = False
+                        m.weight.requires_grad = False
+                        print('Weight parameters are fixed for partial-sum retraining============')
+
+            elif args.psum_mode =='sigma':
+                if type(m).__name__ in ["PsumQConv", "PsumQLinear"]:
+                    if m.wbits != 32:
+                        m.quan_w_fn.s.requires_grad = False
+                        print('Weight parameters are fixed for partial-sum ============')
+            else:
+                assert False, "Clipping range of {} mode is not supported".format(args.psum_mode)
+
             # if type(m).__name__ in ["Q_act"]:
                 # if m.bit != 32:
                     # m.s.requires_grad = False
@@ -641,10 +661,11 @@ def main_worker(gpu, ngpus_per_node, args):
         # steo firward the scheduler.
         scheduler.step()
 
-        for m in model.modules():
-            if type(m).__name__ in ["PsumQConv", "PsumQLinear"]:
-                if m.wbits != 32:
-                    print('\n [Layer {}] alpha value {} {}'.format(m.layer_idx, m.alpha, m.alpha.requires_grad))
+        if args.psum_mode == 'retrain':
+            for m in model.modules():
+                if type(m).__name__ in ["PsumQConv", "PsumQLinear"]:
+                    if m.wbits != 32:
+                        print('\n [Layer {}] alpha value {} {}'.format(m.layer_idx, m.alpha, m.alpha.requires_grad))
 
         # Logging and saving
         if valid_loader is not None:

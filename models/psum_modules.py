@@ -115,6 +115,7 @@ class PsumQConv(SplitConv):
         self.psigma = 3
         self.weight_chunk = None
         # for retrain version
+        self.model_mode = None
         self.alpha = nn.Parameter(torch.Tensor(1)[0])
         self.register_buffer('init_state', torch.zeros(1))
 
@@ -131,7 +132,7 @@ class PsumQConv(SplitConv):
         self.checkpoint = None
         self.info_print = True
 
-    def setting_pquant_func(self, pbits=None, center=[], pbound=None, pstep=None):
+    def setting_pquant_func(self, pbits=None, center=[], pbound=None):
         # setting options for pquant func
         if pbits is not None:
             self.pbits = pbits
@@ -139,8 +140,6 @@ class PsumQConv(SplitConv):
             self.pbound = pbound
             # get pquant step size
             self.pstep = 2 * self.pbound / ((2.**self.pbits) - 1)
-        if (pstep is not None) and (self.pstep is None):
-            self.pstep = pstep
 
         if (self.mapping_mode == 'two_com') or (self.mapping_mode == 'ref_d') or (self.mapping_mode == 'PN'):
             self.pzero = False
@@ -648,7 +647,7 @@ class PsumQConv(SplitConv):
 
                         out_mag, multi_scale = self._output_magnitude(abit, wbit, wsplit_num)
                         out_adc = psum_quant_merge(out_adc, out_tmp,
-                                                    pbits=self.pbits, step=self.alpha, 
+                                                    pbits=self.pbits, step=self.pstep, 
                                                     half_num_levels=self.phalf_num_levels, 
                                                     pbound=self.pbound, center=self.center, weight=out_mag/multi_scale,
                                                     groups=self.split_groups, pzero=self.pzero)
@@ -748,6 +747,17 @@ class PsumQConv(SplitConv):
             sinput = input / a_scale
             abits = 1
 
+        if self.psum_mode == 'sigma':
+            minVal, maxVal, midVal = self._ADC_clamp_value()
+            self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
+        elif self.psum_mode == 'retrain':
+            if self.training and self.init_state == 0:
+                # self.init_form(sum(out_tmp)/self.split_groups, self.phalf_num_levels)
+                self.init_form(out_tmp, self.phalf_num_levels)
+                self.init_state.fill_(1)
+                self.pstep = self.alpha
+        else:
+            assert False, 'This script does not support {self.psum_mode}'
         # if self.training and self.init_state == 0:
         #     self.init_form()
         #     self.init_state.fill_(1)
@@ -772,7 +782,6 @@ class PsumQConv(SplitConv):
                 ## make the same weight size as qweight
                 if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
                     bweight = weight_chunk[0] - weight_chunk[1]
-                    qweight = weight_chunk_no[0] - weight_chunk_no[1]
                     wsplit_num = 1
 
                 self.sweight = conv_sweight_cuda.forward(self.sweight, bweight, self.group_in_offset, self.split_groups)
@@ -820,14 +829,10 @@ class PsumQConv(SplitConv):
                 out_tmp = self._split_forward(input_s, weight_s, padded=True, ignore_bias=True, cat_output=True,
                                         weight_is_split=True, infer_only=True)
 
-                if self.training and self.init_state == 0:
-                    # self.init_form(sum(out_tmp)/self.split_groups, self.phalf_num_levels)
-                    self.init_form(out_tmp, self.phalf_num_levels)
-                    self.init_state.fill_(1)
 
                 out_mag, multi_scale = self._output_magnitude(abit, wbit, wsplit_num)
                 out_adc =  psum_quant_merge_train(out_adc, out_tmp,
-                                                pbits=self.pbits, step=self.alpha, 
+                                                pbits=self.pbits, step=self.pstep, 
                                                 half_num_levels=self.phalf_num_levels, 
                                                 center=self.center, weight=out_mag/multi_scale,
                                                 groups=self.split_groups, pzero=self.pzero)
@@ -865,7 +870,7 @@ class PsumQConv(SplitConv):
             return F.conv2d(input, self.weight, bias=self.bias,
             stride=self.stride, padding=self.padding, dilation=self.dilation, groups=self.groups)
 
-        if self.psum_mode == 'retrain':
+        if self.model_mode == 'psnat':
             return self._bitserial_retrain_forward(input)
         else:
             if self.concat and self.wbit_serial:
@@ -892,7 +897,7 @@ class PsumQConv(SplitConv):
             s += ', bias=False'
         s += ', wbits={wbits}, wbit_serial={wbit_serial}'
         s += ', split_groups={split_groups}, mapping_mode={mapping_mode}, cbits={cbits}'
-        s += ', psum_mode={psum_mode}, pbits={pbits}, pbound={pbound}'
+        s += ', model_mode={model_mode}, psum_mode={psum_mode}, pbits={pbits}, pbound={pbound}'
         s += ', noise={is_noise}'
         s += ', bitserial_log={bitserial_log}, layer_idx={layer_idx}'            
         return s.format(**self.__dict__)
@@ -936,6 +941,7 @@ class PsumQLinear(SplitLinear):
         self.psigma = 3
         self.weight_chunk = None
         # for retrain version
+        self.model_mode = None
         self.alpha = nn.Parameter(torch.Tensor(1)[0])
         self.register_buffer('init_state', torch.zeros(1))
 
@@ -949,7 +955,7 @@ class PsumQLinear(SplitLinear):
         self.checkpoint = None
         self.info_print = True
     
-    def setting_pquant_func(self, pbits=None, center=[], pbound=None, pstep=None):
+    def setting_pquant_func(self, pbits=None, center=[], pbound=None):
         # setting options for pquant func
         if pbits is not None:
             self.pbits = pbits
@@ -957,8 +963,6 @@ class PsumQLinear(SplitLinear):
             self.pbound = pbound
             # get pquant step size
             self.pstep = 2 * self.pbound / ((2.**self.pbits) - 1)
-        if (pstep is not None) and (self.pstep is None):
-            self.pstep = pstep
 
         if (self.mapping_mode == 'two_com') or (self.mapping_mode == 'ref_d') or (self.mapping_mode == 'PN'):
             self.pzero = False
@@ -1435,14 +1439,18 @@ class PsumQLinear(SplitLinear):
 
         psum_scale = w_scale * a_scale
 
-        # if self.training and self.init_state == 0:
-        #     self.init_form()
-        #     self.init_state.fill_(1)
-
-        # self.setting_pquant_func(pbits=self.pbits, pstep=self.alpha)
-
+        if self.psum_mode == 'sigma':
+            minVal, maxVal, midVal = self._ADC_clamp_value()
+            self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
+        elif self.psum_mode == 'retrain':
+            if self.training and self.init_state == 0:
+                # self.init_form(sum(out_tmp)/self.split_groups, self.phalf_num_levels)
+                self.init_form(out_tmp, self.phalf_num_levels)
+                self.init_state.fill_(1)
+                self.pstep = self.alpha
+        else:
+            assert False, 'This script does not support {self.psum_mode}'
         ### in-mem computation mimic (split conv & psum quant/merge)
-        import pdb; pdb.set_trace()
         input_chunk = torch.chunk(sinput, abits, dim=1)
 
         ### Cell noise injection + Cell conductance value change
@@ -1479,22 +1487,16 @@ class PsumQLinear(SplitLinear):
         out_adc = None
         for abit, input_s in enumerate(input_chunk):
             for wbit, weight_s in enumerate(weight_chunk):
-                out_tmp = self._split_forward(input_s, weight_s, ignore_bias=True, cat_output=True, infer_only=True)
+                out_tmp = self._split_forward(input_s, weight_s, ignore_bias=True, cat_output=True, infer_only=False)
                 # out_tmp = F.linear(input_s[:,nIF_cnt:nIF_cnt+self.split_nIF[idx]], weight_s, bias=None)
-                
-                if self.training and self.init_state == 0:
-                    self.init_form(out_tmp, self.phalf_num_levels)
-                    # self.init_form(sum(out_tmp)/self.split_groups, self.phalf_num_levels)
-                    self.init_state.fill_(1)
 
                 out_mag, multi_scale = self._output_magnitude(abit, wbit, wsplit_num)
 
                 out_adc = psum_quant_merge_train(out_adc, out_tmp,
-                                                pbits=self.pbits, step=self.alpha, 
+                                                pbits=self.pbits, step=self.pstep, 
                                                 half_num_levels=self.phalf_num_levels, 
                                                 center=self.center, weight=out_mag/multi_scale,
                                                 groups=self.split_groups, pzero=self.pzero)
-                import pdb; pdb.set_trace()
 
                 if wbit == 0:
                     out_wsum = out_adc
@@ -1529,7 +1531,7 @@ class PsumQLinear(SplitLinear):
         if self.wbits == 32:
             return F.linear(input, self.weight, bias=self.bias)
         
-        if self.psum_mode =='retrain':
+        if self.model_mode =='psnat':
             return self._bitserial_retrain_forward(input)
         else:
             if self.bitserial_log:
@@ -1540,10 +1542,10 @@ class PsumQLinear(SplitLinear):
     def extra_repr(self):
         """Provides layer information, including wbits, when print(model) is called."""
         s =  'in_features={}, out_features={}, bias={}, wbits={}, wbit_serial={}, split_groups={}, '\
-            'mapping_mode={}, cbits={}, psum_mode={}, pbits={}, pbound={}, '\
+            'mapping_mode={}, cbits={}, model_mode={}, psum_mode={}, pbits={}, pbound={}, '\
             'noise={}, bitserial_log={}, layer_idx={}'\
             .format(self.in_features, self.out_features, self.bias is not None, self.wbits, self.wbit_serial,
-            self.split_groups, self.mapping_mode, self.cbits, self.psum_mode, self.pbits, self.pbound, 
+            self.split_groups, self.mapping_mode, self.cbits, self.model_mode, self.psum_mode, self.pbits, self.pbound, 
             self.is_noise, self.bitserial_log, self.layer_idx)
         return s
 
@@ -1565,7 +1567,7 @@ def get_statistics_from_hist(df_hist):
 
     return [mean_val, std_val, min_val, max_val] 
 
-def set_BitSerial_log(model, pbits, pclipmode, abit_serial=None, pclip=None, psigma=None, checkpoint=None, pquant_idx=None, pbound=None, center=None, log_file=False):
+def set_BitSerial_log(model, pbits, pclipmode, model_mode, abit_serial=None, pclip=None, psigma=None, checkpoint=None, pquant_idx=None, pbound=None, center=None, log_file=False):
     print("start setting Bitserial layers log bitplane info")
     counter = 0
     for m in model.modules():
@@ -1574,6 +1576,7 @@ def set_BitSerial_log(model, pbits, pclipmode, abit_serial=None, pclip=None, psi
             if (pquant_idx is None) or (counter == pquant_idx):
                 m.bitserial_log = log_file
                 m.checkpoint = checkpoint
+                m.model_mode = model_mode
                 m.pclipmode = pclipmode
                 m.abit_serial = abit_serial
                 m.setting_pquant_func(pbits, center, pbound)
