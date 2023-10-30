@@ -646,7 +646,7 @@ class QuantPsumMergeTrain(torch.autograd.Function):
     @staticmethod
     @torch.cuda.amp.custom_fwd
     def forward(ctx, output, input, step, pbits=32, half_num_levels=1, 
-                    pste='clipped', weight=1, center=0, groups=1, pzero=False):
+                    pste='clipped', weight=1, center=0, groups=1, pzero=False, step_train=False):
         """Performs partial sum quantization. (in bitserial layer) & merge conv/linear split group
 
         Args:
@@ -659,7 +659,7 @@ class QuantPsumMergeTrain(torch.autograd.Function):
 
         """
         # ctx.mark_dirty(output)
-        ctx.other = half_num_levels, groups
+        ctx.other = half_num_levels, groups, step_train
         ctx.save_for_backward(input)
 
         input = input / (step * weight)
@@ -672,24 +672,28 @@ class QuantPsumMergeTrain(torch.autograd.Function):
         out_adc = out_adc * (step * weight)
 
         ##return pquant_merge_cpp.forward(output, input, pbits, step, half_num_levels, weight, center, pzero) 
-        import pdb; pdb.set_trace()
         return out_adc 
 
 
     @staticmethod
     @torch.cuda.amp.custom_bwd
     def backward(ctx, grad_output):
-        import pdb; pdb.set_trace()
         input_ps = ctx.saved_tensors[0]
-        levels, groups = ctx.other
+        levels, groups, step_train = ctx.other
         indicate_small = (input_ps < (-levels+1)).float()
         indicate_big = (input_ps > levels).float()
         indicate_middle = torch.ones(indicate_small.shape, device=indicate_small.device) - indicate_small - indicate_big
-        grad_step = ((indicate_small * (-levels+1) + indicate_big * (levels) + indicate_middle * (-input_ps +input_ps.round()))*grad_output.repeat_interleave(groups, dim=1)).sum().unsqueeze(dim=0)
+        if step_train:
+            grad_step = ((indicate_small * (-levels+1) + indicate_big * (levels) + indicate_middle * (-input_ps +input_ps.round()))*grad_output.repeat_interleave(groups, dim=1)).sum().unsqueeze(dim=0)
+        else:
+            grad_step = None
         # indicate_middle = (sum(torch.chunk(indicate_middle, groups, dim=1))>0).float()
-        grad_input = indicate_middle * grad_output.repeat_interleave(groups, dim=1)
-        print(grad_step)
-        import pdb; pdb.set_trace()
+        if input_ps.ndim > 2:
+            grad_input = indicate_middle * grad_output.repeat(1, groups, 1, 1)
+        else:
+            grad_input = indicate_middle * grad_output.repeat(1, groups)
+        # print('output', grad_output.size())
+        # print(grad_input.size())
 
         return grad_output, grad_input, grad_step, None, None, None, None, None, None, None
 

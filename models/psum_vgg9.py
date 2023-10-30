@@ -5,8 +5,9 @@ from .nipq_hwnoise_psum_module import PsumQuantOps as PQ
 from .quantized_lsq_modules import *
 from .quantized_basic_modules import *
 from .psum_modules import *
+from .psum_train_modules import *
 
-__all__ = ['psum_lsq_vgg9', 'psum_nipq_vgg9']
+__all__ = ['psum_lsq_vgg9', 'psum_lsq_vgg9_train', 'psum_nipq_vgg9']
 
 class PNIPQ_vgg9(nn.Module):
     def __init__(self, **kwargs):
@@ -53,6 +54,84 @@ class PNIPQ_vgg9(nn.Module):
             # Q.Linear(1024, kwargs['num_classes'], bias=True, act_func=Q.ReLU),
             nn.Linear(1024, kwargs['num_classes'], bias=True),
             nn.BatchNorm1d(kwargs['num_classes']),   
+        )
+
+    def forward(self, x):
+        x = self.features(x)
+        x = x.view(x.size(0), -1)
+        x = self.classifier(x)
+        return x
+    
+class TPLSQ_vgg9(nn.Module):
+    def __init__(self, **kwargs):
+        super(TPLSQ_vgg9, self).__init__()
+
+        self.features = nn.Sequential(
+            # nn.Conv2d(3, 128, kernel_size=3, stride=1, padding=1, bias=False),
+            QConv(3, 128, wbits=kwargs['wbits'] if kwargs['FL_quant'] else 32, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.BatchNorm2d(128),
+            add_act(abits=kwargs['abits'], bitserial=kwargs['abit_serial']),
+
+            TPsumQConv(128, 128, wbits=kwargs['wbits'], kernel_size=3, stride=1, padding=1, bias=False,
+                    arraySize=kwargs['arraySize'], wbit_serial=kwargs['wbit_serial'], mapping_mode=kwargs['mapping_mode'], 
+                    psum_mode=kwargs['psum_mode'], cbits=kwargs['cbits'], 
+                    is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type']),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.BatchNorm2d(128),
+            add_act(abits=kwargs['abits'], bitserial=kwargs['abit_serial']),
+
+            TPsumQConv(128, 256, wbits=kwargs['wbits'], kernel_size=3, stride=1, padding=1, bias=False,
+                    arraySize=kwargs['arraySize'], wbit_serial=kwargs['wbit_serial'], mapping_mode=kwargs['mapping_mode'], 
+                    psum_mode=kwargs['psum_mode'], cbits=kwargs['cbits'], 
+                    is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type']),
+            nn.BatchNorm2d(256),
+            add_act(abits=kwargs['abits'], bitserial=kwargs['abit_serial']),
+
+            TPsumQConv(256, 256, wbits=kwargs['wbits'], kernel_size=3, stride=1, padding=1, bias=False,
+                    arraySize=kwargs['arraySize'], wbit_serial=kwargs['wbit_serial'], mapping_mode=kwargs['mapping_mode'], 
+                    psum_mode=kwargs['psum_mode'], cbits=kwargs['cbits'], 
+                    is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type']),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.BatchNorm2d(256),
+            add_act(abits=kwargs['abits'], bitserial=kwargs['abit_serial']),
+
+            TPsumQConv(256, 512, wbits=kwargs['wbits'], kernel_size=3, stride=1, padding=1, bias=False,
+                    arraySize=kwargs['arraySize'], wbit_serial=kwargs['wbit_serial'], mapping_mode=kwargs['mapping_mode'], 
+                    psum_mode=kwargs['psum_mode'], cbits=kwargs['cbits'], 
+                    is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type']),
+            nn.BatchNorm2d(512),
+            add_act(abits=kwargs['abits'], bitserial=kwargs['abit_serial']),
+
+            TPsumQConv(512, 512, wbits=kwargs['wbits'], kernel_size=3, stride=1, padding=1, bias=False,
+                    arraySize=kwargs['arraySize'], wbit_serial=kwargs['wbit_serial'], mapping_mode=kwargs['mapping_mode'], 
+                    psum_mode=kwargs['psum_mode'], cbits=kwargs['cbits'], 
+                    is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type']),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.BatchNorm2d(512),
+            add_act(abits=kwargs['abits'], bitserial=kwargs['abit_serial']),    
+        )
+        self.classifier = nn.Sequential(
+            TPsumQLinear(512 * 4 * 4, 1024, wbits=kwargs['wbits'], arraySize=kwargs['arraySize'], 
+                        wbit_serial=kwargs['wbit_serial'], mapping_mode=kwargs['mapping_mode'], 
+                        psum_mode=kwargs['psum_mode'], cbits=kwargs['cbits'], 
+                        is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type']),
+            nn.BatchNorm1d(1024),
+            add_act(abits=kwargs['abits'], bitserial=kwargs['abit_serial']), 
+
+            TPsumQLinear(1024, 1024, wbits=kwargs['wbits'], arraySize=kwargs['arraySize'], 
+                        wbit_serial=kwargs['wbit_serial'], mapping_mode=kwargs['mapping_mode'], 
+                        psum_mode=kwargs['psum_mode'], cbits=kwargs['cbits'], 
+                        is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type']),
+            nn.BatchNorm1d(1024),
+            add_act(abits=kwargs['abits'] if kwargs['FL_quant'] else 32), 
+
+            nn.Dropout(kwargs['drop']),
+            TPsumQLinear(1024, kwargs['num_classes'], wbits=kwargs['wbits'] if kwargs['FL_quant'] else 32, arraySize=kwargs['arraySize'], 
+                        wbit_serial=kwargs['wbit_serial'], mapping_mode=kwargs['mapping_mode'], 
+                        psum_mode=kwargs['psum_mode'], cbits=kwargs['cbits'], 
+                        is_noise=kwargs['is_noise'], noise_type=kwargs['noise_type'], bias=True),
+            # nn.Linear(1024, kwargs['num_classes'], bias=True),
+            nn.BatchNorm1d(kwargs['num_classes']),
         )
 
     def forward(self, x):
@@ -138,6 +217,11 @@ class PLSQ_vgg9(nn.Module):
         x = x.view(x.size(0), -1)
         x = self.classifier(x)
         return x
+
+def psum_lsq_vgg9_train(**kwargs):
+    assert kwargs['dataset'] == 'cifar10', f"binarynet vgg model only supports CIFAR-10 dataset."
+
+    return TPLSQ_vgg9(**kwargs)
 
 def psum_lsq_vgg9(**kwargs):
     assert kwargs['dataset'] == 'cifar10', f"binarynet vgg model only supports CIFAR-10 dataset."

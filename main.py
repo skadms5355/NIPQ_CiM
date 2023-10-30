@@ -30,6 +30,7 @@ from utils import data_loader, initialize, logging, misc, tensorboard, eval
 from utils.schedule_train import set_optimizer, set_scheduler
 
 from models.psum_modules import set_BitSerial_log, set_Noise_injection, unset_BitSerial_log
+from models.psum_train_modules import set_TBitSerial_log, set_TNoise_injection, unset_TBitSerial_log
 from models.nipq_quantization_module import bops_cal
 
 warnings.simplefilter("ignore", category=FutureWarning)
@@ -265,7 +266,7 @@ def main_worker(gpu, ngpus_per_node, args):
 
     # define loss function (criterion) and optimizer
     criterion = torch.nn.CrossEntropyLoss()
-
+    
     # We want to make sure that we apply weight decay only to weights.
     all_parameters = model.parameters()
     weight_parameters = []
@@ -392,6 +393,7 @@ def main_worker(gpu, ngpus_per_node, args):
             f.write(str(model) + "\n")
             for key, value in args_dict.items():
                 f.write(f"{key:<20}: {value}\n")
+
 
     title = args.dataset + '-' + args.arch
     logger = logging.Logger(os.path.join(args.checkpoint, 'log.txt'), title=title)
@@ -582,11 +584,12 @@ def main_worker(gpu, ngpus_per_node, args):
 
     elif args.model_mode == 'psnat':
         if args.psum_mode == 'sigma':
-            checkpoint = os.path.join(str(pathlib.Path().resolve()), ((args.checkpoint.replace('psnat', 'quant')).replace('{}'.format(args.arch), '{}/eval'.format(args.arch))))
-            set_BitSerial_log(model, abit_serial=args.abit_serial, checkpoint=checkpoint, model_mode=args.model_mode, \
+            arch = '_'.join(args.arch.split('_')[:-1])
+            checkpoint = os.path.join(str(pathlib.Path().resolve()), ((args.checkpoint.replace('psnat', 'quant')).replace('{}'.format(args.arch), '{}/eval'.format(arch))))
+            set_TBitSerial_log(model, abit_serial=args.abit_serial, checkpoint=checkpoint, model_mode=args.model_mode, \
                             pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma)
         else:
-            set_BitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, pclipmode=args.pclipmode, model_mode=args.model_mode, pbits=args.pbits)
+            set_TBitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, pclipmode=args.pclipmode, model_mode=args.model_mode, pbits=args.pbits)
         for m in model.modules():
             if args.psum_mode == 'retrain':
                 if type(m).__name__ in ["QConv", "QLinear"]:
@@ -594,14 +597,14 @@ def main_worker(gpu, ngpus_per_node, args):
                     m.weight.requires_grad = False
                     print('Weight parameters of First & Last Layer are fixed for partial-sum retraining============')
                 
-                if type(m).__name__ in ["PsumQConv", "PsumQLinear"]:
+                if type(m).__name__ in ["TPsumQConv", "TPsumQLinear"]:
                     if m.wbits != 32:
                         m.quan_w_fn.s.requires_grad = False
                         m.weight.requires_grad = False
                         print('Weight parameters are fixed for partial-sum retraining============')
 
             elif args.psum_mode =='sigma':
-                if type(m).__name__ in ["PsumQConv", "PsumQLinear"]:
+                if type(m).__name__ in ["TPsumQConv", "TPsumQLinear"]:
                     if m.wbits != 32:
                         m.quan_w_fn.s.requires_grad = False
                         print('Weight parameters are fixed for partial-sum ============')
@@ -612,6 +615,15 @@ def main_worker(gpu, ngpus_per_node, args):
                 # if m.bit != 32:
                     # m.s.requires_grad = False
                     # print('Activation parameters are fixed for partial-sum retraining============')
+
+    #graph
+    #dot -Tpng graph_detail.dot -o graph_detail.png
+    # img = torch.Tensor(1, 3, 224, 224) if args.dataset =='imagenet' else torch.Tensor(2, 3, 32, 32) 
+    # from torchviz import make_dot
+    # dot = make_dot(model(img), params=dict(model.named_parameters()), show_attrs=True, show_saved=True)
+    # with open("graph_detail.dot", "w") as f:
+    #     f.write(dot.source)
+    # import pdb; pdb.set_trace()
 
     # Train and val
     start_time = time.time()
@@ -663,9 +675,18 @@ def main_worker(gpu, ngpus_per_node, args):
 
         if args.psum_mode == 'retrain':
             for m in model.modules():
-                if type(m).__name__ in ["PsumQConv", "PsumQLinear"]:
+                if type(m).__name__ in ["TPsumQConv", "TPsumQLinear"]:
                     if m.wbits != 32:
                         print('\n [Layer {}] alpha value {} {}'.format(m.layer_idx, m.alpha, m.alpha.requires_grad))
+        
+        for m in model.modules():
+            # if type(m).__name__ in ["QConv"]:
+            #     print("QConv {} \n weight: {}".format(m.weight.requires_grad, m.weight[0][0]))
+            if type(m).__name__ in ["TPsumQConv"]:
+                print("PsumQuant {} {} \n weight: {}".format(m.layer_idx, m.weight.grad, m.weight[0][0]))
+                import pdb; pdb.set_trace()
+            if type(m).__name__ in ["TPsumQLinear"]:
+                print("PsumLayer {} {} \n weight: {}".format(m.layer_idx, m.weight.grad, m.weight[0][0:5]))
 
         # Logging and saving
         if valid_loader is not None:

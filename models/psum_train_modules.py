@@ -12,8 +12,6 @@ from .quantized_lsq_modules import *
 from .quantized_basic_modules import psum_quant_merge
 from .bitserial_modules import *
 from .split_modules import *
-# custom kernel
-import conv_sweight_cuda
 
 # split convolution across input channel
 def split_conv(weight, nWL):
@@ -46,14 +44,22 @@ def calculate_groups(arraySize, fan_in):
 
     return groups
 
-class PsumQConv(SplitConv):
+def calculate_groups_channels(arraySize, channels, kernel):
+    if arraySize > 0:
+        # groups
+        groups = int(np.ceil(channels / np.floor(arraySize / (kernel**2))))
+    else:
+        groups = 1
+
+    return groups
+
+class TPsumQConv(SplitConv):
     """
         Quant(LSQ)Conv + Psum quantization
     """
     def __init__(self, in_channels, out_channels, wbits=32, kernel_size=3, stride=1, padding=0, groups=1, symmetric=False, bias=False, padding_mode='zeros', 
-                arraySize=128, wbit_serial=False, mapping_mode='none', psum_mode='sigma', cbits=None, short_path=None, concat=False, 
-                is_noise=False, noise_type=None):
-        super(PsumQConv, self).__init__(in_channels, out_channels, kernel_size,
+                arraySize=128, wbit_serial=False, mapping_mode='none', psum_mode='sigma', cbits=None, is_noise=False, noise_type=None):
+        super(TPsumQConv, self).__init__(in_channels, out_channels, kernel_size,
                                        stride=stride, padding=padding, groups=groups, bias=bias)
         # for Qconv
         self.wbits = wbits
@@ -76,25 +82,15 @@ class PsumQConv(SplitConv):
 
         # for split
         # self.split_nIC = split_conv(self.weight, arraySize)
-        self.split_groups = calculate_groups(arraySize, self.fan_in)
-        if self.fan_in % self.split_groups != 0:
-            raise ValueError('fan_in must be divisible by groups')
-        self.group_fan_in = int(self.fan_in / self.split_groups)
-        self.group_in_channels = int(np.ceil(in_channels / self.split_groups))
-        residual = self.group_fan_in % self.kSpatial
-        if residual != 0:
-            if self.kSpatial % residual != 0:
-                self.group_in_channels += 1
-        ## log move group for masking & group convolution
-        self.group_move_in_channels = torch.zeros(self.split_groups-1, dtype=torch.int)
-        group_in_offset = torch.zeros(self.split_groups, dtype=torch.int)
-        self.register_buffer('group_in_offset', group_in_offset)
-        ## get group conv info
-        self._group_move_offset()
-        
+        # channel-split 
+        self.split_groups = calculate_groups_channels(arraySize, self.in_channels, self.kernel_size[0])
+        self.nIC_list = split_conv(self.weight, arraySize)
+        self.group_in_channels = self.nIC_list[0]
+        self.group_move_in_channels = self.nIC_list
+
         # sweight
-        sweight = torch.Tensor(self.out_channels*self.split_groups, self.group_in_channels, kernel_size, kernel_size)
-        self.register_buffer('sweight', sweight)
+        # sweight = torch.Tensor(self.out_channels*self.split_groups, self.group_in_channels, kernel_size, kernel_size)
+        # self.register_buffer('sweight', sweight)
 
         # for psum quantization
         self.mapping_mode = mapping_mode # Array mapping method [none, 2T2R, two_com, ref_d]]
@@ -103,8 +99,6 @@ class PsumQConv(SplitConv):
         self.psum_mode = psum_mode
         self.pclipmode = 'Layer'
         self.pbits = 32
-        self.concat = concat
-        self.short_path = short_path
         # for scan version
         self.pstep = None
         self.pzero = None  # contain zero value (True)
@@ -114,6 +108,10 @@ class PsumQConv(SplitConv):
         self.pclip = 'sigma'
         self.psigma = 3
         self.weight_chunk = None
+        # for retrain version
+        self.model_mode = None
+        self.alpha = nn.Parameter(torch.Tensor(1)[0])
+        self.register_buffer('init_state', torch.zeros(1))
 
         # for noise option
         self.is_noise = is_noise
@@ -162,27 +160,6 @@ class PsumQConv(SplitConv):
 
         self.setting_pquant_func(pbits=pbits, center=center, pbound=pbound)
     
-    def concat_split_group(self, split_channels):
-        # for split
-        # self.split_nIC = split_conv(self.weight, arraySize)
-        self.fan_in = split_channels * self.kSpatial
-        self.split_groups = calculate_groups(self.arraySize, self.fan_in)
-        if self.fan_in % self.split_groups != 0:
-            raise ValueError('fan_in must be divisible by groups')
-        self.group_fan_in = int(self.fan_in / self.split_groups)
-        self.group_in_channels = int(np.ceil(split_channels / self.split_groups))
-        residual = self.group_fan_in % self.kSpatial
-        if residual != 0:
-            if self.kSpatial % residual != 0:
-                self.group_in_channels += 1
-        ## log move group for masking & group convolution
-        self.group_move_in_channels.resize_(self.split_groups-1).fill_(0)
-        self.group_in_offset.resize_(self.split_groups)
-        ## get group conv info
-        self._group_move_offset(split_channels=split_channels)
-        
-        # sweight
-        self.sweight.resize_(self.out_channels*self.split_groups, self.group_in_channels, self.kernel_size[0], self.kernel_size[1])
 
     def _weight_bitserial(self, weight, w_scale, cbits=4):
         weight_uint = weight / w_scale
@@ -242,7 +219,8 @@ class PsumQConv(SplitConv):
             output = weight_uint
             split_num = 1
 
-        return output.round_(), split_num 
+        out_round = output.round()
+        return (out_round - output).detach() + output, split_num 
 
     # store weight magnitude for in-mem computing mimic 
     ## Assume that cell bits are enough
@@ -561,7 +539,7 @@ class PsumQConv(SplitConv):
 
         return minVal, maxVal, midVal 
 
-    def _bitserial_comp_forward(self, input, weight=None, short_path=None):
+    def _bitserial_comp_forward(self, input):
         # delete padding_shpe & additional padding operation by matching padding/stride format with nn.Conv2d
         if self.padding > 0:
             if self.padding_mode == 'neg':
@@ -570,30 +548,22 @@ class PsumQConv(SplitConv):
             input = Pad.pad(input, padding_shape, self.padding_mode, self.padding_value)
 
         # get quantization parameter and input bitserial
-        if weight is None:
-            weight = self.weight
-        qweight, w_scale = self.quan_w_fn(weight)
-        
+        qweight, w_scale = self.quan_w_fn(self.weight)
 
         if self.wbit_serial:
             with torch.no_grad():
                 if self.abit_serial:
-                    if short_path is None:
-                        sinput, a_scale, abits = Bitserial.bitserial_act(input, debug=False) # short_path parameter does not exist
-                        a_shift = None
-                    else:
-                        sinput, a_scale, abits = Bitserial.bitserial_act(input, debug=False) # short_path parameter does not exist
+                    sinput, a_scale, abits = Bitserial.bitserial_act(input, debug=False) # short_path parameter does not exist
                 else:
                     a_scale = Bitserial.abit_scale()
                     sinput = input / a_scale
-                    a_shift = None
                     abits = 1
 
                 if self.psum_mode == 'sigma':
-                    minVal, maxVal, midVal = self._ADC_clamp_value()
+                    minVal, _, midVal = self._ADC_clamp_value()
                     self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
-                elif self.psum_mode == 'scan':
-                    pass
+                elif self.psum_mode == 'retrain':
+                    self.pstep = self.alpha
                 else:
                     assert False, 'This script does not support {self.psum_mode}'
 
@@ -602,26 +572,25 @@ class PsumQConv(SplitConv):
 
                 ### Cell noise injection + Cell conductance value change
                 ### in-mem computation programming (weight constant-noise)
-                if (self.weight_chunk is None) or self.training:
+                if (self.weight_chunk is None):
                     if self.is_noise:
-                        bweight, wsplit_num = self._weight_bitserial(qweight, w_scale, cbits=self.cbits)
-                        bweight = self.noise_cell(bweight)
+                        sweight, wsplit_num = self._weight_bitserial(qweight, w_scale, cbits=self.cbits)
+                        sweight = self.noise_cell(sweight)
                         
-                        weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
+                        weight_chunk = torch.chunk(sweight, wsplit_num, dim=1)
                         
                         ## make the same weight size as qweight
                         if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
-                            bweight = weight_chunk[0] - weight_chunk[1]
+                            sweight = weight_chunk[0] - weight_chunk[1]
                             wsplit_num = 1
                         else:
                             ## [TODO] two_com split weight format check
                             delta_G, G_min = self.noise_cell.get_deltaG(G_min=True)
                             w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
-                        self.sweight = conv_sweight_cuda.forward(self.sweight, bweight, self.group_in_offset, self.split_groups)
-                        weight_chunk = torch.chunk(self.sweight.clone(), wsplit_num, dim=1)
+
+                        weight_chunk = torch.chunk(sweight, wsplit_num, dim=1)
                     else:
-                        self.sweight = conv_sweight_cuda.forward(self.sweight, qweight, self.group_in_offset, self.split_groups)
-                        sweight, wsplit_num = self._weight_bitserial(self.sweight, w_scale, cbits=self.cbits)
+                        sweight, wsplit_num = self._weight_bitserial(qweight, w_scale, cbits=self.cbits)
                         weight_chunk = torch.chunk(sweight, wsplit_num, dim=1)
                     
                     self.weight_chunk = weight_chunk
@@ -637,7 +606,7 @@ class PsumQConv(SplitConv):
                 for abit, input_s in enumerate(input_chunk):
                     for wbit, weight_s in enumerate(weight_chunk):
                         out_tmp = self._split_forward(input_s, weight_s, padded=True, ignore_bias=True, cat_output=False,
-                                                weight_is_split=True, infer_only=True)
+                                                weight_is_split=True, infer_only=True, channel=True)
 
                         out_mag, multi_scale = self._output_magnitude(abit, wbit, wsplit_num)
                         out_adc = psum_quant_merge(out_adc, out_tmp,
@@ -666,16 +635,6 @@ class PsumQConv(SplitConv):
 
                 # restore output's scale
                 output = output * psum_scale
-
-                # restore output's shift
-                if a_shift is not None:
-                    weight_sum = torch.sum(weight, (3, 2, 1))
-                    shift = weight_sum * a_shift
-                    psum_shift = torch.unsqueeze(shift, 0)
-                    psum_shift = torch.unsqueeze(psum_shift, 2)
-                    psum_shift = torch.unsqueeze(psum_shift, 2)
-
-                    output = output + psum_shift
         else:
             if not self.abit_serial:
                 # in-mem computation mimic (split conv & psum quant/merge)
@@ -690,54 +649,115 @@ class PsumQConv(SplitConv):
 
         # output_real = F.conv2d(input, qweight, bias=self.bias,
         #                         stride=self.stride, dilation=self.dilation, groups=self.groups)
-        print('==============alpha value', self.alpha, self.alpha.grad)
-        # import pdb; pdb.set_trace()
 
         return output
+  
     
-    def _concat_bitserial_forward(self, input):
-        # input are combination of [short_path, origin_path]
-        weight_con = torch.split(self.weight, [input[0].size()[1], input[1].size()[1]], dim=1) #max 2
+    def _bitserial_retrain_forward(self, input):
+        # delete padding_shpe & additional padding operation by matching padding/stride format with nn.Conv2d
 
-        # input_list = []
-        for i in range(len(input)):
-            short_path = (i==0)
-            self.concat_split_group(input[i].size()[1]) # input channel split
-            if self.bitserial_log:
-                output_con = self._bitserial_log_forward(input[i], weight=weight_con[i], short_path=short_path)
+        if self.padding > 0:
+            if self.padding_mode == 'neg':
+                self.padding_value = float(input.min()) 
+            padding_shape = (self.padding, self.padding, self.padding, self.padding)
+            input = Pad.pad(input, padding_shape, self.padding_mode, self.padding_value)
+
+        # get quantization parameter and input bitserial
+        qweight, w_scale = self.quan_w_fn(self.weight)
+
+        if self.abit_serial:
+            sinput, a_scale, abits = Bitserial.bitserial_act(input, training=True) # short_path parameter does not exist
+        else:
+            a_scale = Bitserial.abit_scale()
+            sinput = input / a_scale
+            abits = 1
+
+        if self.psum_mode == 'sigma':
+            minVal, _, midVal = self._ADC_clamp_value()
+            self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
+        elif self.psum_mode == 'retrain':
+            if self.training and self.init_state == 0:
+                # self.init_form(sum(out_tmp)/self.split_groups, self.phalf_num_levels)
+                self.init_form(out_tmp, self.phalf_num_levels)
+                self.init_state.fill_(1)
+                self.pstep = self.alpha
+        else:
+            assert False, 'This script does not support {self.psum_mode}'
+
+        input_chunk = torch.chunk(sinput, abits, dim=1)
+
+        ### Cell noise injection + Cell conductance value change
+        ### in-mem computation programming (weight constant-noise)
+
+        if self.is_noise:
+            sweight, wsplit_num = self._weight_bitserial(qweight, w_scale, cbits=self.cbits)
+            sweight = self.noise_cell(sweight)
+            
+            weight_chunk = torch.chunk(sweight, wsplit_num, dim=1)
+            
+            ## make the same weight size as qweight
+            if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
+                sweight = weight_chunk[0] - weight_chunk[1]
+                wsplit_num = 1
+
+            weight_chunk = torch.chunk(sweight, wsplit_num, dim=1)
+        else:
+            sweight, wsplit_num = self._weight_bitserial(qweight, w_scale, cbits=self.cbits)
+            weight_chunk = torch.chunk(sweight, wsplit_num, dim=1)
+
+        # parameter computing
+        psum_scale = w_scale * a_scale
+
+        out_adc = None
+        for abit, input_s in enumerate(input_chunk):
+            for wbit, weight_s in enumerate(weight_chunk):
+                # partial sum output before ADC 
+                out_tmp = self._split_forward(input_s, weight_s, padded=True, ignore_bias=True, cat_output=True,
+                                        weight_is_split=True, split_train=True, channel=True)
+                import pdb; pdb.set_trace()
+                out_mag, multi_scale = self._output_magnitude(abit, wbit, wsplit_num)
+                out_adc =  psum_quant_merge_train(out_adc, out_tmp,
+                                                pbits=self.pbits, step=self.pstep, 
+                                                half_num_levels=self.phalf_num_levels, 
+                                                center=self.center, weight=out_mag/multi_scale,
+                                                groups=self.split_groups, pzero=self.pzero)
+
+                if wbit == 0:
+                    out_wsum = out_adc
+                else:
+                    out_wsum += out_adc 
+
+                out_adc = None
+
+            if abit == 0:
+                output = out_wsum
             else:
-                output_con = self._bitserial_comp_forward(input[i], weight=weight_con[i], short_path=short_path)
+                output += out_wsum
 
-            output = output_con if i == 0 else output + output_con
+        # restore output's scale
+        output = output * psum_scale
 
-        #     if self.padding > 0:
-        #         padding_shape = (self.padding, self.padding, self.padding, self.padding)
-        #         input_neg = Pad.pad(input[i], padding_shape, self.padding_mode, self.padding_value)
-        #         input_list.append(input_neg)
+        # add bias
+        if self.bias is not None:
+            output += self.bias
 
-        # input = torch.cat(input_list, dim=1)
-        # qweight, w_scale = self.quan_w_fn(self.weight)
-        # output_real =  F.conv2d(input, qweight, bias=self.bias,
-        #                     stride=self.stride, dilation=self.dilation, groups=self.groups)
-        # import pdb; pdb.set_trace()
+        # output_real = F.conv2d(input, qweight, bias=self.bias,
+        #                         stride=self.stride, dilation=self.dilation, groups=self.groups)
 
         return output
-    
 
     def forward(self, input):
         if self.wbits == 32:
             return F.conv2d(input, self.weight, bias=self.bias,
             stride=self.stride, padding=self.padding, dilation=self.dilation, groups=self.groups)
 
-        if self.concat and self.wbit_serial:
-            return self._concat_bitserial_forward(input)
-        elif self.bitserial_log:
-            return self._bitserial_log_forward(input, short_path=self.short_path)
+        if self.training:
+            return self._bitserial_retrain_forward(input)
         else:
-            if self.concat:
-                input = torch.cat(input, dim=1)
-                import pdb; pdb.set_trace()
-            return self._bitserial_comp_forward(input, short_path=self.short_path)
+            if self.bitserial_log:
+                return self._bitserial_log_forward(input)
+            else:
+                return self._bitserial_comp_forward(input)
 
     def extra_repr(self):
         """Provides layer information, including wbits, when print(model) is called."""
@@ -753,19 +773,19 @@ class PsumQConv(SplitConv):
             s += ', bias=False'
         s += ', wbits={wbits}, wbit_serial={wbit_serial}'
         s += ', split_groups={split_groups}, mapping_mode={mapping_mode}, cbits={cbits}'
-        s += ', psum_mode={psum_mode}, pbits={pbits}, pbound={pbound}'
+        s += ', model_mode={model_mode}, psum_mode={psum_mode}, pbits={pbits}, pbound={pbound}'
         s += ', noise={is_noise}'
         s += ', bitserial_log={bitserial_log}, layer_idx={layer_idx}'            
         return s.format(**self.__dict__)
 
-class PsumQLinear(SplitLinear):
+class TPsumQLinear(SplitLinear):
     """
         Quant(LSQ)Linear + Psum quantization
     """
     def __init__(self, in_features, out_features, wbits, symmetric=False, bias=False,
                 arraySize=128, wbit_serial=False, mapping_mode='none', psum_mode='sigma', cbits=None,
                 is_noise=False, noise_type=None):
-        super(PsumQLinear, self).__init__(in_features, out_features, bias=bias)
+        super(TPsumQLinear, self).__init__(in_features, out_features, bias=bias)
         # for QLinear
         self.wbits = wbits
         self.wbit_serial = wbit_serial
@@ -796,6 +816,10 @@ class PsumQLinear(SplitLinear):
         self.pclip = 'sigma'
         self.psigma = 3
         self.weight_chunk = None
+        # for retrain version
+        self.model_mode = None
+        self.alpha = nn.Parameter(torch.Tensor(1)[0])
+        self.register_buffer('init_state', torch.zeros(1))
 
         # for noise option
         self.is_noise = is_noise
@@ -899,7 +923,8 @@ class PsumQLinear(SplitLinear):
             output = weight_uint
             split_num = 1
 
-        return output.round_(), split_num 
+        out_round = output.round()
+        return (out_round - output).detach() + output, split_num 
 
     # store weight magnitude for in-mem computing mimic 
     ## Assume that cell bits are enough
@@ -1276,24 +1301,105 @@ class PsumQLinear(SplitLinear):
         # import pdb; pdb.set_trace()
 
         return output
-  
+    
+    def _bitserial_retrain_forward(self, input):
+
+        # get quantization parameter and input bitserial 
+        qweight, w_scale = self.quan_w_fn(self.weight)
+
+        if self.abit_serial:
+            sinput, a_scale, abits = Bitserial.bitserial_act(input, training=True) # short_path parameter does not exist
+        else:
+            a_scale = Bitserial.abit_scale()
+            sinput = input / a_scale
+            abits = 1
+
+        psum_scale = w_scale * a_scale
+
+        if self.psum_mode == 'sigma':
+            minVal, maxVal, midVal = self._ADC_clamp_value()
+            self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
+        elif self.psum_mode == 'retrain':
+            if self.training and self.init_state == 0:
+                # self.init_form(sum(out_tmp)/self.split_groups, self.phalf_num_levels)
+                self.init_form(out_tmp, self.phalf_num_levels)
+                self.init_state.fill_(1)
+                self.pstep = self.alpha
+        else:
+            assert False, 'This script does not support {self.psum_mode}'
+        ### in-mem computation mimic (split conv & psum quant/merge)
+        input_chunk = torch.chunk(sinput, abits, dim=1)
+
+        ### Cell noise injection + Cell conductance value change
+
+        sweight, wsplit_num = self._weight_bitserial(qweight, w_scale, cbits=self.cbits)
+        if self.is_noise:
+            sweight = self.noise_cell(sweight)
+            weight_chunk = torch.chunk(sweight, wsplit_num, dim=1)
+            
+            if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
+                sweight = weight_chunk[0] - weight_chunk[1]
+                wsplit_num = 1
+
+        weight_chunk = torch.chunk(sweight, wsplit_num, dim=1)
+
+        out_adc = None
+        for abit, input_s in enumerate(input_chunk):
+            for wbit, weight_s in enumerate(weight_chunk):
+                out_tmp = self._split_forward(input_s, weight_s, ignore_bias=True, cat_output=True, split_train=True)
+                # out_tmp = F.linear(input_s[:,nIF_cnt:nIF_cnt+self.split_nIF[idx]], weight_s, bias=None)
+
+                out_mag, multi_scale = self._output_magnitude(abit, wbit, wsplit_num)
+
+                out_adc = psum_quant_merge_train(out_adc, out_tmp,
+                                                pbits=self.pbits, step=self.pstep, 
+                                                half_num_levels=self.phalf_num_levels, 
+                                                center=self.center, weight=out_mag/multi_scale,
+                                                groups=self.split_groups, pzero=self.pzero)
+
+                if wbit == 0:
+                    out_wsum = out_adc
+                else:
+                    out_wsum += out_adc 
+
+                out_adc = None
+
+            if abit == 0:
+                output = out_wsum
+            else:
+                output += out_wsum
+
+        # restore output's scale
+        output = output * psum_scale
+
+        # add bias
+        if self.bias is not None:
+            output += self.bias
+        
+        # output_real = F.linear(input, qweight, bias=None)
+
+        return output
+
     def forward(self, input):
 
         if self.wbits == 32:
             return F.linear(input, self.weight, bias=self.bias)
         
-        if self.bitserial_log:
-            return self._bitserial_log_forward(input)
+        if self.training:
+            return self._bitserial_retrain_forward(input)
         else:
-            return self._bitserial_comp_forward(input)
+            if self.bitserial_log:
+                return self._bitserial_log_forward(input)
+            else:
+                return self._bitserial_comp_forward(input)
 
     def extra_repr(self):
         """Provides layer information, including wbits, when print(model) is called."""
         s =  'in_features={}, out_features={}, bias={}, wbits={}, wbit_serial={}, split_groups={}, '\
-            'mapping_mode={}, cbits={}, psum_mode={}, pbits={}, pbound={}, '\
+            'mapping_mode={}, cbits={}, model_mode={}, psum_mode={}, pbits={}, pbound={}, '\
             'noise={}, bitserial_log={}, layer_idx={}'\
             .format(self.in_features, self.out_features, self.bias is not None, self.wbits, self.wbit_serial,
-            self.split_groups, self.mapping_mode, self.cbits, self.psum_mode, self.pbits, self.pbound, 
+            self.split_groups, self.mapping_mode, self.cbits, self.model_mode, self.psum_mode, self.pbits, self.pbound, 
             self.is_noise, self.bitserial_log, self.layer_idx)
         return s
 
@@ -1315,15 +1421,16 @@ def get_statistics_from_hist(df_hist):
 
     return [mean_val, std_val, min_val, max_val] 
 
-def set_BitSerial_log(model, pbits, pclipmode, abit_serial=None, pclip=None, psigma=None, checkpoint=None, pquant_idx=None, pbound=None, center=None, log_file=False):
+def set_TBitSerial_log(model, pbits, pclipmode, model_mode, abit_serial=None, pclip=None, psigma=None, checkpoint=None, pquant_idx=None, pbound=None, center=None, log_file=False):
     print("start setting Bitserial layers log bitplane info")
     counter = 0
     for m in model.modules():
-        if type(m).__name__ in ['PsumQConv' , 'PsumQLinear']:
+        if type(m).__name__ in ['TPsumQConv' , 'TPsumQLinear']:
             m.layer_idx = counter
             if (pquant_idx is None) or (counter == pquant_idx):
                 m.bitserial_log = log_file
                 m.checkpoint = checkpoint
+                m.model_mode = model_mode
                 m.pclipmode = pclipmode
                 m.abit_serial = abit_serial
                 m.setting_pquant_func(pbits, center, pbound)
@@ -1334,41 +1441,30 @@ def set_BitSerial_log(model, pbits, pclipmode, abit_serial=None, pclip=None, psi
                 print(f"pass {m} with counter {counter}")
             counter += 1
 
-def unset_BitSerial_log(model):
+def unset_TBitSerial_log(model):
     print("start unsetting Bitserial layers log bitplane info")
     counter = 0
     for m in model.modules():
-        if type(m).__name__ in ['PsumQConv' , 'PsumQLinear']:
+        if type(m).__name__ in ['TPsumQConv' , 'TPsumQLinear']:
             m.bitserial_log = False
             print("finish log unsetting {}, idx: {}".format(type(m).__name__, counter))
             counter += 1
 
-def set_bitserial_layer(model, pquant_idx, wbit_serial=None, pbits=32, center=[]):
+def set_tbitserial_layer(model, pquant_idx, wbit_serial=None, pbits=32, center=[]):
     ## set block for bit serial computation
     print("start setting conv/fc bitserial layer")
     counter = 0
     for m in model.modules():
-        if type(m).__name__ in ['PsumQConv' , 'PsumQLinear']:
+        if type(m).__name__ in ['TPsumQConv' , 'TPsumQLinear']:
             if counter == pquant_idx:
                 m.reset_layer(wbit_serial=wbit_serial, pbits=pbits, center=center)
             counter += 1
     print("finish setting conv/fc bitserial layer ")
 
-def set_Qact_bitserial(model, pquant_idx, abit_serial=True):
-    ## set quantact bitserial
-    print("start setting quantact bitserial")
-    counter = 0
-    for m in model.modules():
-        if type(m).__name__ is ['Q_act', 'QLeakyReLU']:
-            if counter == pquant_idx:
-                m.bitserial = abit_serial
-            counter += 1
-    print("finish setting quantact bitserial ")
-
-def set_Noise_injection(model, weight=False, hwnoise=True, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', shrink=None, max_epoch=-1,
+def set_TNoise_injection(model, weight=False, hwnoise=True, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', shrink=None, max_epoch=-1,
                         retention=False, reten_kind='linear', reten_type='percent', reten_value=0):
     for name, module in model.named_modules():
-        if isinstance(module, (PsumQConv, PsumQLinear)) and weight and hwnoise:
+        if isinstance(module, (TPsumQConv, TPsumQLinear)) and weight and hwnoise:
             if module.wbits != 32:
                 module.is_noise = True
 
@@ -1378,24 +1474,3 @@ def set_Noise_injection(model, weight=False, hwnoise=True, cbits=4, mapping_mode
                     module._cell_noise_init(cbits=cbits, mapping_mode=mapping_mode, co_noise=co_noise, noise_type=noise_type, res_val=res_val, shrink=shrink, retention=retention, max_epoch=max_epoch)
                     if retention:
                         module.noise_cell.retention_init(kind=reten_kind, type=reten_type, value=reten_value)
-
-def count_ArrayMaxV(wbits, cbits, mapping_mode, arraySize):
-    if mapping_mode == '2T2R':
-        if cbits >= (wbits-1):
-            aMaxV = (2**(wbits-1)-1) * arraySize
-        else:
-            assert False, 'This file does not support this case cbits_{} < wbits_{}'.format(cbits, wbits)
-    elif mapping_mode == 'two_com':
-        if cbits >= (wbits-1):
-            aMaxV = (2**(wbits-1)-1) * arraySize
-        else:
-            assert False, 'This file does not support this case cbits_{} < wbits_{}'.format(cbits, wbits)
-    elif mapping_mode == 'ref_d':
-        if cbits >= wbits:
-            aMaxV = (2**(wbits)-1) * arraySize
-        else:
-            assert False, 'This file does not support this case cbits_{} < wbits_{}'.format(cbits, wbits)
-    else:
-        assert False, 'This file does not support the mapping_mode {}'.format(mapping_mode)
-    
-    return aMaxV

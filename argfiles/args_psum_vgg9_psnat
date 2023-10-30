@@ -26,7 +26,7 @@
 --dropout	    0.0
 
 --model_mode    psnat
---arch          psum_lsq_vgg9
+--arch          psum_lsq_vgg9_train
 --gpu-id	    0
 
 --arraySize     128
