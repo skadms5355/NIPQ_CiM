@@ -45,8 +45,8 @@ class Bitserial():
         return output, cls.scale , cls.bits
     
     @classmethod
-    def abit_scale(cls):
-        return cls.scale
+    def get_abit_scale(cls):
+        return cls.bits, cls.scale
     
     @classmethod
     def abit_serial(cls):
@@ -64,7 +64,7 @@ class Bitseiral_train(torch.autograd.Function):
         for i in range(1, bits):
             out_tmp = output_uint8 & (1 << i)
             output = torch.cat((output, out_tmp), 1)
-        output = output.to(output_dtype)
+        output = output.bool().to(output_dtype)
 
         return output
 

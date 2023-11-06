@@ -136,6 +136,15 @@ def main():
                     prefix = os.path.join(prefix, '{}_{}_{}').format(args.tn_file, args.noise_type, type)
                 else:
                     prefix = os.path.join(prefix, '{}_{}').format(args.noise_type, type)
+            
+            if (args.wbit_serial == False) or (args.abit_serial == False):
+                name = 'bitserial'
+                if (args.wbit_serial == False):
+                    name = name + '_wF'
+                if (args.abit_serial == False):
+                    name = name + '_aF'
+
+                prefix = os.path.join(prefix, name)
         else:
             pass
 
@@ -145,21 +154,21 @@ def main():
             prefix_bak = prefix
             prefix = os.path.join(args.local, prefix_bak)
 
-        if args.psum_comp:
-            args.checkpoint = os.path.join(prefix, "log_bitserial_info")
-            if not os.path.exists(args.checkpoint):
-                os.makedirs(args.checkpoint)
-                os.makedirs(os.path.join(args.checkpoint, 'hist'))
-            else:
-                if args.log_file:
-                    print(f"remove folder {args.checkpoint}")
-                    os.system(f'rm -rf {args.checkpoint}')
-                    print(f"create new folder {args.checkpoint}")
+        if not args.evaluate:
+            args.checkpoint = misc.mkdir_now(prefix)
+        else:
+            if args.psum_comp:
+                args.checkpoint = os.path.join(prefix, "log_bitserial_info")
+                if not os.path.exists(args.checkpoint):
                     os.makedirs(args.checkpoint)
                     os.makedirs(os.path.join(args.checkpoint, 'hist'))
-        else:
-            if not args.evaluate:
-                args.checkpoint = misc.mkdir_now(prefix)
+                else:
+                    if args.log_file:
+                        print(f"remove folder {args.checkpoint}")
+                        os.system(f'rm -rf {args.checkpoint}')
+                        print(f"create new folder {args.checkpoint}")
+                        os.makedirs(args.checkpoint)
+                        os.makedirs(os.path.join(args.checkpoint, 'hist'))
             else:
                 args.checkpoint = os.path.join(prefix)
                 if not os.path.exists(args.checkpoint):
@@ -430,10 +439,18 @@ def main_worker(gpu, ngpus_per_node, args):
                                         noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink)
             elif (args.model_mode == 'quant') or (args.model_mode == 'hn_quant'):
                 set_BitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, log_file=args.log_file,\
-                    model_mode=args.model_mode, pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma)
+                    pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma)
                 if args.is_noise:
                     set_Noise_injection(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
                                         noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink, retention=args.retention, reten_value=args.reten_val, reten_type=args.reten_type)
+            elif 'pst' in args.model_mode:
+                if args.psum_mode == 'sigma':
+                    arch = '_'.join(args.arch.split('_')[:-1])
+                    checkpoint = os.path.join(str(pathlib.Path().resolve()), ((args.checkpoint.replace('{}'.format(args.model_mode), 'quant')).replace('{}'.format(args.arch), '{}'.format(arch))))
+                    set_TBitSerial_log(model, abit_serial=args.abit_serial, checkpoint=checkpoint, model_mode=args.model_mode, \
+                                    pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma)
+                else:
+                    set_TBitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, pclipmode=args.pclipmode, model_mode=args.model_mode, pbits=args.pbits)
             else:
                 assert False, "This mode is not supported psum computation"
 
@@ -582,26 +599,29 @@ def main_worker(gpu, ngpus_per_node, args):
                         m.quan_w_fn.s.requires_grad = False
                         print('range gradient fixed')
 
-    elif args.model_mode == 'psnat':
+    elif 'pst' in args.model_mode:
         if args.psum_mode == 'sigma':
             arch = '_'.join(args.arch.split('_')[:-1])
-            checkpoint = os.path.join(str(pathlib.Path().resolve()), ((args.checkpoint.replace('psnat', 'quant')).replace('{}'.format(args.arch), '{}/eval'.format(arch))))
+            checkpoint = os.path.join(str(pathlib.Path().resolve()), ((args.checkpoint.replace('{}'.format(args.model_mode), 'quant')).replace('{}'.format(args.arch), '{}/eval'.format(arch))))
+            if not args.evaluate:
+                checkpoint = '/'.join(checkpoint.split('/')[:-1]) +'/log_bitserial_info' # time folder remove
             set_TBitSerial_log(model, abit_serial=args.abit_serial, checkpoint=checkpoint, model_mode=args.model_mode, \
-                            pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma)
+                            pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma, noise_comb=args.noise_comb)
         else:
-            set_TBitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, pclipmode=args.pclipmode, model_mode=args.model_mode, pbits=args.pbits)
+            set_TBitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, pclipmode=args.pclipmode, model_mode=args.model_mode, pbits=args.pbits, noise_comb=args.noise_comb)
+        
         for m in model.modules():
             if args.psum_mode == 'retrain':
                 if type(m).__name__ in ["QConv", "QLinear"]:
-                    m.quan_w_fn.s.requires_grad = False
-                    m.weight.requires_grad = False
+                    # m.quan_w_fn.s.requires_grad = False
+                    # m.weight.requires_grad = False
                     print('Weight parameters of First & Last Layer are fixed for partial-sum retraining============')
                 
                 if type(m).__name__ in ["TPsumQConv", "TPsumQLinear"]:
                     if m.wbits != 32:
                         m.quan_w_fn.s.requires_grad = False
-                        m.weight.requires_grad = False
-                        print('Weight parameters are fixed for partial-sum retraining============')
+                    # m.weight.requires_grad = False
+                    print('Weight parameters are fixed for partial-sum retraining============')
 
             elif args.psum_mode =='sigma':
                 if type(m).__name__ in ["TPsumQConv", "TPsumQLinear"]:
@@ -621,12 +641,14 @@ def main_worker(gpu, ngpus_per_node, args):
     # img = torch.Tensor(1, 3, 224, 224) if args.dataset =='imagenet' else torch.Tensor(2, 3, 32, 32) 
     # from torchviz import make_dot
     # dot = make_dot(model(img), params=dict(model.named_parameters()), show_attrs=True, show_saved=True)
-    # with open("graph_detail.dot", "w") as f:
+    # with open("graph_detail_serial.dot", "w") as f:
     #     f.write(dot.source)
     # import pdb; pdb.set_trace()
 
     # Train and val
     start_time = time.time()
+    pre_weight = []
+    debug = False
     for epoch in range(start_epoch, args.epochs):
         if not args.dali and args.distributed:
             train_sampler.set_epoch(epoch)
@@ -672,21 +694,37 @@ def main_worker(gpu, ngpus_per_node, args):
 
         # steo firward the scheduler.
         scheduler.step()
-
-        if args.psum_mode == 'retrain':
-            for m in model.modules():
-                if type(m).__name__ in ["TPsumQConv", "TPsumQLinear"]:
-                    if m.wbits != 32:
-                        print('\n [Layer {}] alpha value {} {}'.format(m.layer_idx, m.alpha, m.alpha.requires_grad))
         
-        for m in model.modules():
-            # if type(m).__name__ in ["QConv"]:
-            #     print("QConv {} \n weight: {}".format(m.weight.requires_grad, m.weight[0][0]))
-            if type(m).__name__ in ["TPsumQConv"]:
-                print("PsumQuant {} {} \n weight: {}".format(m.layer_idx, m.weight.grad, m.weight[0][0]))
-                import pdb; pdb.set_trace()
-            if type(m).__name__ in ["TPsumQLinear"]:
-                print("PsumLayer {} {} \n weight: {}".format(m.layer_idx, m.weight.grad, m.weight[0][0:5]))
+        if debug:
+            if args.psum_mode == 'retrain':
+                for m in model.modules():
+                    if type(m).__name__ in ["TPsumQConv", "TPsumQLinear"]:
+                        if m.wbits != 32:
+                            import torch.nn.functional as F
+                            act_alpha = F.softplus(m.alpha)/m.psum_scale
+                            print('\n [Layer {}] alpha value {} {} / {}'.format(m.layer_idx, m.alpha, act_alpha, m.alpha.grad))
+                        if m.weight.grad is not None:
+                            print("PsumQuant {} {} \n weight: {}".format(m.layer_idx, m.weight.grad[0][0:5], m.weight[0][0:5]))
+            elif args.psum_mode == 'sigma':
+                for m in model.modules():
+                    # if type(m).__name__ in ["QConv"]:
+                    #     print("QConv {} \n weight: {}".format(m.weight.requires_grad, m.weight[0][0]))
+                    if type(m).__name__ in ["TPsumQConv"]:
+                        # print("PsumQuant {} {} \n weight: {}".format(m.layer_idx, m.weight.grad[0][0], m.weight[0][0]))
+                        if epoch != 0:
+                            index = torch.where(pre_weight[m.layer_idx] != m.weight.detach())
+                            print('PsumConv {} index size {}'.format(m.layer_idx, index[0].size()))
+                            pre_weight[m.layer_idx]=m.weight.detach().clone()
+                        else:
+                            pre_weight.append(m.weight.detach().clone())
+                    if type(m).__name__ in ["TPsumQLinear"]:
+                        # print("PsumLayer {} {} \n weight: {}".format(m.layer_idx, m.weight.grad[0][0:5], m.weight[0][0:5]))
+                        if epoch != 0:
+                            index = torch.where(pre_weight[m.layer_idx] != m.weight.detach())
+                            print('PsumLayer {} index size {}'.format(m.layer_idx, index[0].size()))
+                            pre_weight[m.layer_idx]=m.weight.detach().clone()
+                        else:
+                            pre_weight.append(m.weight.detach().clone())
 
         # Logging and saving
         if valid_loader is not None:
@@ -756,6 +794,11 @@ def main_worker(gpu, ngpus_per_node, args):
             if test_loader is not None:
                 test_loader.reset()
 
+    if args.psum_mode == 'retrain':
+        for m in model.modules():
+            if type(m).__name__ in ["TPsumQConv", "TPsumQLinear"]:
+                if m.wbits != 32:
+                    print('\n [Layer {}] alpha value {} {}'.format(m.layer_idx, m.alpha, m.alpha.grad))
 
 
     writer.close() # closing the tensorboard summarywriter.

@@ -147,12 +147,13 @@ class SplitConv(nn.Conv2d):
             input_channel = 0
             out_tmp = []
             for i in range(0, self.split_groups):
-                import pdb; pdb.set_trace()
-                split_input = input.narrow(1, input_channel, self.group_in_channels)
                 if channel:
-                    sweight = weight.narrow(1, input_channel, self.group_in_channels)
+                    split_input = input.narrow(1, input_channel, self.group_move_in_channels[i])
+                    sweight = weight.narrow(1, input_channel, self.group_move_in_channels[i])
                 else:
+                    split_input = input.narrow(1, input_channel, self.group_in_channels)
                     sweight = split_weight[i]
+
                 out_tmp.append(F.conv2d(split_input, sweight, bias=None,\
                             stride=self.stride, padding=padding, dilation=self.dilation))
                 # prepare for the next stage
@@ -169,7 +170,6 @@ class SplitConv(nn.Conv2d):
                 out_tmp = torch.cat(out_tmp, 1)
 
             if self.training and (not infer_only):
-                import pdb; pdb.set_trace()
                 output.copy_(out_tmp)
             else:
                 output = out_tmp
@@ -185,10 +185,11 @@ class SplitConv(nn.Conv2d):
             input_channel = 0
             out_tmp = []
             for i in range(0, self.split_groups):
-                split_input = input.narrow(1, input_channel, self.group_in_channels)
                 if channel:
-                    sweight = weight.narrow(1, input_channel, self.group_in_channels)
+                    split_input = input.narrow(1, input_channel, self.group_move_in_channels[i])
+                    sweight = weight.narrow(1, input_channel, self.group_move_in_channels[i])
                 else:
+                    split_input = input.narrow(1, input_channel, self.group_in_channels)
                     sweight = split_weight[i]
 
                 out_tmp.append(F.conv2d(split_input, sweight, bias=None,\

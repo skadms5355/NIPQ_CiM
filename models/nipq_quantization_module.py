@@ -113,7 +113,7 @@ class Quantizer(nn.Module):
             with torch.no_grad():  
                 noise = torch.rand_like(x) - 0.5
             x = (x + offset) / alpha + noise
-            x = torch.clamp(x, Qn, Qp) 
+            x = torch.clamp(x, Qn, Qp) # gradient revision need 
 
             if hwnoise:
                 x = self.noise_cell(x, float_comp=True, w_split=serial)

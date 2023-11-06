@@ -294,15 +294,20 @@ class PsumQConv(SplitConv):
                 weight = self.weight
             qweight, w_scale = self.quan_w_fn(weight)
 
-            if short_path is None:
-                sinput, a_scale, abits = Bitserial.bitserial_act(input, debug=False) # short_path parameter does not exist
-                a_shift = None
+            if self.abit_serial:
+                if short_path is None:
+                    sinput, a_scale, abits = Bitserial.bitserial_act(input, debug=False) # short_path parameter does not exist
+                    a_shift = None
+                else:
+                    sinput, a_scale, abits = Bitserial.bitserial_act(input, debug=False) # short_path parameter does not exist
             else:
-                sinput, a_scale, abits = Bitserial.bitserial_act(input, debug=False) # short_path parameter does not exist
+                abits, a_scale = Bitserial.get_abit_scale()
+                sinput = input / a_scale
+                a_shift = None
+                abits = 1
 
             if self.is_noise and self.w_format=="weight":
                 qweight = self.noise_cell_log(qweight/w_scale)
-
 
             ## get dataframe
             logger = f'{self.checkpoint}/layer{self.layer_idx}_mac_static.pkl'
@@ -584,7 +589,7 @@ class PsumQConv(SplitConv):
                     else:
                         sinput, a_scale, abits = Bitserial.bitserial_act(input, debug=False) # short_path parameter does not exist
                 else:
-                    a_scale = Bitserial.abit_scale()
+                    abits, a_scale = Bitserial.get_abit_scale()
                     sinput = input / a_scale
                     a_shift = None
                     abits = 1
@@ -690,7 +695,6 @@ class PsumQConv(SplitConv):
 
         # output_real = F.conv2d(input, qweight, bias=self.bias,
         #                         stride=self.stride, dilation=self.dilation, groups=self.groups)
-        print('==============alpha value', self.alpha, self.alpha.grad)
         # import pdb; pdb.set_trace()
 
         return output
@@ -941,7 +945,14 @@ class PsumQLinear(SplitLinear):
 
         # get quantization parameter and input bitserial 
         qweight, w_scale = self.quan_w_fn(self.weight)
-        sinput, a_scale, abits = Bitserial.bitserial_act(input, debug=False)
+
+        if self.abit_serial:
+            sinput, a_scale, abits = Bitserial.bitserial_act(input, debug=False)
+        else:
+            abits, a_scale = Bitserial.get_abit_scale()
+            sinput = input / a_scale
+            abits = 1 
+
         psum_scale = w_scale * a_scale
 
         if self.is_noise and self.w_format=="weight":
@@ -1189,7 +1200,7 @@ class PsumQLinear(SplitLinear):
                 if self.abit_serial:
                     sinput, a_scale, abits = Bitserial.bitserial_act(input, debug=False) # short_path parameter does not exist
                 else:
-                    a_scale = Bitserial.abit_scale()
+                    abits, a_scale = Bitserial.get_abit_scale()
                     sinput = input / a_scale
                     abits = 1
 

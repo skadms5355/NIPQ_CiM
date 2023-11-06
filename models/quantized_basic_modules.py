@@ -660,9 +660,9 @@ class QuantPsumMergeTrain(torch.autograd.Function):
         """
         # ctx.mark_dirty(output)
         ctx.other = half_num_levels, groups, step_train
-        ctx.save_for_backward(input)
+        ctx.save_for_backward(input/step)
 
-        input = input / (step * weight)
+        input = input / (step)
         input = list(torch.chunk(input, groups, 1))
 
         for g in range(groups):
@@ -670,7 +670,6 @@ class QuantPsumMergeTrain(torch.autograd.Function):
 
         out_adc = pquant_group_merge_cuda.forward(output, input, pbits, 1, half_num_levels, 1, center, groups, pzero) 
         out_adc = out_adc * (step * weight)
-
         ##return pquant_merge_cpp.forward(output, input, pbits, step, half_num_levels, weight, center, pzero) 
         return out_adc 
 
@@ -680,10 +679,12 @@ class QuantPsumMergeTrain(torch.autograd.Function):
     def backward(ctx, grad_output):
         input_ps = ctx.saved_tensors[0]
         levels, groups, step_train = ctx.other
+        # alpha_scale = 1.0 / ((levels * input_ps.numel()) ** 0.5)
         indicate_small = (input_ps < (-levels+1)).float()
         indicate_big = (input_ps > levels).float()
-        indicate_middle = torch.ones(indicate_small.shape, device=indicate_small.device) - indicate_small - indicate_big
+        indicate_middle = 1.0 - indicate_small - indicate_big
         if step_train:
+            # grad_step = ((indicate_small * (-levels+1) + indicate_big * (levels) + indicate_middle * (-input_ps +input_ps.round()))*grad_output.repeat_interleave(groups, dim=1)*alpha_scale).sum().unsqueeze(dim=0)
             grad_step = ((indicate_small * (-levels+1) + indicate_big * (levels) + indicate_middle * (-input_ps +input_ps.round()))*grad_output.repeat_interleave(groups, dim=1)).sum().unsqueeze(dim=0)
         else:
             grad_step = None
@@ -694,10 +695,11 @@ class QuantPsumMergeTrain(torch.autograd.Function):
             grad_input = indicate_middle * grad_output.repeat(1, groups)
         # print('output', grad_output.size())
         # print(grad_input.size())
+        # print(grad_step)
 
-        return grad_output, grad_input, grad_step, None, None, None, None, None, None, None
+        return grad_output, grad_input, grad_step, None, None, None, None, None, None, None, None
 
-def psum_quant_merge_train(output, input, step=1, pbits=32, half_num_levels=1, pste='clipped', weight=1, center=None, groups=1, pzero=False):
+def psum_quant_merge_train(output, input, step=1, pbits=32, half_num_levels=1, pste='clipped', weight=1, center=None, groups=1, pzero=False, step_train=False):
     if center is None:
         center = 0
     if output is None:
@@ -708,5 +710,5 @@ def psum_quant_merge_train(output, input, step=1, pbits=32, half_num_levels=1, p
         # output = torch.zeros_like(input[0])
 
     return QuantPsumMergeTrain.apply(output, input, step, pbits, half_num_levels, 
-                            pste, weight, center, groups, pzero)
+                            pste, weight, center, groups, pzero, step_train)
 

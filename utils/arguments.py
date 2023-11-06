@@ -94,7 +94,7 @@ def set_arguments():
 
     # Training options
     train_group.add_argument('-tm', '--model_mode', default='baseline', type=str,
-                             choices=['baseline', 'quant', 'nipq', 'psnat'],
+                             choices=['baseline', 'quant', 'nipq', 'lsq_pst', 'pnq_pst'],
                              help='training mode to be used. (default: baseline (basic))')
     train_group.add_argument('--epochs', default=90, type=int, metavar='N',
                              help='Number of total epochs to run')
@@ -225,6 +225,8 @@ def set_arguments():
                             help='Sigma point of clipping range')                         
     psum_group.add_argument('--per_class', default=50, type=int,
                             help='How many watch image(batch) for searching psum distribution mean, std')
+    psum_group.add_argument('--noise_comb', default='False', type=str2bool,
+                        help='Combine ADC noise due to bit-serial computation')
 
     # noise
     noise_group.add_argument('-n', '--is_noise', default='False', type=str2bool,
