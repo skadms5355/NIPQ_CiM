@@ -1591,7 +1591,7 @@ class TPsumQLinear(SplitLinear):
                         Qn = (2**(abits)-1) * Qn
 
                 if (self.psum_mode == 'retrain') and (self.init_state == 0):
-                    self.init_form(out_tmp, self.phalf_num_levels)
+                    self.init_form(out_tmp*psum_scale, self.phalf_num_levels)
                     self.init_state.fill_(1)
                     self.pstep = F.softplus(self.alpha)/psum_scale
 
