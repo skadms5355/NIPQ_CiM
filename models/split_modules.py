@@ -218,7 +218,6 @@ class SplitConv(nn.Conv2d):
  
 
     def forward(self, input):
-        self._mask_weight()
         return self._split_forward(input, self.weight, padded=False, cat_output=True)
 
     def extra_repr(self):

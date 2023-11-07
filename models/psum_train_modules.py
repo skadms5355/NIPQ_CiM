@@ -657,6 +657,8 @@ class TPsumQConv(SplitConv):
         # output_real = F.conv2d(input, qweight, bias=self.bias,
         #                         stride=self.stride, dilation=self.dilation, groups=self.groups)
 
+        # import pdb; pdb.set_trace()
+
         return output
   
     
@@ -774,6 +776,7 @@ class TPsumQConv(SplitConv):
 
         # get quantization parameter and input bitserial 
         qweight, w_scale = self.quan_w_fn(self.weight)
+        # weight_g = qweight.detach().clone()
 
         if self.abit_serial and (not self.noise_comb):
             sinput, a_scale, abits = Bitserial.bitserial_act(input, training=True) # short_path parameter does not exist
@@ -823,7 +826,7 @@ class TPsumQConv(SplitConv):
                     Qn = -self.phalf_num_levels
 
                     if not self.noise_comb:
-                        noise = (2**abit) * (torch.rand_like(out_tmp) - 0.5)
+                        noise = (torch.rand_like(out_tmp) - 0.5)
                         # noise = (2**abit * sigma)**2 * (torch.rand_like(out_tmp) - 0.5)
                     else: #4-bit at once time
                         sum_sigma = 0
@@ -845,23 +848,23 @@ class TPsumQConv(SplitConv):
                 c2 = out_tmp <= Qn
 
                 out_tmp = torch.where(c1, Qp, torch.where(c2, Qn, out_tmp+noise))*self.pstep
-
                 if wbit == 0:
                     out_wsum = out_tmp.sum(dim=0)
                 else: 
                     out_wsum += out_tmp.sum(dim=0)
 
             if abit == 0:
-                output = out_wsum
+                output = out_wsum * (2**abit)
             else:
-                output += out_wsum
+                output += out_wsum * (2**abit)
 
         # restore output's scale
         output = output * psum_scale
 
         # output_real = F.conv2d(input, weight_g, bias=self.bias,
         #                         stride=self.stride, dilation=self.dilation, groups=self.groups)
-
+        
+        # import pdb; pdb.set_trace()
         # add bias
         if self.bias is not None:
             output += self.bias
@@ -1530,7 +1533,7 @@ class TPsumQLinear(SplitLinear):
         # get quantization parameter and input bitserial 
         qweight, w_scale = self.quan_w_fn(self.weight)
 
-        if self.abit_serial:
+        if self.abit_serial and (not self.noise_comb):
             sinput, a_scale, abits = Bitserial.bitserial_act(input, training=True) # short_path parameter does not exist
             split_abit = abits
         else:
@@ -1566,9 +1569,6 @@ class TPsumQLinear(SplitLinear):
 
         weight_chunk = torch.chunk(qweight, wsplit_num, dim=1)
 
-        # uniform distribution sigma assumption 
-        sigma = math.sqrt(1/12)
-
         ### in-mem computation mimic (split conv & psum quant/merge)
         for abit, input_s in enumerate(input_chunk):
             for wbit, weight_s in enumerate(weight_chunk):
@@ -1579,8 +1579,8 @@ class TPsumQLinear(SplitLinear):
                     Qp = self.phalf_num_levels-1
                     Qn = -self.phalf_num_levels
 
-                    if self.abit_serial:
-                        noise = (2**abit) * torch.rand_like(out_tmp)
+                    if not self.noise_comb:
+                        noise = torch.rand_like(out_tmp) - 0.5
                     else: #4-bit at once time
                         sum_sigma = 0
                         sigma = math.sqrt(1/12)
@@ -1614,9 +1614,9 @@ class TPsumQLinear(SplitLinear):
                 #                                 groups=self.split_groups, pzero=self.pzero, step_train=step_train)
 
             if abit == 0:
-                output = out_wsum
+                output = out_wsum * (2**abit)
             else:
-                output += out_wsum
+                output += out_wsum * (2**abit)
 
         # restore output's scale
         output = output * psum_scale

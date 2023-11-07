@@ -1,0 +1,3 @@
+# ninja log v5
+0	12681	1699322265000000000	/home/nameunkang/Project/NIPQ_CiM/extension/ConvSWeight/cuda/build/temp.linux-x86_64-cpython-39/conv_sweight_cuda.o	222dabdf2b0b71aa
+0	61193	1699322313000000000	/home/nameunkang/Project/NIPQ_CiM/extension/ConvSWeight/cuda/build/temp.linux-x86_64-cpython-39/conv_sweight_cuda_kernel.o	5c59488fa8a4d2dd
