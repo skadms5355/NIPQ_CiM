@@ -9,8 +9,8 @@ import pandas as pd
 from .noise_cell import Noise_cell
 import utils.padding as Pad
 from .quantized_lsq_modules import *
-from .quantized_basic_modules import psum_quant_merge
-from .bitserial_modules import *
+from .quantized_basic_modules import psum_quant_merge, fw
+# from .bitserial_modules import *
 from .split_modules import *
 # custom kernel
 import conv_sweight_cuda

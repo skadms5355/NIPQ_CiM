@@ -163,7 +163,7 @@ class QuantWeightFunc(torch.autograd.Function):
     def backward(ctx, grad):
         """Defines a formula for differentiating weight quantization."""
         # return as many tensors as there were inputs
-        return grad, None, None, None
+        return grad, None, None, None, None
 
 
 class QuantWeightReturnScaleFunc(torch.autograd.Function):
@@ -351,7 +351,7 @@ def fw(x, wbits, weight_clip, weight_scale, fan_in=1, groups=1, wquant="fixed", 
             x, w_scale = QuantWeightReturnScaleFunc.apply(x, wbits, wquant, weight_mask, wsymmetric)
             return x, w_scale
         else:
-            x = QuantWeightFunc.apply(x, wbits, wquant, weight_mask, wsymmetric=wsymmetric)
+            x = QuantWeightFunc.apply(x, wbits, wquant, weight_mask, wsymmetric)
     else:
         x = BinWeightFunc.apply(x, weight_clip, weight_scale, fan_in, groups, return_scale, weight_mask)
     return x

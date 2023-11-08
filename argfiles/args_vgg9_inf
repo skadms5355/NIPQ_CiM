@@ -9,28 +9,32 @@
 --train-batch   256
 --test-batch    200
 
---arch          lsq_vgg9
+--arch          quant_vgg9
 
 --model_mode    quant
 --evaluate      y
 --gpu-id	    0
 # --amp           y
 
---wbits         32
---abits         32
+--wbits         3
+--abits         1
+--binary-mode   unsigned
+--ste           hardtanh
+--zca           True
 
---pretrained    ./checkpoints/cifar10/a:32_w:32/2022-Apr-01-16-22-01/model_best.pth.tar
+# --pretrained    ./checkpoints/cifar10/a:32_w:32/2022-Apr-01-16-22-01/model_best.pth.tar
 # --pretrained    ./checkpoints/cifar10/quant/lsq_vgg9/a:4_w:4/2022-Apr-01-18-57-49/model_best.pth.tar
 # --pretrained    ./checkpoints/cifar10/quant/lsq_vgg9/a:4_w:4/2T2R/no_psum_c:4/interp_type_1.0/2023-May-03-15-02-29/model_best.pth.tar
 # --pretrained    ./checkpoints/cifar10/quant/lsq_vgg9/a:4_w:4/2T2R/no_psum_c:4/interp_type_1.0/2023-May-03-20-41-29/model_best.pth.tar
-
+# --pretrained    ./checkpoints/cifar10/quant/quant_vgg9/a:1_w:4/2023-Jul-19-12-13-28/model_best.pth.tar
+--pretrained    ./checkpoints/cifar10/quant/quant_vgg9/a:1_w:3/2023-Jul-16-00-20-31/model_best.pth.tar
 #tn_file
 # --tn_file       interp_1
 
 --psum_comp     n
 
---mapping_mode  2T2R
---cbits         4
+# --mapping_mode  2T2R
+# --cbits         4
 
 # noise option
 --is_noise      n

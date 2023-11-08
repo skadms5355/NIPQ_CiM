@@ -343,7 +343,6 @@ def main_worker(gpu, ngpus_per_node, args):
             linear_num = ['0', '3']
             c_i = 0
             l_i = 0
-
         for name, param in load_dict.items():
             if ('resnet18' in args.arch and 'downsample' in name) and args.pretrained == 'url':
                 name_list = name.split('.')
@@ -368,7 +367,7 @@ def main_worker(gpu, ngpus_per_node, args):
                         name = ".".join(name_list)
                     elif '7' in name:
                         name_list = name.split('.')
-                        name_list[-2] = '3'
+                        name_list[-2] = '2'
                         name = ".".join(name_list)
 
             if name in model_keys:
