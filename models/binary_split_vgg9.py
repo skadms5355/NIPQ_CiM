@@ -13,8 +13,8 @@ class PConv_BN_Merge(nn.Module):
                         arraySize=arraySize, mapping_mode=mapping_mode, pbits=1, cbits=cbits, is_noise=is_noise, noise_type=noise_type)
         self.pooling = None
         if pool:
-            self.pooling = nn.MaxPool2d(kernel_size=2, stride=2)
-            # self.pooling = nn.AvgPool2d(kernel_size=2, stride=2)
+            # self.pooling = nn.MaxPool2d(kernel_size=2, stride=2)
+            self.pooling = nn.AvgPool2d(kernel_size=2, stride=2)
         self.split_groups = self.pconv.split_groups
         self.split_BN = nn.BatchNorm2d(outplane*self.pconv.split_groups)
         self.hardtanh = nn.Hardtanh(-1, 1, inplace=True)

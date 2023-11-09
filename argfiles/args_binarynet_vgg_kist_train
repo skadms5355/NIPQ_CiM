@@ -50,7 +50,7 @@
 
 --wbits         3
 --cbits         3
---wsymmetric    n
+--wsymmetric    y
 
 --pretrained   ./checkpoints/cifar10/quant/quant_vgg9/a:1_w:3/2023-Jul-16-00-20-31/model_best.pth.tar
 

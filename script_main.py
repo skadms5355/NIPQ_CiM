@@ -22,9 +22,9 @@ parser.add_argument('--pbits', type=float, nargs='+', default=[32, 8, 7, 6, 5, 4
                     help='pbits list')
 parser.add_argument('--pclip', type=str, nargs='+', default=['sigma'],
                     help='pclip list')
-parser.add_argument('--co_noise', type=float, nargs='+', default=[0, 0.03, 0.05])
+parser.add_argument('--co_noise', type=float, nargs='+', default=[0, 0.03, 0.05, 100])
 parser.add_argument('--noise_type', default='prop', type=str,
-                    choices=['static', 'grad', 'prop', 'interp'])
+                    choices=['static', 'grad', 'prop', 'interp', 'kist'])
 parser.add_argument('--iter', default=1, type=int,
                     help='how many iterate inference process')
 parser.add_argument('--KD', action='store_true')
