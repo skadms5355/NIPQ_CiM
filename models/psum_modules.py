@@ -577,10 +577,16 @@ class PsumQConv(SplitConv):
         # get quantization parameter and input bitserial
         if weight is None:
             weight = self.weight
+            
         qweight, w_scale = self.quan_w_fn(weight)
         
 
         if self.wbit_serial:
+            # operation keep for backprop
+            if self.training:
+                output = F.conv2d(input, qweight, bias=None,
+                                  stride=self.stride, dilation=self.dilation, groups=self.groups)
+
             with torch.no_grad():
                 if self.abit_serial:
                     if short_path is None:
@@ -667,12 +673,12 @@ class PsumQConv(SplitConv):
                         out_one = (-G_min/delta_G) * self._split_forward(input_s, w_one, padded=True, ignore_bias=True, cat_output=False,
                                                 weight_is_split=True, infer_only=True, merge_group=True)
                         out_wsum -= out_one
-                    output = out_wsum if abit == 0 else output+out_wsum
+                    out_inf = out_wsum if abit == 0 else out_inf+out_wsum
 
-                # restore output's scale
-                output = output * psum_scale
+                # restore out_inf's scale
+                out_inf = out_inf * psum_scale
 
-                # restore output's shift
+                # restore out_inf's shift
                 if a_shift is not None:
                     weight_sum = torch.sum(weight, (3, 2, 1))
                     shift = weight_sum * a_shift
@@ -680,7 +686,13 @@ class PsumQConv(SplitConv):
                     psum_shift = torch.unsqueeze(psum_shift, 2)
                     psum_shift = torch.unsqueeze(psum_shift, 2)
 
-                    output = output + psum_shift
+                    out_inf = out_inf + psum_shift
+
+                ## set output
+                if self.training:
+                    output.copy_(out_inf)
+                else:
+                    output = out_inf
         else:
             if not self.abit_serial:
                 # in-mem computation mimic (split conv & psum quant/merge)
@@ -1196,6 +1208,11 @@ class PsumQLinear(SplitLinear):
         qweight, w_scale = self.quan_w_fn(self.weight)
 
         if self.wbit_serial:
+            output = None
+
+            if self.training:
+                output = F.linear(input, qweight, bias=None)
+
             with torch.no_grad():
                 if self.abit_serial:
                     sinput, a_scale, abits = Bitserial.bitserial_act(input, debug=False) # short_path parameter does not exist
@@ -1266,10 +1283,16 @@ class PsumQLinear(SplitLinear):
                     if self.is_noise and not ((self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a')):
                         out_one = (-G_min/delta_G) * self._split_forward(input_s, w_one, ignore_bias=True, infer_only=True, merge_group=True)
                         out_wsum -= out_one
-                    output = out_wsum if abit == 0 else output+out_wsum
+                    out_inf = out_wsum if abit == 0 else out_inf+out_wsum
 
-                # restore output's scale
-                output = output * psum_scale
+                # restore out_inf's scale
+                out_inf = out_inf * psum_scale
+
+                # set output
+                if self.training:
+                    output.copy_(out_inf)
+                else:
+                    output = out_inf
         else:
             abit_serial = Bitserial.abit_serial()
             if not abit_serial:

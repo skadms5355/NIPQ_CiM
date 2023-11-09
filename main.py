@@ -589,6 +589,14 @@ def main_worker(gpu, ngpus_per_node, args):
             print(f"     Bops: {bops_total.item()}GBops")
             
     elif args.model_mode == 'quant':
+        if args.psum_comp:
+            if args.psum_mode == 'sigma':
+                checkpoint = os.path.join(str(pathlib.Path().resolve()), ((args.checkpoint.replace('{}'.format(args.model_mode), 'quant')).replace('{}'.format(args.arch), '{}/eval'.format(args.arch))))
+                checkpoint = '/'.join(checkpoint.split('/')[:-1]) +'/log_bitserial_info' # time folder remove
+            else:
+                checkpoint = args.checkpoint
+            set_BitSerial_log(model, abit_serial=args.abit_serial, checkpoint=checkpoint, log_file=args.log_file,\
+                    pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma)
         if args.is_noise and not args.evaluate:
             from models.quantized_lsq_modules import hwnoise_initialize
             hwnoise_initialize(model, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
@@ -675,6 +683,12 @@ def main_worker(gpu, ngpus_per_node, args):
                                 module.quant_func.bit.data.fill_(bit)
                                 changed_bit = 2+12/(1+np.exp(-bit))
                         print("Change the bit precision to {}".format(changed_bit))
+        elif args.model_mode == 'pnq_pst':
+            if epoch == (args.epochs - args.ft_epoch):
+                set_TBitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, model_mode='lsq_pst', \
+                        pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma, noise_comb=args.noise_comb)
+                print("Change the psum training method to 'lsq_pst' method.")
+
 
         # TODO (VINN): if anyone can find a better way to caculate lr with glorot scaling, please do.
         # The way to do it without glr is scheduler.get_lr()
@@ -701,7 +715,7 @@ def main_worker(gpu, ngpus_per_node, args):
                     if type(m).__name__ in ["TPsumQConv", "TPsumQLinear"]:
                         if m.wbits != 32:
                             import torch.nn.functional as F
-                            act_alpha = F.softplus(m.alpha)/m.psum_scale
+                            act_alpha = F.softplus(m.alpha)
                             print('\n [Layer {}] alpha value {} {} / {}'.format(m.layer_idx, m.alpha, act_alpha, m.alpha.grad))
                         if m.weight.grad is not None:
                             print("PsumQuant {} {} \n weight: {}".format(m.layer_idx, m.weight.grad[0][0:5], m.weight[0][0:5]))

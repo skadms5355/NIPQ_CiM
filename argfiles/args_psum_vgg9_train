@@ -6,7 +6,7 @@
 --augment	    y  
 
 --epoch         50
---ft_epoch      5
+# --ft_epoch      5
 --train-batch   256
 --test-batch    200
 
@@ -26,8 +26,8 @@
 --weight-decay  0
 --dropout	    0.0
 
---model_mode    pnq_pst
---arch          psum_lsq_vgg9_train
+--model_mode    quant
+--arch          psum_lsq_vgg9
 --gpu-id	    0
 
 --arraySize     128
@@ -44,7 +44,7 @@
 --pclip         sigma
 --psigma        3
 
---noise_comb    y
+# --noise_comb    y
 
 # for noise
 --is_noise      n

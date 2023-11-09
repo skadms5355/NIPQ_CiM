@@ -679,13 +679,13 @@ class QuantPsumMergeTrain(torch.autograd.Function):
     def backward(ctx, grad_output):
         input_ps = ctx.saved_tensors[0]
         levels, groups, step_train = ctx.other
-        # alpha_scale = 1.0 / ((levels * input_ps.numel()) ** 0.5)
+        alpha_scale = 1.0 / ((levels * input_ps.numel()) ** 0.5)
         indicate_small = (input_ps < (-levels+1)).float()
         indicate_big = (input_ps > levels).float()
         indicate_middle = 1.0 - indicate_small - indicate_big
         if step_train:
-            # grad_step = ((indicate_small * (-levels+1) + indicate_big * (levels) + indicate_middle * (-input_ps +input_ps.round()))*grad_output.repeat_interleave(groups, dim=1)*alpha_scale).sum().unsqueeze(dim=0)
-            grad_step = ((indicate_small * (-levels+1) + indicate_big * (levels) + indicate_middle * (-input_ps +input_ps.round()))*grad_output.repeat_interleave(groups, dim=1)).sum().unsqueeze(dim=0)
+            grad_step = ((indicate_small * (-levels+1) + indicate_big * (levels) + indicate_middle * (-input_ps +input_ps.round()))*grad_output.repeat_interleave(groups, dim=1)*alpha_scale).sum().unsqueeze(dim=0)
+            # grad_step = ((indicate_small * (-levels+1) + indicate_big * (levels) + indicate_middle * (-input_ps +input_ps.round()))*grad_output.repeat_interleave(groups, dim=1)).sum().unsqueeze(dim=0)
         else:
             grad_step = None
         # indicate_middle = (sum(torch.chunk(indicate_middle, groups, dim=1))>0).float()
