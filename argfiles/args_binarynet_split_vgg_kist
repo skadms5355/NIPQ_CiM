@@ -25,23 +25,28 @@
 # --pretrained    ./checkpoints/cifar10/binary_split/binary_split_vgg9/a:1_w:1/2T2R/128_c:4/2023-Aug-04-16-43-33/model_best.pth.tar
 
 
---wbits         3
---cbits         3
---pretrained    ./checkpoints/cifar10/binary_split/binary_split_vgg9/a:1_w:3/2T2R/128_c:3/2023-Nov-08-16-44-32/model_best.pth.tar
+# --wbits         3
+# --cbits         3
+#Max
+# --pretrained    ./checkpoints/cifar10/binary_split/binary_split_vgg9/a:1_w:3/2T2R/128_c:3/2023-Nov-08-16-44-32/model_best.pth.tar
+#Avg
+# --pretrained    ./checkpoints/cifar10/binary_split/binary_split_vgg9/a:1_w:3/wsymmetric/2T2R/128_c:3/2023-Nov-09-13-14-21/model_best.pth.tar
 
 
-# --wbits         4
-# --cbits         4
+--wbits         4
+--cbits         4
+#Max
 # --pretrained    ./checkpoints/cifar10/binary_split/binary_split_vgg9/a:1_w:4/wsymmetric/2T2R/128_c:4/2023-Nov-08-16-29-11/model_best.pth.tar
-# --wsymmetric    y
+#Avg
+--pretrained    ./checkpoints/cifar10/binary_split/binary_split_vgg9/a:1_w:4/wsymmetric/2T2R/128_c:4/2023-Nov-09-12-54-29/model_best.pth.tar
+
+--wsymmetric    y
 
 --psum_comp     y
 --arraySize     128
 --mapping_mode  2T2R
 --wbit-serial   y
 --abit-serial   y
-
-# --wsymmetric    y
 
 --psum_mode     sigma
 # --pbits         32
