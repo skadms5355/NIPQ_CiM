@@ -829,34 +829,12 @@ class TPsumQConv(SplitConv):
                     self.pstep = F.softplus(self.alpha) /psum_scale
 
                 # pseudo-noise generation 
-                delta = self.pstep / (self.phalf_num_levels -1)
-                
-                c1 = out_tmp >= self.pstep
-                c2 = out_tmp <= -self.pstep
-
                 with torch.no_grad():
-                    N_BIN=256 
-                    out_quant=None
-                    out_list = torch.chunk(out_tmp.detach(), self.split_groups, dim=0)
-                    out_list = [out_list[g].squeeze() for g in range(self.split_groups)]
-                    out_quant = psum_quant(out_quant, out_list,
-                                            pbits=self.pbits, step=self.pstep, 
-                                            half_num_levels=self.phalf_num_levels, 
-                                            pbound=self.pbound, center=self.center, weight=2**abit,
-                                            groups=self.split_groups, pzero=self.pzero)
-                    out_quant = torch.stack(out_quant, dim=0)
-                    diff = (out_quant - out_tmp) / delta
-                    sel = diff[torch.logical_not(torch.logical_or(c1, c2))]           
-                    hist = torch.histc(sel, bins=N_BIN, min=-0.5, max=0.5) 
-                    # Qp = self.phalf_num_levels - 1
-                    # Qn = -self.phalf_num_levels
-                    del out_quant, out_list
-                    torch.cuda.empty_cache()
+                    Qp = self.phalf_num_levels - 1
+                    Qn = -self.phalf_num_levels
 
                     if not self.noise_comb:
-                        noise = torch.multinomial(hist, out_tmp.numel(), True) + torch.rand_like(out_tmp.view(-1))               
-                        noise = (noise / N_BIN - 0.5).view(out_tmp.shape)
-                        # noise = (torch.rand_like(out_tmp) - 0.5)
+                        noise = (torch.rand_like(out_tmp) - 0.5)
                         # noise = (2**abit * sigma)**2 * (torch.rand_like(out_tmp) - 0.5)
                     else: #4-bit at once time
                         sum_sigma = 0
@@ -867,15 +845,16 @@ class TPsumQConv(SplitConv):
                         Qp = (2**(abits)-1) * Qp
                         Qn = (2**(abits)-1) * Qn
 
-                # c1 = out_tmp >= Qp
-                # c2 = out_tmp <= Qn
 
-                # out_tmp = out_tmp / self.pstep
+                c1 = out_tmp >= Qp
+                c2 = out_tmp <= Qn
 
+                out_tmp = out_tmp / self.pstep
 
-                # out_tmp = (out_tmp+noise)*self.pstep
-                # out_tmp = torch.where(c1, Qp, torch.where(c2, Qn, out_tmp+noise))*self.pstep
-                out_tmp = torch.where(c1, self.pstep, torch.where(c2, -self.pstep, out_tmp+noise*delta))
+                out_tmp = torch.where(c1, Qp, torch.where(c2, Qn, out_tmp+noise))*self.pstep
+                
+                del c1, c2
+                torch.cuda.empty_cache()
 
                 if wbit == 0:
                     out_wsum = out_tmp.sum(dim=0)
@@ -1611,35 +1590,12 @@ class TPsumQLinear(SplitLinear):
                     self.pstep = F.softplus(self.alpha) /psum_scale
 
                 # pseudo-noise generation
-                delta = self.pstep / (self.phalf_num_levels -1)
-                
-                c1 = out_tmp >= self.pstep
-                c2 = out_tmp <= -self.pstep 
-
                 with torch.no_grad():
-                    N_BIN=256 
-                    out_quant=None
-                    out_list = torch.chunk(out_tmp.detach(), self.split_groups, dim=0)
-                    out_list = [out_list[g].squeeze() for g in range(self.split_groups)]
-                    out_quant = psum_quant(out_quant, out_list,
-                                            pbits=self.pbits, step=self.pstep, 
-                                            half_num_levels=self.phalf_num_levels, 
-                                            pbound=self.pbound, center=self.center, weight=2**abit,
-                                            groups=self.split_groups, pzero=self.pzero)
-                    out_quant = torch.stack(out_quant, dim=0)
-                    diff = (out_quant - out_tmp) / delta
-
-                    sel = diff[torch.logical_not(torch.logical_or(c1, c2))]           
-                    hist = torch.histc(sel, bins=N_BIN, min=-0.5, max=0.5) 
-                    # Qp = self.phalf_num_levels -1
-                    # Qn = -self.phalf_num_levels
-                    del out_quant, out_list
-                    torch.cuda.empty_cache()
+                    Qp = self.phalf_num_levels -1
+                    Qn = -self.phalf_num_levels
 
                     if not self.noise_comb:
-                        noise = torch.multinomial(hist, out_tmp.numel(), True) + torch.rand_like(out_tmp.view(-1))               
-                        noise = (noise / N_BIN - 0.5).view(out_tmp.shape)
-                        # noise = torch.rand_like(out_tmp) - 0.5
+                        noise = torch.rand_like(out_tmp) - 0.5
                     else: #4-bit at once time
                         sum_sigma = 0
                         sigma = math.sqrt(1/12)
@@ -1649,16 +1605,16 @@ class TPsumQLinear(SplitLinear):
                         Qp = (2**(abits)-1) * Qp
                         Qn = (2**(abits)-1) * Qn
 
-                    
+                out_tmp = out_tmp / self.pstep
 
-                # out_tmp = out_tmp / self.pstep
+                c1 = out_tmp >= Qp
+                c2 = out_tmp <= Qn
 
-                # c1 = out_tmp >= Qp
-                # c2 = out_tmp <= Qn
+                out_tmp = torch.where(c1, Qp, torch.where(c2, Qn, out_tmp+noise))*self.pstep
+                # out_tmp = torch.where(c1, self.pstep, torch.where(c2, -self.pstep, out_tmp+noise*delta))
 
-                # out_tmp = torch.where(c1, Qp, torch.where(c2, Qn, out_tmp+noise))*self.pstep
-                out_tmp = torch.where(c1, self.pstep, torch.where(c2, -self.pstep, out_tmp+noise*delta))
-
+                del c1, c2
+                torch.cuda.empty_cache()
 
                 if wbit == 0:
                     out_wsum = out_tmp.sum(dim=0)
