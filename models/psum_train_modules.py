@@ -9,7 +9,7 @@ import pandas as pd
 from .noise_cell import Noise_cell
 import utils.padding as Pad
 from .quantized_lsq_modules import *
-from .quantized_basic_modules import psum_quant_merge
+from .quantized_basic_modules import psum_quant_merge, psum_quant
 from .bitserial_modules import *
 from .split_modules import *
 
@@ -250,7 +250,7 @@ class TPsumQConv(SplitConv):
     def init_form(self, x, half_levels):
         if (self.mapping_mode == '2T2R') or (self.mapping_mode == 'PN'):
             # self.alpha.data.fill_((x.detach().abs().mean())+x.detach().std())
-            # alpha = ((x.detach().abs().mean() * 2 / (levels ** 0.5)))
+            # alpha = ((x.detach().abs().mean() * 2 / (half_levels ** 0.5)))
             alpha = (x.abs().std() * 3 / (half_levels))
             self.alpha.data.fill_(np.log(np.exp(alpha.item())-1))   # softplus initialization 
             real_alpha = F.softplus(self.alpha)
@@ -575,7 +575,7 @@ class TPsumQConv(SplitConv):
                 elif self.psum_mode == 'retrain':
                     # self.alpha.data = self.alpha.data.round()
                     # self.pstep = self.alpha
-                    self.pstep = F.softplus(self.alpha)
+                    self.pstep = F.softplus(self.alpha) /psum_scale
 
                 else:
                     assert False, 'This script does not support {self.psum_mode}'
@@ -695,7 +695,7 @@ class TPsumQConv(SplitConv):
             step_train = False
         elif self.psum_mode == 'retrain':
             # if self.init_state == 1:
-            self.pstep = F.softplus(self.alpha)
+            self.pstep = F.softplus(self.alpha) /psum_scale
                 # self.pstep = (self.pstep - self.pstep/psum_scale).detach()+self.pstep/psum_scale
             # self.pstep = self.alpha
             step_train = True
@@ -732,9 +732,9 @@ class TPsumQConv(SplitConv):
                                         weight_is_split=True, split_train=True, channel=True)
                 if (self.psum_mode == 'retrain') and (self.init_state == 0):
                     # self.init_form(sum(out_tmp)/self.split_groups, self.phalf_num_levels)
-                    self.init_form(out_tmp, self.phalf_num_levels)
+                    self.init_form(out_tmp*psum_scale, self.phalf_num_levels)
                     self.init_state.fill_(1)
-                    self.pstep = F.softplus(self.alpha)
+                    self.pstep = F.softplus(self.alpha) /psum_scale
 
                     # self.pstep = self.alpha
 
@@ -797,7 +797,7 @@ class TPsumQConv(SplitConv):
             minVal, _, midVal = self._ADC_clamp_value()
             self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
         elif self.psum_mode == 'retrain':
-            self.pstep = F.softplus(self.alpha)
+            self.pstep = F.softplus(self.alpha) /psum_scale
         else:
             assert False, 'This script does not support {self.psum_mode}'
         
@@ -823,13 +823,40 @@ class TPsumQConv(SplitConv):
                 out_tmp = torch.stack(self._split_forward(input_s, weight_s, padded=True, ignore_bias=True, cat_output=False,
                                         weight_is_split=True, split_train=True, channel=True), dim=0)
                 
+                if (self.psum_mode == 'retrain') and (self.init_state == 0):
+                    self.init_form(out_tmp*psum_scale, self.phalf_num_levels)
+                    self.init_state.fill_(1)
+                    self.pstep = F.softplus(self.alpha) /psum_scale
+
                 # pseudo-noise generation 
+                delta = self.pstep / (self.phalf_num_levels -1)
+                
+                c1 = out_tmp >= self.pstep
+                c2 = out_tmp <= -self.pstep
+
                 with torch.no_grad():
-                    Qp = self.phalf_num_levels
-                    Qn = 1-self.phalf_num_levels
+                    N_BIN=256 
+                    out_quant=None
+                    out_list = torch.chunk(out_tmp.detach(), self.split_groups, dim=0)
+                    out_list = [out_list[g].squeeze() for g in range(self.split_groups)]
+                    out_quant = psum_quant(out_quant, out_list,
+                                            pbits=self.pbits, step=self.pstep, 
+                                            half_num_levels=self.phalf_num_levels, 
+                                            pbound=self.pbound, center=self.center, weight=2**abit,
+                                            groups=self.split_groups, pzero=self.pzero)
+                    out_quant = torch.stack(out_quant, dim=0)
+                    diff = (out_quant - out_tmp) / delta
+                    sel = diff[torch.logical_not(torch.logical_or(c1, c2))]           
+                    hist = torch.histc(sel, bins=N_BIN, min=-0.5, max=0.5) 
+                    # Qp = self.phalf_num_levels - 1
+                    # Qn = -self.phalf_num_levels
+                    del out_quant, out_list
+                    torch.cuda.empty_cache()
 
                     if not self.noise_comb:
-                        noise = (torch.rand_like(out_tmp) - 0.5)
+                        noise = torch.multinomial(hist, out_tmp.numel(), True) + torch.rand_like(out_tmp.view(-1))               
+                        noise = (noise / N_BIN - 0.5).view(out_tmp.shape)
+                        # noise = (torch.rand_like(out_tmp) - 0.5)
                         # noise = (2**abit * sigma)**2 * (torch.rand_like(out_tmp) - 0.5)
                     else: #4-bit at once time
                         sum_sigma = 0
@@ -840,18 +867,16 @@ class TPsumQConv(SplitConv):
                         Qp = (2**(abits)-1) * Qp
                         Qn = (2**(abits)-1) * Qn
 
-                if (self.psum_mode == 'retrain') and (self.init_state == 0):
-                    self.init_form(out_tmp, self.phalf_num_levels)
-                    self.init_state.fill_(1)
-                    self.pstep = F.softplus(self.alpha)
+                # c1 = out_tmp >= Qp
+                # c2 = out_tmp <= Qn
 
-                out_tmp = out_tmp / self.pstep
+                # out_tmp = out_tmp / self.pstep
 
-                c1 = out_tmp >= Qp
-                c2 = out_tmp <= Qn
 
                 # out_tmp = (out_tmp+noise)*self.pstep
-                out_tmp = torch.where(c1, Qp, torch.where(c2, Qn, out_tmp+noise))*self.pstep
+                # out_tmp = torch.where(c1, Qp, torch.where(c2, Qn, out_tmp+noise))*self.pstep
+                out_tmp = torch.where(c1, self.pstep, torch.where(c2, -self.pstep, out_tmp+noise*delta))
+
                 if wbit == 0:
                     out_wsum = out_tmp.sum(dim=0)
                 else: 
@@ -1088,7 +1113,7 @@ class TPsumQLinear(SplitLinear):
     def init_form(self, x, half_levels):
         if (self.mapping_mode == '2T2R') or (self.mapping_mode == 'PN'):
             # self.alpha.data.fill_((x.detach().abs().std()*3).ceil())
-            # alpha = ((x.detach().abs().mean() * 2 / (levels ** 0.5)))
+            # alpha = ((x.detach().abs().mean() * 2 / (half_levels ** 0.5)))
             alpha = (x.abs().std() * 3 / (half_levels))
             self.alpha.data.fill_(np.log(np.exp(alpha.item())-1))
             real_alpha = F.softplus(self.alpha)
@@ -1364,7 +1389,7 @@ class TPsumQLinear(SplitLinear):
                     self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
                 elif self.psum_mode == 'retrain':
                     # self.alpha.data = self.alpha.data.round()
-                    self.pstep = F.softplus(self.alpha)
+                    self.pstep = F.softplus(self.alpha) /psum_scale
                     # self.pstep = self.alpha
                 elif self.psum_mode == 'scan':
                     pass
@@ -1466,7 +1491,7 @@ class TPsumQLinear(SplitLinear):
             step_train = False
         elif self.psum_mode == 'retrain':
             if self.init_state == 1:
-                self.pstep = F.softplus(self.alpha)
+                self.pstep = F.softplus(self.alpha) /psum_scale
                 # self.pstep = (self.pstep - self.pstep/psum_scale).detach()+self.pstep/psum_scale
             step_train = True
         else:
@@ -1499,9 +1524,9 @@ class TPsumQLinear(SplitLinear):
                 
                 if (self.psum_mode == 'retrain') and (self.init_state == 0):
                     # self.init_form(sum(out_tmp)/self.split_groups, self.phalf_num_levels)
-                    self.init_form(out_tmp, self.phalf_num_levels)
+                    self.init_form(out_tmp*psum_scale, self.phalf_num_levels)
                     self.init_state.fill_(1)
-                    self.pstep = F.softplus(self.alpha)
+                    self.pstep = F.softplus(self.alpha) /psum_scale
 
                 out_mag, multi_scale = self._output_magnitude(abit, wbit, wsplit_num)
 
@@ -1555,7 +1580,7 @@ class TPsumQLinear(SplitLinear):
             minVal, _, midVal = self._ADC_clamp_value()
             self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
         elif self.psum_mode == 'retrain':
-            self.pstep = F.softplus(self.alpha)
+            self.pstep = F.softplus(self.alpha) /psum_scale
         else:
             assert False, 'This script does not support {self.psum_mode}'
         
@@ -1580,13 +1605,41 @@ class TPsumQLinear(SplitLinear):
             for wbit, weight_s in enumerate(weight_chunk):
                 out_tmp = torch.stack(self._split_forward(input_s, weight_s, ignore_bias=True, cat_output=False, split_train=True), dim=0)
 
-                # pseudo-noise generation 
+                if (self.psum_mode == 'retrain') and (self.init_state == 0):
+                    self.init_form(out_tmp*psum_scale, self.phalf_num_levels)
+                    self.init_state.fill_(1)
+                    self.pstep = F.softplus(self.alpha) /psum_scale
+
+                # pseudo-noise generation
+                delta = self.pstep / (self.phalf_num_levels -1)
+                
+                c1 = out_tmp >= self.pstep
+                c2 = out_tmp <= -self.pstep 
+
                 with torch.no_grad():
-                    Qp = self.phalf_num_levels
-                    Qn = 1-self.phalf_num_levels
+                    N_BIN=256 
+                    out_quant=None
+                    out_list = torch.chunk(out_tmp.detach(), self.split_groups, dim=0)
+                    out_list = [out_list[g].squeeze() for g in range(self.split_groups)]
+                    out_quant = psum_quant(out_quant, out_list,
+                                            pbits=self.pbits, step=self.pstep, 
+                                            half_num_levels=self.phalf_num_levels, 
+                                            pbound=self.pbound, center=self.center, weight=2**abit,
+                                            groups=self.split_groups, pzero=self.pzero)
+                    out_quant = torch.stack(out_quant, dim=0)
+                    diff = (out_quant - out_tmp) / delta
+
+                    sel = diff[torch.logical_not(torch.logical_or(c1, c2))]           
+                    hist = torch.histc(sel, bins=N_BIN, min=-0.5, max=0.5) 
+                    # Qp = self.phalf_num_levels -1
+                    # Qn = -self.phalf_num_levels
+                    del out_quant, out_list
+                    torch.cuda.empty_cache()
 
                     if not self.noise_comb:
-                        noise = torch.rand_like(out_tmp) - 0.5
+                        noise = torch.multinomial(hist, out_tmp.numel(), True) + torch.rand_like(out_tmp.view(-1))               
+                        noise = (noise / N_BIN - 0.5).view(out_tmp.shape)
+                        # noise = torch.rand_like(out_tmp) - 0.5
                     else: #4-bit at once time
                         sum_sigma = 0
                         sigma = math.sqrt(1/12)
@@ -1596,18 +1649,16 @@ class TPsumQLinear(SplitLinear):
                         Qp = (2**(abits)-1) * Qp
                         Qn = (2**(abits)-1) * Qn
 
-                if (self.psum_mode == 'retrain') and (self.init_state == 0):
-                    self.init_form(out_tmp, self.phalf_num_levels)
-                    self.init_state.fill_(1)
-                    self.pstep = F.softplus(self.alpha)
                     
 
-                out_tmp = out_tmp / self.pstep
+                # out_tmp = out_tmp / self.pstep
 
-                c1 = out_tmp >= Qp
-                c2 = out_tmp <= Qn
+                # c1 = out_tmp >= Qp
+                # c2 = out_tmp <= Qn
 
-                out_tmp = torch.where(c1, Qp, torch.where(c2, Qn, out_tmp+noise))*self.pstep
+                # out_tmp = torch.where(c1, Qp, torch.where(c2, Qn, out_tmp+noise))*self.pstep
+                out_tmp = torch.where(c1, self.pstep, torch.where(c2, -self.pstep, out_tmp+noise*delta))
+
 
                 if wbit == 0:
                     out_wsum = out_tmp.sum(dim=0)

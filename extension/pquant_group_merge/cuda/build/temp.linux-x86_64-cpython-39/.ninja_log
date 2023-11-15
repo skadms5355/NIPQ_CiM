@@ -1,3 +1,5 @@
 # ninja log v5
 0	14973	1699322192000000000	/home/nameunkang/Project/NIPQ_CiM/extension/pquant_group_merge/cuda/build/temp.linux-x86_64-cpython-39/pquant_group_merge_cuda.o	7461d0eb0e0efe19
 0	59581	1699322237000000000	/home/nameunkang/Project/NIPQ_CiM/extension/pquant_group_merge/cuda/build/temp.linux-x86_64-cpython-39/pquant_group_merge_cuda_kernel.o	a4a2d92e354e127a
+567	51069	1700011571000000000	/home/nameunkang/Project/NIPQ_CiM/extension/pquant_group_merge/cuda/build/temp.linux-x86_64-cpython-39/pquant_group_merge_cuda_kernel.o	a4a2d92e354e127a
+40	47792	1700012065000000000	/home/nameunkang/Project/NIPQ_CiM/extension/pquant_group_merge/cuda/build/temp.linux-x86_64-cpython-39/pquant_group_merge_cuda_kernel.o	a4a2d92e354e127a

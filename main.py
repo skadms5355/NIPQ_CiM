@@ -812,7 +812,7 @@ def main_worker(gpu, ngpus_per_node, args):
         for m in model.modules():
             if type(m).__name__ in ["TPsumQConv", "TPsumQLinear"]:
                 if m.wbits != 32:
-                    print('\n [Layer {}] alpha value {} {}'.format(m.layer_idx, m.alpha, m.alpha.grad))
+                    print('\n [Layer {}] alpha value {} step {}'.format(m.layer_idx, m.alpha, m.pstep))
 
 
     writer.close() # closing the tensorboard summarywriter.
