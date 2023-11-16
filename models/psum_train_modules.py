@@ -824,14 +824,23 @@ class TPsumQConv(SplitConv):
                                         weight_is_split=True, split_train=True, channel=True), dim=0)
                 
                 if (self.psum_mode == 'retrain') and (self.init_state == 0):
-                    self.init_form(out_tmp*psum_scale, self.phalf_num_levels)
+                    if not self.noise_comb:
+                        self.init_form(out_tmp*psum_scale, self.phalf_num_levels)
+                    else:
+                        with torch.no_grad():
+                            input_init = input_s.bool().to(input_s.dtype)
+                            out_init = torch.stack(self._split_forward(input_init, weight_s, padded=True, ignore_bias=True, cat_output=False,
+                                        weight_is_split=True, split_train=True, channel=True), dim=0)
+                        self.init_form(out_init*psum_scale, self.phalf_num_levels)
+                        del input_init, out_init
+                        torch.cuda.empty_cache()
                     self.init_state.fill_(1)
-                    self.pstep = F.softplus(self.alpha) /psum_scale
+                    self.pstep = F.softplus(self.alpha) / psum_scale
 
                 # pseudo-noise generation 
                 with torch.no_grad():
-                    Qp = self.phalf_num_levels - 1
-                    Qn = -self.phalf_num_levels
+                    Qp = self.phalf_num_levels 
+                    Qn = 1 - self.phalf_num_levels
 
                     if not self.noise_comb:
                         noise = (torch.rand_like(out_tmp) - 0.5)
@@ -844,17 +853,14 @@ class TPsumQConv(SplitConv):
                         noise = sum_sigma * torch.randn_like(out_tmp) #normal distribution approximation
                         Qp = (2**(abits)-1) * Qp
                         Qn = (2**(abits)-1) * Qn
+                        # self.pstep  = (2**(abits)-1) * self.pstep
 
+                out_tmp = out_tmp / self.pstep
 
                 c1 = out_tmp >= Qp
                 c2 = out_tmp <= Qn
 
-                out_tmp = out_tmp / self.pstep
-
                 out_tmp = torch.where(c1, Qp, torch.where(c2, Qn, out_tmp+noise))*self.pstep
-                
-                del c1, c2
-                torch.cuda.empty_cache()
 
                 if wbit == 0:
                     out_wsum = out_tmp.sum(dim=0)
@@ -1585,14 +1591,23 @@ class TPsumQLinear(SplitLinear):
                 out_tmp = torch.stack(self._split_forward(input_s, weight_s, ignore_bias=True, cat_output=False, split_train=True), dim=0)
 
                 if (self.psum_mode == 'retrain') and (self.init_state == 0):
-                    self.init_form(out_tmp*psum_scale, self.phalf_num_levels)
+                    if not self.noise_comb:
+                        self.init_form(out_tmp*psum_scale, self.phalf_num_levels)
+                    else:
+                        with torch.no_grad():
+                            input_init = input_s.bool().to(input_s.dtype)
+                            out_init = torch.stack(self._split_forward(input_init, weight_s, ignore_bias=True, cat_output=False, split_train=True), dim=0)
+                        self.init_form(out_init*psum_scale, self.phalf_num_levels)
+                        del input_init, out_init
+                        torch.cuda.empty_cache()
                     self.init_state.fill_(1)
                     self.pstep = F.softplus(self.alpha) /psum_scale
 
+
                 # pseudo-noise generation
                 with torch.no_grad():
-                    Qp = self.phalf_num_levels -1
-                    Qn = -self.phalf_num_levels
+                    Qp = self.phalf_num_levels
+                    Qn = 1 - self.phalf_num_levels
 
                     if not self.noise_comb:
                         noise = torch.rand_like(out_tmp) - 0.5
@@ -1604,6 +1619,7 @@ class TPsumQLinear(SplitLinear):
                         noise = sum_sigma * torch.randn_like(out_tmp) #normal distribution approximation 
                         Qp = (2**(abits)-1) * Qp
                         Qn = (2**(abits)-1) * Qn
+                        # self.pstep  = (2**(abits)-1) * self.pstep
 
                 out_tmp = out_tmp / self.pstep
 
@@ -1612,9 +1628,6 @@ class TPsumQLinear(SplitLinear):
 
                 out_tmp = torch.where(c1, Qp, torch.where(c2, Qn, out_tmp+noise))*self.pstep
                 # out_tmp = torch.where(c1, self.pstep, torch.where(c2, -self.pstep, out_tmp+noise*delta))
-
-                del c1, c2
-                torch.cuda.empty_cache()
 
                 if wbit == 0:
                     out_wsum = out_tmp.sum(dim=0)

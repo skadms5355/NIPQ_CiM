@@ -1,3 +1,4 @@
 # ninja log v5
 1	11144	1700015768000000000	/home/nameunkang/Project/NIPQ_CiM/extension/pquant/cuda/build/temp.linux-x86_64-cpython-39/pquant_cuda.o	f849593e44c5e10
 1	49535	1700015806000000000	/home/nameunkang/Project/NIPQ_CiM/extension/pquant/cuda/build/temp.linux-x86_64-cpython-39/pquant_cuda_kernel.o	a6a97c14ac716da2
+39	47791	1700027475000000000	/home/nameunkang/Project/NIPQ_CiM/extension/pquant/cuda/build/temp.linux-x86_64-cpython-39/pquant_cuda_kernel.o	a6a97c14ac716da2

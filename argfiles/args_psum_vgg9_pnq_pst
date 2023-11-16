@@ -5,7 +5,7 @@
 --dataset       cifar10
 --augment	    y  
 
---epoch         50
+--epoch         30
 --ft_epoch      5
 --train-batch   256
 --test-batch    200
@@ -16,7 +16,7 @@
 --warmup        3
 --warmup_start_multiplier 0.1
 --eta_min       1e-3
---T0            47
+--T0            27
 
 --pretrained    ./checkpoints/cifar10/quant/lsq_vgg9/a:4_w:4/2022-Apr-01-18-57-49/model_best.pth.tar         
 
