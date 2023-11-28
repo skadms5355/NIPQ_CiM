@@ -15,6 +15,7 @@ from torch.nn.modules.utils import _pair #YUL: added to use _pair for padding & 
 
 import utils.padding as Pad
 import pquant_group_merge_cuda
+import pquant_scale_group_merge_cuda
 import pquant_cuda
 
 class QuantActFunc(torch.autograd.Function):
@@ -581,10 +582,15 @@ class QuantPsumMerge(torch.autograd.Function):
         ctx.mark_dirty(output)
         ctx.pste = pste
         ##return pquant_merge_cpp.forward(output, input, pbits, step, half_num_levels, weight, center, pzero) 
-        return pquant_group_merge_cuda.forward(output, input, pbits, step, half_num_levels, weight, center, groups, pzero) 
+        if step.ndim > 1:
+            step_list = step.squeeze().tolist()
+            return pquant_scale_group_merge_cuda.forward(output, input, pbits, step_list, half_num_levels, weight, center, groups, pzero) 
+        else:
+            return pquant_group_merge_cuda.forward(output, input, pbits, step, half_num_levels, weight, center, groups, pzero) 
 
 
         # output_cat= None
+        # out_test=torch.zeros_like(input[0])
         # if ( pbits == 32 ):
         #     input_merge = input[0]
         #     for g in range(1, groups):
@@ -594,7 +600,7 @@ class QuantPsumMerge(torch.autograd.Function):
         #     step_tmp = step * weight
         #     for g in range(0, groups):
         #         out_tmp = input[g].sub(center)
-        #         out_tmp.div_(step_tmp)
+        #         out_tmp.div_(step_tmp[g])
         #         if (pzero):
         #             if ( pbits == 1):
         #                 out_tmp.ge_(0)
@@ -611,19 +617,19 @@ class QuantPsumMerge(torch.autograd.Function):
         #                 out_tmp.round_()
         #                 out_tmp.clamp_(0, 2*half_num_levels-1)
 
-        #         out_tmp.mul_(step_tmp)
+        #         out_tmp.mul_(step_tmp[g])
         #         out_tmp.add_(center)
         #         output_cat = torch.cat([output_cat, out_tmp], dim=1) if g!=0 else out_tmp
-        #         output += out_tmp
+        #         out_test += out_tmp
            
-            # output_set = list(set(output_cat.cpu().numpy().ravel()))
-            # print(half_num_levels)
-            # print(step)
-            # print(weight)
-            # print('test', sorted(output_set))
-            # import pdb; pdb.set_trace()
+        #     # output_set = list(set(output_cat.cpu().numpy().ravel()))
+        #     print(half_num_levels)
+        #     print(step)
+        #     print(weight)
+        #     # print('test', sorted(output_set))
+        #     import pdb; pdb.set_trace()
 
-        return output
+        # return output
 
 
     @staticmethod
@@ -721,6 +727,7 @@ class QuantPsumMergeTrain(torch.autograd.Function):
         indicate_big = (input_ps > levels).float()
         indicate_middle = 1.0 - indicate_small - indicate_big
         if step_train:
+            import pdb; pdb.set_trace()
             grad_step = ((indicate_small * (-levels+1) + indicate_big * (levels) + indicate_middle * (-input_ps +input_ps.round()))*grad_output.repeat_interleave(groups, dim=1)*alpha_scale).sum().unsqueeze(dim=0)
             # grad_step = ((indicate_small * (-levels+1) + indicate_big * (levels) + indicate_middle * (-input_ps +input_ps.round()))*grad_output.repeat_interleave(groups, dim=1)).sum().unsqueeze(dim=0)
         else:

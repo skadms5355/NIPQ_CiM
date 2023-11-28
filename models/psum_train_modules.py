@@ -58,7 +58,7 @@ class TPsumQConv(SplitConv):
         Quant(LSQ)Conv + Psum quantization
     """
     def __init__(self, in_channels, out_channels, wbits=32, kernel_size=3, stride=1, padding=0, groups=1, symmetric=False, bias=False, padding_mode='zeros', 
-                arraySize=128, wbit_serial=False, mapping_mode='none', psum_mode='sigma', cbits=None, is_noise=False, noise_type=None):
+                arraySize=128, wbit_serial=False, mapping_mode='none', psum_mode='sigma', pclipmode='Layer', cbits=None, is_noise=False, noise_type=None):
         super(TPsumQConv, self).__init__(in_channels, out_channels, kernel_size,
                                        stride=stride, padding=padding, groups=groups, bias=bias)
         # for Qconv
@@ -97,7 +97,8 @@ class TPsumQConv(SplitConv):
         self.arraySize = arraySize
         self.cbits = cbits # Cell bits [multi, binary]
         self.psum_mode = psum_mode
-        self.pclipmode = 'Layer'
+        self.model_mode = None
+        self.pclipmode = pclipmode
         self.pbits = 32
         # for scan version
         self.pstep = None
@@ -108,11 +109,9 @@ class TPsumQConv(SplitConv):
         self.pclip = 'sigma'
         self.psigma = 3
         self.weight_chunk = None
-        # for retrain version
-        self.model_mode = None
-        self.alpha = nn.Parameter(torch.Tensor(1)[0])
-        self.register_buffer('init_state', torch.zeros(1))
         # for pseudo-nosie training
+        if psum_mode == 'retrain':
+            self.setting_alpha(pclipmode=pclipmode)
         self.noise_comb = False
 
         # for noise option
@@ -162,6 +161,14 @@ class TPsumQConv(SplitConv):
 
         self.setting_pquant_func(pbits=pbits, center=center, pbound=pbound)
     
+    def setting_alpha(self, pclipmode='Layer'):
+        self.register_buffer('init_state', torch.zeros(1))
+        if pclipmode == 'Layer':
+            self.alpha = nn.Parameter(torch.Tensor(1)[0])
+        elif pclipmode == 'Array':
+            self.alpha = nn.Parameter(torch.zeros(self.split_groups, 1, 1, 1, 1))
+        else:
+            assert False, "pclipmode check, this pclipmode is {}".format(pclipmode)
 
     def _weight_bitserial(self, weight, w_scale, cbits=4):
         weight_uint = weight / w_scale
@@ -251,10 +258,16 @@ class TPsumQConv(SplitConv):
         if (self.mapping_mode == '2T2R') or (self.mapping_mode == 'PN'):
             # self.alpha.data.fill_((x.detach().abs().mean())+x.detach().std())
             # alpha = ((x.detach().abs().mean() * 2 / (half_levels ** 0.5)))
-            alpha = (x.abs().std() * 3 / (half_levels))
-            self.alpha.data.fill_(np.log(np.exp(alpha.item())-1))   # softplus initialization 
-            real_alpha = F.softplus(self.alpha)
-            print("{} alpha: {} {}".format(self.layer_idx, self.alpha, real_alpha))
+            if self.pclipmode == 'Layer':
+                alpha = (x.detach().abs().std() * 3 / (half_levels))
+                self.alpha.data.fill_(np.log(np.exp(alpha.item())-1))   # softplus initialization 
+            else: 
+                alpha = x.detach().abs().std(dim=list(range(1, x.dim())), keepdim=True) * 3 / (half_levels)
+                self.alpha.data.copy_(torch.log(torch.exp(alpha)-1))
+
+            with torch.no_grad():
+                real_alpha = F.softplus(self.alpha)
+                print("{} alpha: {} {}".format(self.layer_idx, self.alpha.view(-1), real_alpha.view(-1)))
 
         else:
             assert False, "{} mode is not considered in training clipping parameter"
@@ -927,7 +940,7 @@ class TPsumQLinear(SplitLinear):
         Quant(LSQ)Linear + Psum quantization
     """
     def __init__(self, in_features, out_features, wbits, symmetric=False, bias=False,
-                arraySize=128, wbit_serial=False, mapping_mode='none', psum_mode='sigma', cbits=None,
+                arraySize=128, wbit_serial=False, mapping_mode='none', psum_mode='sigma', pclipmode='Layer', cbits=None,
                 is_noise=False, noise_type=None):
         super(TPsumQLinear, self).__init__(in_features, out_features, bias=bias)
         # for QLinear
@@ -949,7 +962,7 @@ class TPsumQLinear(SplitLinear):
         self.arraySize = arraySize
         self.cbits = cbits # Cell bits [multi, binary]
         self.psum_mode = psum_mode
-        self.pclipmode = 'Layer'
+        self.pclipmode = pclipmode
         self.pbits = 32
         # for scan version
         self.pstep = None
@@ -962,8 +975,8 @@ class TPsumQLinear(SplitLinear):
         self.weight_chunk = None
         # for retrain version
         self.model_mode = None
-        self.alpha = nn.Parameter(torch.Tensor(1)[0])
-        self.register_buffer('init_state', torch.zeros(1))
+        if psum_mode == 'retrain':
+            self.setting_alpha(pclipmode=pclipmode)
         # for pseudo-nosie training
         self.noise_comb = False
 
@@ -1010,6 +1023,15 @@ class TPsumQLinear(SplitLinear):
             self.wbit_serial = wbit_serial
 
         self.setting_pquant_func(pbits=pbits, center=center, pbound=pbound)
+
+    def setting_alpha(self, pclipmode='Layer'):
+        self.register_buffer('init_state', torch.zeros(1))
+        if pclipmode == 'Layer':
+            self.alpha = nn.Parameter(torch.Tensor(1)[0])
+        elif pclipmode == 'Array':
+            self.alpha = nn.Parameter(torch.zeros(self.split_groups, 1, 1))
+        else:
+            assert False, "pclipmode check, this pclipmode is {}".format(pclipmode)
     
     def _weight_bitserial(self, weight, w_scale, cbits=4):
         weight_uint = weight / w_scale
@@ -1099,11 +1121,16 @@ class TPsumQLinear(SplitLinear):
         if (self.mapping_mode == '2T2R') or (self.mapping_mode == 'PN'):
             # self.alpha.data.fill_((x.detach().abs().std()*3).ceil())
             # alpha = ((x.detach().abs().mean() * 2 / (half_levels ** 0.5)))
-            alpha = (x.abs().std() * 3 / (half_levels))
-            self.alpha.data.fill_(np.log(np.exp(alpha.item())-1))
-            real_alpha = F.softplus(self.alpha)
-
-            print("{} alpha: {} {}".format(self.layer_idx, self.alpha, real_alpha))
+            if self.pclipmode == 'Layer':
+                alpha = (x.abs().std() * 3 / (half_levels))
+                self.alpha.data.fill_(np.log(np.exp(alpha.item())-1))
+            else: 
+                alpha = x.detach().abs().std(dim=list(range(1, x.dim())), keepdim=True) * 3 / (half_levels)
+                self.alpha.data.copy_(torch.log(torch.exp(alpha)-1))
+            
+            with torch.no_grad():
+                real_alpha = F.softplus(self.alpha)
+                print("{} alpha: {} {}".format(self.layer_idx, self.alpha.view(-1), real_alpha.view(-1)))
         else:
             assert False, "{} mode is not considered in training clipping parameter"
 

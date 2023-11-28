@@ -1,0 +1,20 @@
+# ninja log v5
+0	49186	1617792685203538533	/mnt/nfs/yulhwakim/yulhwakim/QNN/code_opt/CIM_QNN/codes/extension/pquant_group_merge/cuda/build/temp.linux-x86_64-3.7/pquant_group_merge_cuda_kernel.o	29e64abf9bf76033
+0	15980	1617792706669279548	/mnt/nfs/yulhwakim/yulhwakim/QNN/code_opt/CIM_QNN/codes/extension/pquant_group_merge/cuda/build/temp.linux-x86_64-3.7/pquant_group_merge_cuda.o	47d78bbaf467f4e3
+143	49405	1617795832946864033	/mnt/nfs/yulhwakim/yulhwakim/QNN/code_opt/CIM_QNN/codes/extension/pquant_group_merge/cuda/build/temp.linux-x86_64-3.7/pquant_group_merge_cuda_kernel.o	29e64abf9bf76033
+91	48843	1617795927176741025	/mnt/nfs/yulhwakim/yulhwakim/QNN/code_opt/CIM_QNN/codes/extension/pquant_group_merge/cuda/build/temp.linux-x86_64-3.7/pquant_group_merge_cuda_kernel.o	29e64abf9bf76033
+0	14667	1652532662075712439	/home/nameunkang/Project/QNN_CIM/extension/pquant_group_merge/cuda/build/temp.linux-x86_64-3.7/pquant_group_merge_cuda.o	96019fba58aac1f2
+1	25269	1652532672667599424	/home/nameunkang/Project/QNN_CIM/extension/pquant_group_merge/cuda/build/temp.linux-x86_64-3.7/pquant_group_merge_cuda_kernel.o	9e1f7ace29578e94
+2	13956	1652701617956826160	/home/nameunkang/Project/QNN_CIM/extension/pquant_group_merge/cuda/build/temp.linux-x86_64-3.7/pquant_group_merge_cuda.o	96019fba58aac1f2
+2	24810	1652701938643945323	/home/nameunkang/Project/QNN_CIM/extension/pquant_group_merge/cuda/build/temp.linux-x86_64-3.7/pquant_group_merge_cuda_kernel.o	9e1f7ace29578e94
+2	24803	1652702082161814097	/home/nameunkang/Project/QNN_CIM/extension/pquant_group_merge/cuda/build/temp.linux-x86_64-3.7/pquant_group_merge_cuda_kernel.o	9e1f7ace29578e94
+2	14641	1652718607490419444	/home/nameunkang/Project/QNN_CIM/extension/pquant_group_merge/cuda/build/temp.linux-x86_64-3.7/pquant_group_merge_cuda.o	96019fba58aac1f2
+3	25336	1652718618186283946	/home/nameunkang/Project/QNN_CIM/extension/pquant_group_merge/cuda/build/temp.linux-x86_64-3.7/pquant_group_merge_cuda_kernel.o	9e1f7ace29578e94
+0	15374	1656346060463475146	/mnt/nfs/nameunkang/Project/QNN_CIM/extension/pquant_group_merge/cuda/build/temp.linux-x86_64-3.7/pquant_group_merge_cuda.o	6157aaf82fed95ea
+1	26576	1656346071671325931	/mnt/nfs/nameunkang/Project/QNN_CIM/extension/pquant_group_merge/cuda/build/temp.linux-x86_64-3.7/pquant_group_merge_cuda_kernel.o	8196351744fc551f
+0	13585	1668618598133508513	/mnt/nfs/nameunkang/Project/QNN_CIM/extension/pquant_group_merge/cuda/build/temp.linux-x86_64-3.7/pquant_group_merge_cuda.o	bc1eb1aaca147ecb
+0	25560	1668618610123349388	/mnt/nfs/nameunkang/Project/QNN_CIM/extension/pquant_group_merge/cuda/build/temp.linux-x86_64-3.7/pquant_group_merge_cuda_kernel.o	86a04aa835a3b058
+0	17786	1675688477589586598	/mnt/nfs/nameunkang/Project/NIPQ_CiM/extension/pquant_group_merge/cuda/build/temp.linux-x86_64-3.7/pquant_group_merge_cuda.o	1ee3ca6841ddbb14
+1	36122	1675688495926349869	/mnt/nfs/nameunkang/Project/NIPQ_CiM/extension/pquant_group_merge/cuda/build/temp.linux-x86_64-3.7/pquant_group_merge_cuda_kernel.o	83633475c7cfbcf0
+5	17588	1679642247522856910	/mnt/nfs/nameunkang/Project/NIPQ_CiM/extension/pquant_group_merge/cuda/build/temp.linux-x86_64-3.7/pquant_group_merge_cuda.o	89dcf75b62e266c5
+7	38217	1679642268149584896	/mnt/nfs/nameunkang/Project/NIPQ_CiM/extension/pquant_group_merge/cuda/build/temp.linux-x86_64-3.7/pquant_group_merge_cuda_kernel.o	9cb684ecbec5d20f

@@ -216,7 +216,7 @@ def set_arguments():
     psum_group.add_argument('--pbits', type=float, default=32,
                             help='Bit resolution of partial sums. 32 is for full-precision.')
     psum_group.add_argument('--pclipmode', default='Layer', type=str,
-                             choices=['Layer', 'Network'],
+                             choices=['Layer', 'Network', 'Array'],
                              help='Layer-wise or Network-wise for psum quantization (default: layer-wise)')
     psum_group.add_argument('--pclip', default='sigma', type=str,
                              choices=['sigma', 'max'],

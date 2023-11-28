@@ -10,7 +10,7 @@
 --train-batch   256
 --test-batch    200
 
---pretrained    ./checkpoints/cifar10/pnq_pst/psum_lsq_vgg9_train/a:4_w:4/2T2R/128_c:4/2023-Nov-15-18-07-07/model_best.pth.tar
+--pretrained    ./checkpoints/cifar10/pnq_pst/psum_lsq_vgg9_train/a:4_w:4/2T2R/128_c:4/2023-Nov-16-14-55-27/model_best.pth.tar
 
 
 --evaluate      y
@@ -29,7 +29,7 @@
 --wbit-serial   y
 
 --psum_comp     y
---psum_mode     sigma
+--psum_mode     retrain
 --pbits         2
 --pclipmode     Layer
 # quant range [max or sigma] in sigma mode
