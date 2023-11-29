@@ -702,33 +702,52 @@ class QuantPsumMergeTrain(torch.autograd.Function):
 
         """
         # ctx.mark_dirty(output)
-        ctx.other = half_num_levels, groups, step_train
-        ctx.save_for_backward(input/step)
+        ctx.other = half_num_levels, groups, step_train, step.size(0)
+        if step.ndim > 1:
+            step_list = step.squeeze().tolist()
+            input = list(torch.chunk(input, groups, 1))
 
-        input = input / (step)
-        input = list(torch.chunk(input, groups, 1))
+            for g in range(groups):
+                input[g] = input[g]/step[g]
+        
+            ctx.save_for_backward(torch.cat(input, 1))
 
-        for g in range(groups):
-            input[g]=input[g].contiguous()
+            for g in range(groups):
+                input[g]=(input[g]*step[g]).contiguous()
+            
+            output = pquant_scale_group_merge_cuda.forward(output, input, pbits, step_list, half_num_levels, 1, center, groups, pzero)
+            output = output * weight
+        else:
+            input = input / (step)
+            ctx.save_for_backward(input)
 
-        out_adc = pquant_group_merge_cuda.forward(output, input, pbits, 1, half_num_levels, 1, center, groups, pzero) 
-        out_adc = out_adc * (step * weight)
+            input = list(torch.chunk(input, groups, 1))
+
+            for g in range(groups):
+                input[g]=input[g].contiguous()
+
+            output = pquant_group_merge_cuda.forward(output, input, pbits, 1, half_num_levels, 1, center, groups, pzero) 
+            output = output * (step * weight)
         ##return pquant_merge_cpp.forward(output, input, pbits, step, half_num_levels, weight, center, pzero) 
-        return out_adc 
+        return output 
 
 
     @staticmethod
     @torch.cuda.amp.custom_bwd
     def backward(ctx, grad_output):
         input_ps = ctx.saved_tensors[0]
-        levels, groups, step_train = ctx.other
+        levels, groups, step_train, step_size = ctx.other
         alpha_scale = 1.0 / ((levels * input_ps.numel()) ** 0.5)
         indicate_small = (input_ps < (-levels+1)).float()
         indicate_big = (input_ps > levels).float()
         indicate_middle = 1.0 - indicate_small - indicate_big
         if step_train:
-            import pdb; pdb.set_trace()
             grad_step = ((indicate_small * (-levels+1) + indicate_big * (levels) + indicate_middle * (-input_ps +input_ps.round()))*grad_output.repeat_interleave(groups, dim=1)*alpha_scale).sum().unsqueeze(dim=0)
+            if step_size != 1:
+                if input_ps.ndim > 2:
+                    grad_step = grad_step.expand(step_size).view(-1, 1, 1, 1, 1)
+                else:
+                    grad_step = grad_step.expand(step_size).view(-1, 1, 1)
             # grad_step = ((indicate_small * (-levels+1) + indicate_big * (levels) + indicate_middle * (-input_ps +input_ps.round()))*grad_output.repeat_interleave(groups, dim=1)).sum().unsqueeze(dim=0)
         else:
             grad_step = None
