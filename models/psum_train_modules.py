@@ -832,11 +832,36 @@ class TPsumQConv(SplitConv):
         weight_chunk = torch.chunk(qweight, wsplit_num, dim=1)
 
         ### in-mem computation mimic (split conv & psum quant/merge)
+        abit_mean=[]
+        abit_std = []
         for abit, input_s in enumerate(input_chunk):
             for wbit, weight_s in enumerate(weight_chunk):
                 out_tmp = torch.stack(self._split_forward(input_s, weight_s, padded=True, ignore_bias=True, cat_output=False,
                                         weight_is_split=True, split_train=True, channel=True), dim=0)
                 
+                # import seaborn as sns
+                # import matplotlib.pyplot as plt
+                # group_mean = out_tmp.mean((1, 2, 3, 4))
+                # group_std = out_tmp.std((1, 2, 3, 4))
+                # abit_mean.append(out_tmp.mean())
+                # abit_std.append(out_tmp.std())
+                # out_graph = out_tmp.view(self.split_groups, -1)
+                # df = pd.DataFrame(out_graph.detach().cpu()).transpose()
+                # df_data = pd.DataFrame(out_graph.detach().cpu().view(-1))
+                # if abit == 0:
+                #     df_abit = df_data
+                # else:
+                #     df_abit= pd.concat([df_abit, df_data], axis=1)
+
+                # fig, ax = plt.subplots(figsize=(15, 10))
+                # g = sns.catplot(data=df, ax=ax, errorbar=("pi", 100), aspect=1.2, kind="boxen", linewidth=0.6)
+                # # df.add_prefix('Group_')
+                # g.set_axis_labels('Group index', 'Psum Value')
+                # g.fig.suptitle(f'Layer {self.layer_idx} abit: {abit}', color='gray', y=1.02)
+                # plt.savefig(os.getcwd() +"/graph/ReRAM/Layer{}_abit{}_out_dist.png".format(self.layer_idx, abit), bbox_inches='tight')
+                # plt.clf()                
+
+
                 if (self.psum_mode == 'retrain') and (self.init_state == 0):
                     if not self.noise_comb:
                         self.init_form(out_tmp*psum_scale, self.phalf_num_levels, psum_scale)
@@ -880,11 +905,19 @@ class TPsumQConv(SplitConv):
                     out_wsum = out_tmp.sum(dim=0)
                 else: 
                     out_wsum += out_tmp.sum(dim=0)
-
             if abit == 0:
                 output = out_wsum * (2**abit)
             else:
                 output += out_wsum * (2**abit)
+
+        # df_abit.columns = ['0', '1', '2', '3']
+        # fig, ax = plt.subplots(figsize=(15, 10))
+        # g = sns.catplot(data=df_abit, ax=ax, errorbar=("pi", 100), aspect=1.2, kind="boxen", linewidth=0.6)
+        # # df.add_prefix('Group_')
+        # g.set_axis_labels('Abit bit position', 'Psum Value')
+        # g.fig.suptitle(f'Layer {self.layer_idx}', color='gray', y=1.02)
+        # plt.savefig(os.getcwd() +"/graph/ReRAM/Layer{}_out_dist.png".format(self.layer_idx, abit), bbox_inches='tight')
+        # plt.clf()  
 
         # restore output's scale
         output = output * psum_scale
@@ -1619,6 +1652,28 @@ class TPsumQLinear(SplitLinear):
             for wbit, weight_s in enumerate(weight_chunk):
                 out_tmp = torch.stack(self._split_forward(input_s, weight_s, ignore_bias=True, cat_output=False, split_train=True), dim=0)
 
+                # import seaborn as sns
+                # import matplotlib.pyplot as plt
+                # group_mean = out_tmp.mean((1, 2, 3, 4))
+                # group_std = out_tmp.std((1, 2, 3, 4))
+                # abit_mean.append(out_tmp.mean())
+                # abit_std.append(out_tmp.std())
+                # out_graph = out_tmp.view(self.split_groups, -1)
+                # df = pd.DataFrame(out_graph.detach().cpu()).transpose()
+                # df_data = pd.DataFrame(out_graph.detach().cpu().view(-1))
+                # if abit == 0:
+                #     df_abit = df_data
+                # else:
+                #     df_abit= pd.concat([df_abit, df_data], axis=1)
+
+                # fig, ax = plt.subplots(figsize=(15, 10))
+                # g = sns.catplot(data=df, ax=ax, errorbar=("pi", 100), aspect=1.2, kind="boxen", linewidth=0.6)
+                # # df.add_prefix('Group_')
+                # g.set_axis_labels('Group index', 'Psum Value')
+                # g.fig.suptitle(f'Layer {self.layer_idx} abit: {abit}', color='gray', y=1.02)
+                # plt.savefig(os.getcwd() +"/graph/ReRAM/Layer{}_abit{}_out_dist.png".format(self.layer_idx, abit), bbox_inches='tight')
+                # plt.clf() 
+
                 if (self.psum_mode == 'retrain') and (self.init_state == 0):
                     if not self.noise_comb:
                         self.init_form(out_tmp*psum_scale, self.phalf_num_levels, psum_scale)
@@ -1663,6 +1718,16 @@ class TPsumQLinear(SplitLinear):
                 else: 
                     out_wsum += out_tmp.sum(dim=0)
 
+            # df_abit.columns = ['0', '1', '2', '3']
+            # fig, ax = plt.subplots(figsize=(15, 10))
+            # g = sns.catplot(data=df_abit, ax=ax, errorbar=("pi", 100), aspect=1.2, kind="boxen", linewidth=0.6)
+            # # df.add_prefix('Group_')
+            # g.set_axis_labels('Abit bit position', 'Psum Value')
+            # g.fig.suptitle(f'Layer {self.layer_idx}', color='gray', y=1.02)
+            # plt.savefig(os.getcwd() +"/graph/ReRAM/Layer{}_out_dist.png".format(self.layer_idx, abit), bbox_inches='tight')
+            # plt.clf()
+            # if self.layer_idx == 7:
+            #     exit()
 
             if abit == 0:
                 output = out_wsum * (2**abit)
