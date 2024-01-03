@@ -18,9 +18,9 @@
 --model_mode    nipq
 --fixed_bit       4
 
-# --pretrained    ./checkpoints/cifar10/quant/lsq_vgg9/a:4_w:4/2022-Apr-01-18-57-49/model_best.pth.tar
+--pretrained    ./checkpoints/cifar10/quant/lsq_vgg9/a:4_w:4/2022-Apr-01-18-57-49/model_best.pth.tar
 # --pretrained    ./checkpoints/cifar10/a:32_w:32/2022-Apr-01-16-22-01/model_best.pth.tar
---pretrained    ./checkpoints/cifar10/nipq/nipq_vgg9/qnoise_fix:4/2023-Feb-22-14-31-20/model_best.pth.tar
+# --pretrained    ./checkpoints/cifar10/nipq/nipq_vgg9/qnoise_fix:4/2023-Feb-22-14-31-20/model_best.pth.tar
 
 --psum_comp     y
 --arraySize     128

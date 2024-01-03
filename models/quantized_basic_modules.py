@@ -567,7 +567,7 @@ class QuantPsumMerge(torch.autograd.Function):
     @staticmethod
     @torch.cuda.amp.custom_fwd
     def forward(ctx, output, input, pbits=32, step=1, half_num_levels=1, 
-                    pbound=None, pste='clipped', weight=1, center=0, groups=1, pzero=False, debug=False):
+                    pbound=None, pste='clipped', weight=1, center=0, groups=1, pzero=False, psum_mode='sigma', debug=False):
         """Performs partial sum quantization. (in bitserial layer) & merge conv/linear split group
 
         Args:
@@ -582,9 +582,12 @@ class QuantPsumMerge(torch.autograd.Function):
         ctx.mark_dirty(output)
         ctx.pste = pste
         ##return pquant_merge_cpp.forward(output, input, pbits, step, half_num_levels, weight, center, pzero) 
-        if step.ndim > 1:
-            step_list = step.squeeze().tolist()
-            return pquant_scale_group_merge_cuda.forward(output, input, pbits, step_list, half_num_levels, weight, center, groups, pzero) 
+        if psum_mode =='retrain':
+            if step.ndim > 1:
+                step_list = step.squeeze().tolist()
+                return pquant_scale_group_merge_cuda.forward(output, input, pbits, step_list, half_num_levels, weight, center, groups, pzero) 
+            else:
+                return pquant_group_merge_cuda.forward(output, input, pbits, step, half_num_levels, weight, center, groups, pzero) 
         else:
             return pquant_group_merge_cuda.forward(output, input, pbits, step, half_num_levels, weight, center, groups, pzero) 
 
@@ -637,14 +640,14 @@ class QuantPsumMerge(torch.autograd.Function):
     def backward(ctx, grad_output):
         return grad_output, grad_output, None, None, None, None, None, None, None, None
 
-def psum_quant_merge(output, input, pbits=32, step=1, half_num_levels=1, pbound=None, pste='clipped', weight=1, center=None, groups=1, pzero=False):
+def psum_quant_merge(output, input, pbits=32, step=1, half_num_levels=1, pbound=None, pste='clipped', weight=1, center=None, groups=1, pzero=False, psum_mode='sigma'):
     if center is None:
         center = 0
     if output is None:
         output = torch.zeros_like(input[0])
 
     return QuantPsumMerge.apply(output, input, pbits, step, half_num_levels, pbound, 
-                            pste, weight, center, groups, pzero)
+                            pste, weight, center, groups, pzero, psum_mode)
 
 class QuantizePsum(torch.autograd.Function):
     """ Binarized activation functions with torch.autograd extension."""

@@ -74,21 +74,18 @@ class Noise_cell(nn.Module):
                 self.delta_G = self.G[-1] - self.G[0]
             elif self.noise_type == 'interp':
                 self.interp_init()
+            elif self.noise_type == 'hynix_std':
+                self.interp_init()
+                # mean generation 
+                self.Gmin = 10.0 #uS
+                self.G = torch.tensor([self.Gmin + i*self.delta_G for i in range(self.clevel)])
+                # std generation
+                self.G_std = torch.tensor([self.rv[c].std() for c in range(self.clevel)])
             else:
                 assert False, 'In the {} mode, the {} noise type is not supported, you have to choose static or prop'.format(self.res_val, self.noise_type)
         else:
             assert False, 'You must choose the one of two options [rel, abs], but got {}'.format(self.res_val)
-
-    def retention_init(self, kind='linear', type='percent', value=0):
-        self.reten_type = type
-        self.reten_val = value
-        # if type == 'percent':
-        #     self.reten_val = value
-        # elif type == 'static':
-        #     self.reten_val = value
-        # else:
-        #     assert False, "You must check retention type {}".format(type)
-
+    
     def effective_clevel(self):
         if self.mapping_mode == 'two_com':
             if self.cbits >= (self.wbits-1):
@@ -107,14 +104,24 @@ class Noise_cell(nn.Module):
                 self.clevel = 2**self.wbits # cell can represent self.wbits-1 bits
             else:
                 assert False, 'This file does not support that cbits are lower than wbits'
+
+    def retention_init(self, kind='linear', type='percent', value=0):
+        self.reten_type = type
+        self.reten_val = value
+        # if type == 'percent':
+        #     self.reten_val = value
+        # elif type == 'static':
+        #     self.reten_val = value
+        # else:
+        #     assert False, "You must check retention type {}".format(type)
     
     def interp_init(self):
 
         ## hynix reram data to convert continuous data
         if (self.co_noise == 1) or (self.co_noise == 3):
-            df = pd.read_csv('/mnt/nfs/nameunkang/Project/NIPQ_CiM/data/ReRAM/Hynix_data_case1.csv')
+            df = pd.read_csv(os.getcwd()+'/data/ReRAM/Hynix_data_case1.csv')
         elif (self.co_noise == 2) or (self.co_noise == 4):
-            df = pd.read_csv('/mnt/nfs/nameunkang/Project/NIPQ_CiM/data/ReRAM/Hynix_data_case2.csv')
+            df = pd.read_csv(os.getcwd()+'/data/ReRAM/Hynix_data_case2.csv')
         else:
             assert False, "Check co_noise parameter, You only select two option (1, 2) in {}".format(self.noise_type)
         
@@ -134,7 +141,7 @@ class Noise_cell(nn.Module):
 
         self.max_state = df.iloc[:, 0::2].max().to_numpy()
         self.min_state = df.iloc[:, 0::2].min().to_numpy()
-        self.Gmin = 10
+        self.Gmin = 10.0
         if self.co_noise <= 2: # step size is wide
             if 'ref' in self.mapping_mode:
                 state = [df.iloc[:, 2*i:2*i+2].dropna(axis=0).to_numpy().transpose() for i in range(self.clevel)]
@@ -326,11 +333,16 @@ class Noise_cell(nn.Module):
             self.delta_G = self.G[-1] - self.G[0] 
             self.std_offset = self.G[0] / self.delta_G 
             self.G_std /= self.delta_G 
-        elif self.noise_type == 'interp':
+        elif self.noise_type == 'interp' or 'hynix_std':
             ## Approximating the interpolation graph to a gaussian distribution 
             self.interp_init()
-            state_mean = [((self.rv[c].mean() - self.Gmin) / self.delta_G) for c in range(self.clevel)]
+            if self.noise_type == 'interp':
+                state_mean = [((self.rv[c].mean() - self.Gmin) / self.delta_G) for c in range(self.clevel)]
+            else:
+                self.Gmin = 10.0 #uS
+                state_mean = [self.Gmin + c * self.delta_G for c in range(self.clevel)]
             state_std = [self.rv[c].std() / self.delta_G for c in range(self.clevel)]
+
             if (self.mapping_mode == '2T2R') or (self.mapping_mode == 'PN'):
                 self.G_std = torch.tensor([np.sqrt(np.power(state_std[c], 2) + np.power(state_std[0], 2)) for c in range(self.clevel)])
                 self.G = torch.tensor([state_mean[c] - state_mean[0] for c in range(self.clevel)])
@@ -364,7 +376,7 @@ class Noise_cell(nn.Module):
             # ax.set_xlabel(ax.get_xlabel(), fontsize=16)
             # ax.set_xticks(ax.get_xticks())
             # ax.set_xticklabels(ax.get_xticks(), fontsize=14)
-            # plt.savefig("/mnt/nfs/nameunkang/Project/NIPQ_CiM/graph/ReRAM/gaussian_modeling.png")
+            # plt.savefig(os.getcwd()+"/graph/ReRAM/gaussian_modeling.png")
             # import pdb; pdb.set_trace()
         else:
             assert False, 'Check noise type, you write {} noise type'.format(self.noise_type)
@@ -412,6 +424,36 @@ class Noise_cell(nn.Module):
                     # Need G_std setting! 
                 elif noise_type == 'interp':
                     output = self.interp_sample(x)
+                elif noise_type == 'hynix_std':
+                    output = torch.normal(self.G[x_idx], self.G_std[x_idx]).to(x.device)
+
+                    while torch.any(output<=0):
+                        index = torch.where(output <= 0)
+                        G_ins = (output[index]/self.delta_G).round().detach().cpu().numpy()
+                        output[index] = torch.normal(self.G[G_ins], self.G_std[G_ins]).to(x.device)
+
+                    # array = [torch.normal(self.G[c], self.G_std[c], size=(10000, )).numpy() for c in range(self.clevel)]
+                    # import matplotlib.pyplot as plt
+                    # import seaborn as sns
+                    # import pandas as pd 
+
+                    # df = pd.DataFrame(array).transpose()
+                    # fig, ax = plt.subplots(figsize=(20, 6))
+                    # sns.histplot(array, ax=ax, alpha = 0.2, element='step', fill=True, bins=200)
+                    # ax.set_ylabel(ax.get_ylabel(), fontsize=16)
+                    # ax.legend(('state 8', 'state 7', 'state 6', 'state 5', 'state 4', 'state 3', 'state 2', 'state 1', 'state 0'), reverse=True, loc='upper center', ncol=9, fontsize=12, frameon=False)
+                    # ax_ylabels = np.linspace(ax.get_yticks()[0], ax.get_yticks()[-2], num=5, dtype=int)
+                    # ax.set_yticks(ax_ylabels)
+                    # ax.set_yticklabels(ax.get_yticks(), fontsize=14)
+                    # ax.set_title(f'ReRAM Noise Gaussian Modeling (20uS)', loc='right', fontsize=16)
+                    # ax.set_xlabel('Conductance [uS]')
+                    # ax.set_xlim(0, 200)
+                    # ax.set_xlabel(ax.get_xlabel(), fontsize=16)
+                    # ax.set_xticks(ax.get_xticks())
+                    # ax.set_xticklabels(ax.get_xticks(), fontsize=14)
+                    # plt.savefig(os.getcwd()+"/graph/ReRAM/gaussian_modeling.png")
+                    # import pdb; pdb.set_trace()
+
                 assert torch.all(output > 0), "Do not set negative cell value"
             
                 return output / self.delta_G
@@ -432,7 +474,7 @@ class Noise_cell(nn.Module):
                     else:
                         x_cell = x+2**(self.wbits-1) if self.mapping_mode == 'ref_a' else abs(x)
                         output = x + torch.normal(0, self.G_std[x_cell.detach().cpu().numpy()]).to(x.device)
-                elif noise_type == 'interp':
+                elif noise_type == 'interp' or 'hynix_std':
                     if self.w_format == 'state':
                         x_cell = x.to(torch.long)
                     else:

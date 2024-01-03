@@ -483,7 +483,7 @@ class Psum_QConv2d(SplitConv):
                                                     pbits=self.pbits, step=self.pstep, 
                                                     half_num_levels=self.phalf_num_levels, 
                                                     pbound=self.pbound, center=self.center, weight=a_mag,
-                                                    groups=self.split_groups, pzero=self.pzero)
+                                                    groups=self.split_groups, pzero=self.pzero, psum_mode=self.psum_mode)
                         if w_serial:
                             out_adc = 2**(wbit) * (out_adc - out_one) if self.hwnoise else 2**(wbit) * out_adc
                             if wsplit_num == wbit+1:
@@ -922,7 +922,7 @@ class Psum_QLinear(SplitLinear):
                                                     pbits=self.pbits, step=self.pstep, 
                                                     half_num_levels=self.phalf_num_levels, 
                                                     pbound=self.pbound, center=self.center, weight=a_mag,
-                                                    groups=self.split_groups, pzero=self.pzero)
+                                                    groups=self.split_groups, pzero=self.pzero, psum_mode=self.psum_mode)
                         if w_serial:
                             out_adc = 2**(wbit) * (out_adc - out_one) if self.hwnoise else 2**(wbit) * out_adc
                             if wsplit_num == wbit+1:

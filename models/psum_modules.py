@@ -655,7 +655,7 @@ class PsumQConv(SplitConv):
                                                     pbits=self.pbits, step=self.pstep, 
                                                     half_num_levels=self.phalf_num_levels, 
                                                     pbound=self.pbound, center=self.center, weight=out_mag/multi_scale,
-                                                    groups=self.split_groups, pzero=self.pzero)
+                                                    groups=self.split_groups, pzero=self.pzero, psum_mode=self.psum_mode)
 
                         # weight output summation
                         if self.mapping_mode == 'two_com':
@@ -1266,7 +1266,7 @@ class PsumQLinear(SplitLinear):
                                                     pbits=self.pbits, step=self.pstep, 
                                                     half_num_levels=self.phalf_num_levels, 
                                                     pbound=self.pbound, center=self.center, weight=out_mag/multi_scale,
-                                                    groups=self.split_groups, pzero=self.pzero)
+                                                    groups=self.split_groups, pzero=self.pzero, psum_mode=self.psum_mode)
 
                         # weight output summation
                         if self.mapping_mode == 'two_com':

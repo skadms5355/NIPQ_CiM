@@ -30,7 +30,7 @@ parser.add_argument('--reten_type', type=str, default='percent',
                     choices=['percent', 'static', 'invert_p'])
 parser.add_argument('--reten_val', type=float, default=0)
 parser.add_argument('--noise_type', default='interp', type=str,
-                    choices=['static', 'grad', 'prop', 'interp'])
+                    choices=['static', 'grad', 'prop', 'interp', 'hynix_std'])
 parser.add_argument('--iter', default=1, type=int,
                     help='how many iterate inference process')
 parser.add_argument('--KD', action='store_true')
@@ -66,6 +66,10 @@ if "vgg9" in args.argfile:
         arch = "lsq_vgg9"
         if "psum" in args.argfile:
             arch = "psum_lsq_vgg9"
+    elif "pnq_pst" in args.argfile:
+        arch = "psum_lsq_vgg9_train"
+    else:
+        assert False, "Check argfile file name"
     check_file = "layer6_hist.pkl"
 elif "psum_alexnet" in args.argfile:
     model = 'alexnet'

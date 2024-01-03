@@ -10,7 +10,7 @@
 --train-batch   256
 --test-batch    200
 
---pretrained    ./checkpoints/cifar10/pnq_pst/psum_lsq_vgg9_train/a:4_w:4/2T2R/128_c:4/2023-Nov-15-19-47-39/model_best.pth.tar
+--pretrained    ./checkpoints/cifar10/lsq_pst/psum_lsq_vgg9_train/a:4_w:4/2T2R/128_c:4/2023-Nov-10-18-13-38/model_best.pth.tar
 # --pretrained    ./checkpoints/cifar10/pnq_pst/psum_lsq_vgg9_train/a:4_w:4/2T2R/128_c:4/2023-Nov-29-15-45-03/model_best.pth.tar
 
 --evaluate      y
@@ -18,7 +18,7 @@
 --wbits         4
 --abits         4
 
---model_mode    pnq_pst
+--model_mode    lsq_pst
 --arch          psum_lsq_vgg9_train
 --gpu-id	    0
 
@@ -42,7 +42,7 @@
 --is_noise      y
 --nipq_noise    hwnoise
 --co_noise      4
---noise_type    hynix_std
+--noise_type    interp
 --res_val       abs
 
 # for teacher model (w/o noise model)
