@@ -124,7 +124,7 @@ def main():
                 if args.noise_type == 'meas':
                     type = '{}'.format(args.meas_type)
                 else:
-                    if args.evaluate:
+                    if args.evaluate or 'pst' in args.model_mode:
                         type = 'type_{}'.format(args.co_noise)
                     else:
                         type = '{}_{}'.format(args.res_val, args.co_noise)
@@ -137,14 +137,6 @@ def main():
                 else:
                     prefix = os.path.join(prefix, '{}_{}').format(args.noise_type, type)
             
-            if (args.wbit_serial == False) or (args.abit_serial == False):
-                name = 'bitserial'
-                if (args.wbit_serial == False):
-                    name = name + '_wF'
-                if (args.abit_serial == False):
-                    name = name + '_aF'
-
-                prefix = os.path.join(prefix, name)
         else:
             pass
 
@@ -437,7 +429,7 @@ def main_worker(gpu, ngpus_per_node, args):
                 if args.is_noise and 'hwnoise' in args.nipq_noise:
                     PQ.hwnoise_initialize(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
                                         noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink)
-            elif (args.model_mode == 'quant') or (args.model_mode == 'hn_quant'):
+            elif 'quant' in args.model_mode:
                 set_BitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, log_file=args.log_file,\
                     pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma)
                 if args.is_noise:
@@ -465,7 +457,7 @@ def main_worker(gpu, ngpus_per_node, args):
 
             if args.model_mode == 'nipq':
                 PQ.unset_bitserial_log(model)
-            elif (args.model_mode == 'quant') or (args.model_mode == 'hn_quant'):
+            elif 'quant' in args.model_mode:
                 unset_BitSerial_log(model)
 
         else:
@@ -482,6 +474,8 @@ def main_worker(gpu, ngpus_per_node, args):
                     hwnoise_initialize(model, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
                                         noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink, max_epoch=(args.epochs - args.ft_epoch), \
                                         retention=args.retention, reten_value=args.reten_val, reten_type=args.reten_type)
+            else:
+                assert False, "You have to check the model_mode name"
         log_time = time.time()
 
         if args.rank == 0:
@@ -591,7 +585,7 @@ def main_worker(gpu, ngpus_per_node, args):
             bops_total = bops_cal(model) * (2. ** -30) # 1 GigaBitOps = 2 ** 30 BitOps
             print(f"     Bops: {bops_total.item()}GBops")
             
-    elif args.model_mode == 'quant':
+    elif 'quant' in args.model_mode:
         if args.psum_comp:
             if args.psum_mode == 'sigma':
                 checkpoint = os.path.join(str(pathlib.Path().resolve()), ((args.checkpoint.replace('{}'.format(args.model_mode), 'quant')).replace('{}'.format(args.arch), '{}/eval'.format(args.arch))))
@@ -601,9 +595,13 @@ def main_worker(gpu, ngpus_per_node, args):
             set_BitSerial_log(model, abit_serial=args.abit_serial, checkpoint=checkpoint, log_file=args.log_file,\
                     pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma)
         if args.is_noise and not args.evaluate:
-            from models.quantized_lsq_modules import hwnoise_initialize
-            hwnoise_initialize(model, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
-                                noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink, max_epoch=(args.epochs - args.ft_epoch))
+            if 'pst' in args.model_mode:
+                set_Noise_injection(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
+                                    noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink, retention=args.retention, reten_value=args.reten_val, reten_type=args.reten_type)
+            else:
+                from models.quantized_lsq_modules import hwnoise_initialize
+                hwnoise_initialize(model, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
+                                    noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink, max_epoch=(args.epochs - args.ft_epoch))
             for m in model.modules():
                 if type(m).__name__ in ["QConv", "QLinear"]:
                     if m.wbits != 32:

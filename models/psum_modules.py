@@ -262,7 +262,7 @@ class PsumQConv(SplitConv):
         self.w_format = 'state' if res_val == 'abs' or noise_type == 'meas' else 'weight'
         # wbits = Parameter(torch.Tensor(1).fill_(self.wbits), requires_grad=False).round().squeeze()
         # for inference 
-        if not (noise_type == 'prop' or 'interp'):
+        if not (noise_type == 'prop' or 'interp' or 'hynix_std'):
             noise_type = 'prop'
         self.noise_cell_log = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val=res_val, shrink=shrink, retention=False, w_format=self.w_format)
         self.noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val=res_val, shrink=shrink, retention=retention, w_format=self.w_format)
@@ -331,10 +331,10 @@ class PsumQConv(SplitConv):
                 weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
                 
                 ## make the same weight size as qweight
-                if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
-                    bweight = weight_chunk[0] - weight_chunk[1]
-                    wsplit_num = 1
-                else:
+                if ((self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a')) and (self.w_format=='state'):
+                            bweight = weight_chunk[0] - weight_chunk[1]
+                            wsplit_num = 1
+                elif self.mapping_mode == 'two_com':
                     ## [TODO] two_com split weight format check
                     delta_G, G_min = self.noise_cell_log.get_deltaG(G_min=True)
                     w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
@@ -621,21 +621,22 @@ class PsumQConv(SplitConv):
                         weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
                         
                         ## make the same weight size as qweight
-                        if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
+                        if ((self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a')) and (self.w_format=='state'):
                             bweight = weight_chunk[0] - weight_chunk[1]
                             wsplit_num = 1
-                        else:
+                        elif self.mapping_mode == 'two_com':
                             ## [TODO] two_com split weight format check
                             delta_G, G_min = self.noise_cell.get_deltaG(G_min=True)
                             w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
                         self.sweight = conv_sweight_cuda.forward(self.sweight, bweight, self.group_in_offset, self.split_groups)
-                        weight_chunk = torch.chunk(self.sweight.clone(), wsplit_num, dim=1)
+                        weight_chunk = torch.chunk(self.sweight, wsplit_num, dim=1)
                     else:
                         self.sweight = conv_sweight_cuda.forward(self.sweight, qweight, self.group_in_offset, self.split_groups)
                         sweight, wsplit_num = self._weight_bitserial(self.sweight, w_scale, cbits=self.cbits)
                         weight_chunk = torch.chunk(sweight, wsplit_num, dim=1)
                     
-                    self.weight_chunk = weight_chunk
+                    if not self.training:
+                        self.weight_chunk = weight_chunk
                 else:
                     weight_chunk = self.weight_chunk
                     wsplit_num = 1
@@ -935,7 +936,7 @@ class PsumQLinear(SplitLinear):
         self.w_format = 'state' if res_val == 'abs' or noise_type == 'meas' else 'weight'
         # wbits = Parameter(torch.Tensor(1).fill_(self.wbits), requires_grad=False).round().squeeze()
         # for inference 
-        if not (noise_type == 'prop' or 'interp'):
+        if not (noise_type == 'prop' or 'interp' or 'hynix_std'):
             noise_type = 'prop'
         self.noise_cell_log = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val=res_val, shrink=shrink, retention=False, w_format=self.w_format)
         self.noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val=res_val, shrink=shrink, retention=retention, w_format=self.w_format)
@@ -991,10 +992,10 @@ class PsumQLinear(SplitLinear):
             bweight = self.noise_cell_log(bweight)
             weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
             
-            if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
-                bweight = weight_chunk[0] - weight_chunk[1]
-                wsplit_num = 1
-            else:
+            if ((self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a')) and (self.w_format=='state'):
+                            bweight = weight_chunk[0] - weight_chunk[1]
+                            wsplit_num = 1
+            elif self.mapping_mode == 'two_com':
                 ## [TODO] two_com split weight format check
                 delta_G, G_min = self.noise_cell_log.get_deltaG(G_min=True)
                 w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
@@ -1241,16 +1242,18 @@ class PsumQLinear(SplitLinear):
                         bweight = self.noise_cell(bweight)
                         weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
                         
-                        if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
+                        if ((self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a')) and (self.w_format=='state'):
                             bweight = weight_chunk[0] - weight_chunk[1]
                             wsplit_num = 1
-                        else:
+                        elif self.mapping_mode == 'two_com':
                             ## [TODO] two_com split weight format check
                             delta_G, G_min = self.noise_cell.get_deltaG(G_min=True)
                             w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
 
                     weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
-                    self.weight_chunk = weight_chunk
+
+                    if not self.training:
+                        self.weight_chunk = weight_chunk
                 else:
                     weight_chunk = self.weight_chunk
 

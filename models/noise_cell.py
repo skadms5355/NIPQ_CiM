@@ -340,7 +340,7 @@ class Noise_cell(nn.Module):
                 state_mean = [((self.rv[c].mean() - self.Gmin) / self.delta_G) for c in range(self.clevel)]
             else:
                 self.Gmin = 10.0 #uS
-                state_mean = [self.Gmin + c * self.delta_G for c in range(self.clevel)]
+                state_mean = [c for c in range(self.clevel)] # (mean - Gmin) / delta_G
             state_std = [self.rv[c].std() / self.delta_G for c in range(self.clevel)]
 
             if (self.mapping_mode == '2T2R') or (self.mapping_mode == 'PN'):
@@ -476,12 +476,12 @@ class Noise_cell(nn.Module):
                         output = x + torch.normal(0, self.G_std[x_cell.detach().cpu().numpy()]).to(x.device)
                 elif noise_type == 'interp' or 'hynix_std':
                     if self.w_format == 'state':
-                        x_cell = x.to(torch.long)
+                        x_cell = x.detach().cpu().numpy()
                     else:
                         x_cell = x+2**(self.wbits-1) if self.mapping_mode == 'ref_a' else abs(x)
-                        x_cell = x_cell.to(torch.long)
+                        x_cell = x_cell.detach().cpu().numpy()
 
-                    output = torch.normal(self.G[x_cell], self.G_std[x_cell]).to(x.device).type(x.dtype)
+                    output = (self.G[x_cell] + torch.normal(0, self.G_std[x_cell])).to(x.device).to(x.dtype)
 
                     if self.mapping_mode == '2T2R':
                         output = torch.where(x<0, -1 * output, output)

@@ -323,10 +323,10 @@ class TPsumQConv(SplitConv):
                 weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
                 
                 ## make the same weight size as qweight
-                if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
+                if ((self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a')) and (self.w_format=='state'):
                     bweight = weight_chunk[0] - weight_chunk[1]
                     wsplit_num = 1
-                else:
+                elif self.mapping_mode == 'two_com':
                     ## [TODO] two_com split weight format check
                     delta_G, G_min = self.noise_cell_log.get_deltaG(G_min=True)
                     w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
@@ -605,10 +605,10 @@ class TPsumQConv(SplitConv):
                         weight_chunk = torch.chunk(sweight, wsplit_num, dim=1)
                         
                         ## make the same weight size as qweight
-                        if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
-                            sweight = weight_chunk[0] - weight_chunk[1]
+                        if ((self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a')) and (self.w_format=='state'):
+                            bweight = weight_chunk[0] - weight_chunk[1]
                             wsplit_num = 1
-                        else:
+                        elif self.mapping_mode == 'two_com':
                             ## [TODO] two_com split weight format check
                             delta_G, G_min = self.noise_cell.get_deltaG(G_min=True)
                             w_one = torch.ones(size=weight_chunk[0].size()).to(weight_chunk[0].device)
@@ -726,10 +726,10 @@ class TPsumQConv(SplitConv):
                 weight_chunk = torch.chunk(nweight, wsplit_num, dim=1)
                 
                 ## make the same weight size as qweight
-                if (self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a'):
+                if ((self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a')) and (self.w_format=='state'):
                     nweight = weight_chunk[0] - weight_chunk[1]
                     wsplit_num = 1
-            
+                import pdb; pdb.set_trace()
                 qweight.copy_(nweight)
 
         weight_chunk = torch.chunk(qweight, wsplit_num, dim=1)
