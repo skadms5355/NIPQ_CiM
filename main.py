@@ -619,27 +619,24 @@ def main_worker(gpu, ngpus_per_node, args):
         else:
             set_TBitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, pclipmode=args.pclipmode, model_mode=args.model_mode, pbits=args.pbits, noise_comb=args.noise_comb)
         
+        if args.is_noise and args.model_mode == 'lsq_pst':
+            set_TNoise_injection(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
+                                        noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink, retention=args.retention, reten_value=args.reten_val, reten_type=args.reten_type)
+            
         for m in model.modules():
             if args.psum_mode == 'retrain':
                 if type(m).__name__ in ["QConv", "QLinear"]:
                     # m.quan_w_fn.s.requires_grad = False
                     # m.weight.requires_grad = False
                     print('Weight parameters of First & Last Layer are fixed for partial-sum retraining============')
-                
-                if type(m).__name__ in ["TPsumQConv", "TPsumQLinear"]:
-                    if m.wbits != 32:
-                        m.quan_w_fn.s.requires_grad = False
-                    # m.weight.requires_grad = False
-                    print('Weight parameters are fixed for partial-sum retraining============')
-
-            elif args.psum_mode =='sigma':
-                if type(m).__name__ in ["TPsumQConv", "TPsumQLinear"]:
-                    if m.wbits != 32:
-                        m.quan_w_fn.s.requires_grad = False
-                        print('Weight parameters are fixed for partial-sum ============')
             else:
                 assert False, "Clipping range of {} mode is not supported".format(args.psum_mode)
 
+            if type(m).__name__ in ["TPsumQConv", "TPsumQLinear"]:
+                if m.wbits != 32:
+                    m.quan_w_fn.s.requires_grad = False
+                # m.weight.requires_grad = False
+                print('Weight parameters are fixed for partial-sum retraining============')
             # if type(m).__name__ in ["Q_act"]:
                 # if m.bit != 32:
                     # m.s.requires_grad = False
@@ -685,6 +682,11 @@ def main_worker(gpu, ngpus_per_node, args):
                                 changed_bit = 2+12/(1+np.exp(-bit))
                         print("Change the bit precision to {}".format(changed_bit))
         elif args.model_mode == 'pnq_pst':
+            if epoch == (args.epochs - (args.hw_epoch+args.ft_epoch)):
+                set_TNoise_injection(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
+                                            noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink, retention=args.retention, reten_value=args.reten_val, reten_type=args.reten_type)
+                print("Add device noise at 'pnq_pst' method.")
+            
             if epoch == (args.epochs - args.ft_epoch):
                 set_TBitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, model_mode='lsq_pst', \
                         pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma, noise_comb=args.noise_comb)

@@ -30,7 +30,7 @@
 
 --psum_comp     y
 --psum_mode     retrain
---pbits         2
+--pbits         3
 --pclipmode     Layer
 # quant range [max or sigma] in sigma mode
 --pclip         sigma

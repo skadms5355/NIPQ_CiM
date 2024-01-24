@@ -100,6 +100,8 @@ def set_arguments():
                              help='Number of total epochs to run')
     train_group.add_argument('--ft_epoch', default=0, type=int, metavar='N',
                              help='quantization tuning epoch in nipq mode')
+    train_group.add_argument('--hw_epoch', default=0, type=int, metavar='N',
+                             help='device noise addition epoch in nipq mode')
     train_group.add_argument('--start-epoch', default=0, type=int, metavar='N',
                              help='Manual epoch number (useful on restarts)')
     train_group.add_argument('--train-batch', default=256, type=int, metavar='N',
@@ -374,6 +376,9 @@ def check_arguments(args):
     # if args.label_smoothing:
     #     assert args.loss == 'cross_entropy', 'Currently label smoothing is only supported for Cross Entropy loss function'
 
+    # epochs check
+    if args.model_mode =='pnq_pst' or 'nipq':
+        assert args.epochs > (args.hw_epoch + args.ft_epoch), "hw_epoch + ft_epoch is larger than total epoch"
     # padding check
     if (args.abits == 1) and (args.binary_mode == 'signed') and (args.padding_mode == 'zeros'):
         warnings.warn("0-padding used while input activation has +1 or -1 values.")

@@ -183,7 +183,7 @@ class QConv(nn.Conv2d):
                     if self.qweight_noise is not None:
                         self.qweight_noise = None
 
-                    if self.noise_type == "interp" and self.res_val == 'abs':
+                    if (self.noise_type == "interp") and self.res_val == 'abs':
                         if self.mapping_mode == '2T2R':
                             pqweight = torch.where(qweight>0, qweight, 0)
                             nqweight = torch.where(qweight<0, abs(qweight), 0)
