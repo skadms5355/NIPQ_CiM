@@ -429,7 +429,7 @@ class Noise_cell(nn.Module):
 
                     while torch.any(output<=0):
                         index = torch.where(output <= 0)
-                        G_ins = (output[index]/self.delta_G).round().detach().cpu().numpy()
+                        G_ins = (abs(output[index]/self.delta_G)).round().detach().cpu().numpy()
                         output[index] = torch.normal(self.G[G_ins], self.G_std[G_ins]).to(x.device)
 
                     # array = [torch.normal(self.G[c], self.G_std[c], size=(10000, )).numpy() for c in range(self.clevel)]

@@ -705,7 +705,7 @@ class QuantPsumMergeTrain(torch.autograd.Function):
 
         """
         # ctx.mark_dirty(output)
-        ctx.other = half_num_levels, groups, step_train, step.size(0)
+        ctx.other = half_num_levels, groups, step_train, step
         if step.ndim > 1:
             step_list = step.squeeze().tolist()
             input = list(torch.chunk(input, groups, 1))
@@ -739,18 +739,19 @@ class QuantPsumMergeTrain(torch.autograd.Function):
     @torch.cuda.amp.custom_bwd
     def backward(ctx, grad_output):
         input_ps = ctx.saved_tensors[0]
-        levels, groups, step_train, step_size = ctx.other
+        levels, groups, step_train, step = ctx.other
         alpha_scale = 1.0 / ((levels * input_ps.numel()) ** 0.5)
         indicate_small = (input_ps < (-levels+1)).float()
         indicate_big = (input_ps > levels).float()
         indicate_middle = 1.0 - indicate_small - indicate_big
         if step_train:
             grad_step = ((indicate_small * (-levels+1) + indicate_big * (levels) + indicate_middle * (-input_ps +input_ps.round()))*grad_output.repeat_interleave(groups, dim=1)*alpha_scale).sum().unsqueeze(dim=0)
-            if step_size != 1:
+            if step.ndim != 0:
+                import pdb; pdb.set_trace()
                 if input_ps.ndim > 2:
-                    grad_step = grad_step.expand(step_size).view(-1, 1, 1, 1, 1)
+                    grad_step = grad_step.expand(step.size(0)).view(-1, 1, 1, 1, 1)
                 else:
-                    grad_step = grad_step.expand(step_size).view(-1, 1, 1)
+                    grad_step = grad_step.expand(step.size(0)).view(-1, 1, 1)
             # grad_step = ((indicate_small * (-levels+1) + indicate_big * (levels) + indicate_middle * (-input_ps +input_ps.round()))*grad_output.repeat_interleave(groups, dim=1)).sum().unsqueeze(dim=0)
         else:
             grad_step = None

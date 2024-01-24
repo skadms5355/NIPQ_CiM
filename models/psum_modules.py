@@ -332,8 +332,8 @@ class PsumQConv(SplitConv):
                 
                 ## make the same weight size as qweight
                 if ((self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a')) and (self.w_format=='state'):
-                            bweight = weight_chunk[0] - weight_chunk[1]
-                            wsplit_num = 1
+                    bweight = weight_chunk[0] - weight_chunk[1]
+                    wsplit_num = 1
                 elif self.mapping_mode == 'two_com':
                     ## [TODO] two_com split weight format check
                     delta_G, G_min = self.noise_cell_log.get_deltaG(G_min=True)
@@ -993,8 +993,8 @@ class PsumQLinear(SplitLinear):
             weight_chunk = torch.chunk(bweight, wsplit_num, dim=1)
             
             if ((self.mapping_mode=='2T2R') or (self.mapping_mode=='ref_a')) and (self.w_format=='state'):
-                            bweight = weight_chunk[0] - weight_chunk[1]
-                            wsplit_num = 1
+                bweight = weight_chunk[0] - weight_chunk[1]
+                wsplit_num = 1
             elif self.mapping_mode == 'two_com':
                 ## [TODO] two_com split weight format check
                 delta_G, G_min = self.noise_cell_log.get_deltaG(G_min=True)
