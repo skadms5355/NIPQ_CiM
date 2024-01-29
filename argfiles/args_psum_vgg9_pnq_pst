@@ -6,7 +6,7 @@
 --augment	    y  
 
 --epochs        30
---hw_epoch      5
+--hw_epoch      10
 --ft_epoch      5
 --train-batch   256
 --test-batch    200
@@ -17,7 +17,7 @@
 --warmup        3
 --warmup_start_multiplier 0.1
 --eta_min       1e-3
---T0            17
+--T0            27
 
 --pretrained    ./checkpoints/cifar10/quant/lsq_vgg9/a:4_w:4/2022-Apr-01-18-57-49/model_best.pth.tar         
 # --pretrained    ./checkpoints/cifar10/pnq_pst/psum_lsq_vgg9_train/a:4_w:4/2T2R/128_c:4/2023-Nov-15-19-47-39/model_best.pth.tar

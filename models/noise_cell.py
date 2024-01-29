@@ -28,7 +28,7 @@ class InterpolatedPDF(rv_continuous):
         return self.interp(q)
 
 class Noise_cell(nn.Module):
-    def __init__(self, wbits, cbits, mapping_mode, co_noise=0.01, noise_type='static', res_val='rel', w_format='state', shrink=None, retention=False, Gmin=1/3e5, ratio=100, max_epoch=-1):
+    def __init__(self, wbits, cbits, mapping_mode, co_noise=0.01, noise_type='static', res_val='rel', w_format='state', shrink=None, retention=False, set_deltaG=None, Gmin=1/3e5, ratio=100, max_epoch=-1):
         super(Noise_cell, self).__init__()
         """
             This module performs cell variation
@@ -50,6 +50,7 @@ class Noise_cell(nn.Module):
         self.max_epoch = max_epoch
         self.shrink = shrink
         self.retention = retention
+        self.set_deltaG = set_deltaG
 
         self.init_state()
 
@@ -69,6 +70,11 @@ class Noise_cell(nn.Module):
                 idx = int(torch.floor(torch.div(self.clevel, 2)).detach().cpu())
                 self.G_std = torch.Tensor(1).fill_(self.co_noise * self.G[idx])
             elif self.noise_type == 'prop':
+                self.Gmin = 10.0 #uS
+                self.delta_G=10.0
+                if self.set_deltaG is not None:
+                    self.delta_G = self.set_deltaG
+                self.G = torch.tensor([self.Gmin + i*self.delta_G for i in range(self.clevel)])
                 self.G_std = torch.tensor([self.co_noise * self.G[i] for i in range(self.clevel)])
             elif self.noise_type == 'meas':
                 self.delta_G = self.G[-1] - self.G[0]
@@ -78,7 +84,19 @@ class Noise_cell(nn.Module):
                 self.interp_init()
                 # mean generation 
                 self.Gmin = 10.0 #uS
+                if self.set_deltaG is not None:
+                    self.delta_G = self.set_deltaG
                 self.G = torch.tensor([self.Gmin + i*self.delta_G for i in range(self.clevel)])
+
+                # for weight device non-linearity 
+                # nonlinear = torch.rand(self.clevel) + 0.5
+                # delta_G = nonlinear* self.delta_G
+                # for i in range(self.clevel-1):
+                #     if i == 0:
+                #         self.G[0] = self.Gmin * nonlinear[0]
+                #     else:
+                #         self.G[i] = self.G[i-1] + delta_G[i]
+                
                 # std generation
                 self.G_std = torch.tensor([self.rv[c].std() for c in range(self.clevel)])
             else:
@@ -114,7 +132,7 @@ class Noise_cell(nn.Module):
         #     self.reten_val = value
         # else:
         #     assert False, "You must check retention type {}".format(type)
-    
+
     def interp_init(self):
 
         ## hynix reram data to convert continuous data
@@ -340,6 +358,8 @@ class Noise_cell(nn.Module):
                 state_mean = [((self.rv[c].mean() - self.Gmin) / self.delta_G) for c in range(self.clevel)]
             else:
                 self.Gmin = 10.0 #uS
+                if self.set_deltaG is not None:
+                    self.delta_G = self.set_deltaG
                 state_mean = [c for c in range(self.clevel)] # (mean - Gmin) / delta_G
             state_std = [self.rv[c].std() / self.delta_G for c in range(self.clevel)]
 
@@ -432,29 +452,29 @@ class Noise_cell(nn.Module):
                         G_ins = (abs(output[index]/self.delta_G)).round().detach().cpu().numpy()
                         output[index] = torch.normal(self.G[G_ins], self.G_std[G_ins]).to(x.device)
 
-                    # array = [torch.normal(self.G[c], self.G_std[c], size=(10000, )).numpy() for c in range(self.clevel)]
-                    # import matplotlib.pyplot as plt
-                    # import seaborn as sns
-                    # import pandas as pd 
+                # array = [torch.normal(self.G[c], self.G_std[c], size=(10000, )).numpy() for c in range(self.clevel)]
+                # import matplotlib.pyplot as plt
+                # import seaborn as sns
+                # import pandas as pd 
 
-                    # df = pd.DataFrame(array).transpose()
-                    # fig, ax = plt.subplots(figsize=(20, 6))
-                    # sns.histplot(array, ax=ax, alpha = 0.2, element='step', fill=True, bins=200)
-                    # ax.set_ylabel(ax.get_ylabel(), fontsize=16)
-                    # ax.legend(('state 8', 'state 7', 'state 6', 'state 5', 'state 4', 'state 3', 'state 2', 'state 1', 'state 0'), reverse=True, loc='upper center', ncol=9, fontsize=12, frameon=False)
-                    # ax_ylabels = np.linspace(ax.get_yticks()[0], ax.get_yticks()[-2], num=5, dtype=int)
-                    # ax.set_yticks(ax_ylabels)
-                    # ax.set_yticklabels(ax.get_yticks(), fontsize=14)
-                    # ax.set_title(f'ReRAM Noise Gaussian Modeling (20uS)', loc='right', fontsize=16)
-                    # ax.set_xlabel('Conductance [uS]')
-                    # ax.set_xlim(0, 200)
-                    # ax.set_xlabel(ax.get_xlabel(), fontsize=16)
-                    # ax.set_xticks(ax.get_xticks())
-                    # ax.set_xticklabels(ax.get_xticks(), fontsize=14)
-                    # plt.savefig(os.getcwd()+"/graph/ReRAM/gaussian_modeling.png")
-                    # import pdb; pdb.set_trace()
+                # df = pd.DataFrame(array).transpose()
+                # fig, ax = plt.subplots(figsize=(20, 6))
+                # sns.histplot(array, ax=ax, alpha = 0.2, element='step', fill=True, bins=200)
+                # ax.set_ylabel(ax.get_ylabel(), fontsize=16)
+                # ax.legend(('state 8', 'state 7', 'state 6', 'state 5', 'state 4', 'state 3', 'state 2', 'state 1', 'state 0'), reverse=True, loc='upper center', ncol=9, fontsize=12, frameon=False)
+                # ax_ylabels = np.linspace(ax.get_yticks()[0], ax.get_yticks()[-2], num=5, dtype=int)
+                # ax.set_yticks(ax_ylabels)
+                # ax.set_yticklabels(ax.get_yticks(), fontsize=14)
+                # ax.set_title(f'ReRAM Noise Gaussian Modeling (20uS)', loc='right', fontsize=16)
+                # ax.set_xlabel('Conductance [uS]')
+                # ax.set_xlim(0, 200)
+                # ax.set_xlabel(ax.get_xlabel(), fontsize=16)
+                # ax.set_xticks(ax.get_xticks())
+                # ax.set_xticklabels(ax.get_xticks(), fontsize=14)
+                # plt.savefig(os.getcwd()+"/graph/ReRAM/gaussian_modeling.png")
+                # import pdb; pdb.set_trace()
 
-                assert torch.all(output > 0), "Do not set negative cell value"
+                # assert torch.all(output > 0), "Do not set negative cell value"
             
                 return output / self.delta_G
             elif res_val == 'rel':
