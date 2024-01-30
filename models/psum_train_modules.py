@@ -244,15 +244,15 @@ class TPsumQConv(SplitConv):
         out_mag = int(w_mag * (2**abit))
         return out_mag, multi_scale
     
-    def _cell_noise_init(self, cbits, mapping_mode, co_noise=0.01, noise_type='prop', res_val='rel', shrink=None, retention=False, w_format="weight", max_epoch=-1):
+    def _cell_noise_init(self, cbits, mapping_mode, co_noise=0.01, noise_type='prop', res_val='rel', shrink=None, retention=False, deltaG=None, w_format="weight", max_epoch=-1):
         self.w_format = 'state' if res_val == 'abs' or noise_type == 'meas' else 'weight'
         # wbits = Parameter(torch.Tensor(1).fill_(self.wbits), requires_grad=False).round().squeeze()
         # for inference 
         if not (noise_type == 'prop' or 'interp'):
             noise_type = 'prop'
         self.noise_cell_log = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val=res_val, shrink=shrink, retention=False, w_format=self.w_format)
-        self.noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val=res_val, shrink=shrink, retention=retention, w_format=self.w_format)
-        self.noise_cell_inf = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val='abs', shrink=shrink, retention=retention, w_format="state")
+        self.noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val=res_val, shrink=shrink, retention=retention, set_deltaG=deltaG, w_format=self.w_format)
+        self.noise_cell_inf = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val='abs', shrink=shrink, retention=retention, set_deltaG=deltaG, w_format="state")
 
     def init_form(self, x, half_levels, psum_scale = 1):
         if (self.mapping_mode == '2T2R') or (self.mapping_mode == 'PN'):
@@ -1140,13 +1140,13 @@ class TPsumQLinear(SplitLinear):
         out_mag = int(w_mag * (2**abit))
         return out_mag, multi_scale
 
-    def _cell_noise_init(self, cbits, mapping_mode, co_noise=0.01, noise_type='prop', res_val='rel', shrink=None, retention=False, max_epoch=-1):
+    def _cell_noise_init(self, cbits, mapping_mode, co_noise=0.01, noise_type='prop', res_val='rel', shrink=None, retention=False, deltaG=None, max_epoch=-1):
         self.w_format = 'state' if res_val == 'abs' or noise_type == 'meas' else 'weight'
         # wbits = Parameter(torch.Tensor(1).fill_(self.wbits), requires_grad=False).round().squeeze()
         if self.psum_mode == 'sigma':
             self.noise_cell_log = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val=res_val, shrink=shrink, retention=False, w_format=self.w_format)
-        self.noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val=res_val, shrink=shrink, retention=retention, w_format=self.w_format)
-        self.noise_cell_inf = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val="abs", shrink=shrink, retention=retention, w_format="state")
+        self.noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val=res_val, shrink=shrink, retention=retention, set_deltaG=deltaG, w_format=self.w_format)
+        self.noise_cell_inf = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val="abs", shrink=shrink, retention=retention, set_deltaG=deltaG, w_format="state")
     
     def init_form(self, x, half_levels, psum_scale=1):
         if (self.mapping_mode == '2T2R') or (self.mapping_mode == 'PN'):
@@ -1832,7 +1832,7 @@ def set_tbitserial_layer(model, pquant_idx, wbit_serial=None, pbits=32, center=[
     print("finish setting conv/fc bitserial layer ")
 
 def set_TNoise_injection(model, weight=False, hwnoise=True, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', shrink=None, max_epoch=-1,
-                        retention=False, reten_kind='linear', reten_type='percent', reten_value=0):
+                        deltaG=None, retention=False, reten_kind='linear', reten_type='percent', reten_value=0):
     for name, module in model.named_modules():
         if isinstance(module, (TPsumQConv, TPsumQLinear)) and weight and hwnoise:
             if module.wbits != 32:
@@ -1841,6 +1841,6 @@ def set_TNoise_injection(model, weight=False, hwnoise=True, cbits=4, mapping_mod
                 if noise_type == 'grad':
                     assert max_epoch != -1, "Enter max_epoch in hwnoise_initialize function"
                 if hwnoise:
-                    module._cell_noise_init(cbits=cbits, mapping_mode=mapping_mode, co_noise=co_noise, noise_type=noise_type, res_val=res_val, shrink=shrink, retention=retention, max_epoch=max_epoch)
+                    module._cell_noise_init(cbits=cbits, mapping_mode=mapping_mode, co_noise=co_noise, noise_type=noise_type, res_val=res_val, shrink=shrink, retention=retention, deltaG=deltaG, max_epoch=max_epoch)
                     if retention:
                         module.noise_cell.retention_init(kind=reten_kind, type=reten_type, value=reten_value)

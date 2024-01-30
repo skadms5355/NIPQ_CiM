@@ -257,6 +257,8 @@ def set_arguments():
                             help='representation methods of resistance (default: relative(rel))).')               
     noise_group.add_argument('--shrink', type=float, default=None,
                             help='Noise state shrink percentage (range: 0 ~ 0.17)')   
+    noise_group.add_argument('--deltaG', type=float, default=None,
+                            help='set delta G arbitrarily')   
     noise_group.add_argument('--retention', type=str2bool, default='False',
                             help='retention Noise in ReRAM Device')   
     noise_group.add_argument('--reten_kind', type=str, default='linear',

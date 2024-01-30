@@ -132,6 +132,9 @@ def main():
                 if args.shrink is not None:
                     type = '{}_shrink_{}'.format(type, args.shrink)
 
+                if args.deltaG is not None:
+                    type = '{}_deltaG_{}'.format(type, args.deltaG)
+
                 if args.tn_file is not None:
                     prefix = os.path.join(prefix, '{}_{}_{}').format(args.tn_file, args.noise_type, type)
                 else:
@@ -434,7 +437,7 @@ def main_worker(gpu, ngpus_per_node, args):
                     pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma)
                 if args.is_noise:
                     set_Noise_injection(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
-                                        noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink, retention=args.retention, reten_value=args.reten_val, reten_type=args.reten_type)
+                                        noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink,  deltaG=args.deltaG, retention=args.retention, reten_value=args.reten_val, reten_type=args.reten_type)
             elif 'pst' in args.model_mode:
                 if args.psum_mode == 'sigma':
                     arch = '_'.join(args.arch.split('_')[:-1])
@@ -445,7 +448,7 @@ def main_worker(gpu, ngpus_per_node, args):
                     set_TBitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, pclipmode=args.pclipmode, model_mode=args.model_mode, pbits=args.pbits)
                 if args.is_noise:
                     set_TNoise_injection(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
-                                        noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink, retention=args.retention, reten_value=args.reten_val, reten_type=args.reten_type)
+                                        noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink, deltaG=args.deltaG, retention=args.retention, reten_value=args.reten_val, reten_type=args.reten_type)
             else:
                 assert False, "This mode is not supported psum computation"
 
@@ -597,7 +600,7 @@ def main_worker(gpu, ngpus_per_node, args):
         if args.is_noise and not args.evaluate:
             if 'pst' in args.model_mode:
                 set_Noise_injection(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
-                                    noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink, retention=args.retention, reten_value=args.reten_val, reten_type=args.reten_type)
+                                    noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink, deltaG=args.deltaG, retention=args.retention, reten_value=args.reten_val, reten_type=args.reten_type)
             else:
                 from models.quantized_lsq_modules import hwnoise_initialize
                 hwnoise_initialize(model, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
@@ -621,7 +624,7 @@ def main_worker(gpu, ngpus_per_node, args):
         
         if args.is_noise and args.model_mode == 'lsq_pst':
             set_TNoise_injection(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
-                                        noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink, retention=args.retention, reten_value=args.reten_val, reten_type=args.reten_type)
+                                        noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink, deltaG=args.deltaG, retention=args.retention, reten_value=args.reten_val, reten_type=args.reten_type)
             
         for m in model.modules():
             if args.psum_mode == 'retrain':
@@ -684,7 +687,7 @@ def main_worker(gpu, ngpus_per_node, args):
         elif args.model_mode == 'pnq_pst':
             if epoch == (args.epochs - (args.hw_epoch+args.ft_epoch)):
                 set_TNoise_injection(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
-                                            noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink, retention=args.retention, reten_value=args.reten_val, reten_type=args.reten_type)
+                                            noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink, deltaG=args.deltaG, retention=args.retention, reten_value=args.reten_val, reten_type=args.reten_type)
                 print("Add device noise at 'pnq_pst' method.")
             
             if epoch == (args.epochs - args.ft_epoch):
