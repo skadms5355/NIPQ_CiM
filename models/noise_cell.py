@@ -441,6 +441,13 @@ class Noise_cell(nn.Module):
                     output = torch.where(output<0, output[output>0].min(), output).to(x.device)
                 elif noise_type == 'prop' or noise_type == 'meas':
                     output = torch.normal(self.G[x_idx], self.G_std[x_idx]).to(x.device)
+
+                    while torch.any(output<=0):
+                        index = torch.where(output <= 0)
+                        import pdb; pdb.set_trace()
+                        G_ins = (abs(output[index]/self.delta_G)).round().detach().cpu().numpy()
+                        output[index] = torch.normal(self.G[G_ins], self.G_std[G_ins]).to(x.device)
+
                     # Need G_std setting! 
                 elif noise_type == 'interp':
                     output = self.interp_sample(x)
@@ -451,38 +458,38 @@ class Noise_cell(nn.Module):
                         index = torch.where(output <= 0)
                         G_ins = (abs(output[index]/self.delta_G)).round().detach().cpu().numpy()
                         output[index] = torch.normal(self.G[G_ins], self.G_std[G_ins]).to(x.device)
-                        
-                    # array = [torch.normal(self.G[c], self.G_std[c], size=(10000, )).numpy() for c in range(self.clevel)]
-                    # import matplotlib.pyplot as plt
-                    # import seaborn as sns
-                    # import pandas as pd 
+
+                # array = [torch.normal(self.G[c], self.G_std[c], size=(10000, )).numpy() for c in range(self.clevel)]
+                # import matplotlib.pyplot as plt
+                # import seaborn as sns
+                # import pandas as pd 
                     
 
-                    # df = pd.DataFrame()
-                    # for i in range(self.clevel):
-                    #     G_inx = torch.where(output[x_idx==i])
-                    #     df_temp = pd.DataFrame(data=output[x_idx==i].cpu())
-                    #     df_temp.columns = [f"state {i}"]
-                    #     df = pd.concat([df, df_temp], ignore_index=True)
-                    #     # df["state"]=df["state"].fillna(int(i))
+                # df = pd.DataFrame()
+                # for i in range(self.clevel):
+                #     G_inx = torch.where(output[x_idx==i])
+                #     df_temp = pd.DataFrame(data=output[x_idx==i].cpu())
+                #     df_temp.columns = [f"state {i}"]
+                #     df = pd.concat([df, df_temp], ignore_index=True)
+                #     # df["state"]=df["state"].fillna(int(i))
 
-                    # # palet= sns.color_palette('Set2')
-                    # fig, ax = plt.subplots(figsize=(20, 6))
-                    # sns.histplot(df, ax=ax, alpha = 0.2, element='step', fill=True, bins=200, stat='count')
-                    # ax.set_ylabel(ax.get_ylabel(), fontsize=16)
-                    # ax.legend(('state 8', 'state 7', 'state 6', 'state 5', 'state 4', 'state 3', 'state 2', 'state 1', 'state 0'), reverse=True, loc='upper center', ncol=9, fontsize=12, frameon=False)
-                    # # ax.legend(('state 0', 'state 1', 'state 2', 'state 3', 'state 4', 'state 5', 'state 6', 'state 7', 'state 8', 'state 9', 'state 10', 'state 11', 'state 12', 'state 13', 'state 14', 'state 15'), loc='upper center', ncol=8, fontsize=12, frameon=False)
-                    # ax_ylabels = np.linspace(ax.get_yticks()[0], ax.get_yticks()[-2], num=5, dtype=int)
-                    # ax.set_yticks(ax_ylabels)
-                    # ax.set_yticklabels(ax.get_yticks(), fontsize=14)
-                    # ax.set_title(f'ReRAM Conductance Distribution (2T2R)', loc='right', fontsize=16)
-                    # ax.set_xlabel('Conductance [uS]')
-                    # ax.set_xlim(0, 200)
-                    # ax.set_xlabel(ax.get_xlabel(), fontsize=16)
-                    # ax.set_xticks(ax.get_xticks())
-                    # ax.set_xticklabels(ax.get_xticks(), fontsize=14)
-                    # plt.savefig(os.getcwd()+"/graph/ReRAM/gaussian_modeling.png", bbox_inches='tight')
-                    # import pdb; pdb.set_trace()
+                # # palet= sns.color_palette('Set2')
+                # fig, ax = plt.subplots(figsize=(20, 6))
+                # sns.histplot(data=array, ax=ax, alpha = 0.2, element='step', fill=True, bins=200, stat='count')
+                # ax.set_ylabel(ax.get_ylabel(), fontsize=16)
+                # ax.legend(('state 8', 'state 7', 'state 6', 'state 5', 'state 4', 'state 3', 'state 2', 'state 1', 'state 0'), reverse=True, loc='upper center', ncol=9, fontsize=12, frameon=False)
+                # # ax.legend(('state 0', 'state 1', 'state 2', 'state 3', 'state 4', 'state 5', 'state 6', 'state 7', 'state 8', 'state 9', 'state 10', 'state 11', 'state 12', 'state 13', 'state 14', 'state 15'), loc='upper center', ncol=8, fontsize=12, frameon=False)
+                # ax_ylabels = np.linspace(ax.get_yticks()[0], ax.get_yticks()[-2], num=5, dtype=int)
+                # ax.set_yticks(ax_ylabels)
+                # ax.set_yticklabels(ax.get_yticks(), fontsize=14)
+                # ax.set_title(f'ReRAM Conductance Distribution (2T2R)', loc='right', fontsize=16)
+                # ax.set_xlabel('Conductance [uS]')
+                # ax.set_xlim(0, 180)
+                # ax.set_xlabel(ax.get_xlabel(), fontsize=16)
+                # ax.set_xticks(ax.get_xticks())
+                # ax.set_xticklabels(ax.get_xticks(), fontsize=14)
+                # plt.savefig(os.getcwd()+"/graph/ReRAM/gaussian_modeling.png", bbox_inches='tight')
+                # import pdb; pdb.set_trace()
 
                 assert torch.all(output > 0), "Do not set negative cell value"
             
