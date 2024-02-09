@@ -107,7 +107,7 @@ for pbit in pbits_list:
             elif model_mode == 'pnq_pst':
                 if pbit == 2:
                     if args.tnoise:
-                        pretrained = './checkpoints/cifar10/pnq_pst/psum_lsq_vgg9_train/a:4_w:4/2T2R/128_c:4/hynix_std_type_{}/2024-Jan-25-00-20-38/model_best.pth.tar'.format(args.tco_noise)
+                        pretrained = './checkpoints/cifar10/pnq_pst/psum_lsq_vgg9_train/a:4_w:4/2T2R/128_c:4/hynix_std_type_{}/2024-Jan-30-10-56-00/model_best.pth.tar'.format(args.tco_noise)
                     else:
                         pretrained = './checkpoints/cifar10/pnq_pst/psum_lsq_vgg9_train/a:4_w:4/2T2R/128_c:4/2023-Nov-15-19-47-39/model_best.pth.tar'
                 else:
