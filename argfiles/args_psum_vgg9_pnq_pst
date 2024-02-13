@@ -6,7 +6,7 @@
 --augment	    y  
 
 --epochs        30
---hw_epoch      10
+--hw_epoch      0
 --ft_epoch      5
 --train-batch   256
 --test-batch    200
@@ -51,8 +51,8 @@
 # for noise
 # --is_noise      n
 
---is_noise      y
---nipq_noise    hwnoise
+--is_noise      n
+--nipq_noise    qnoise
 --co_noise      4
 --noise_type    hynix_std
 --res_val       rel

@@ -658,6 +658,14 @@ def main_worker(gpu, ngpus_per_node, args):
     start_time = time.time()
     pre_weight = []
     debug = False
+    if args.model_mode == "pnq_pst":
+        progress_epoch = args.epochs - (args.hw_epoch+args.ft_epoch) 
+        nbits = int(8- args.pbits + 1)
+        nepoch_list = [int(math.floor(progress_epoch/nbits)) for _ in range(nbits)]
+        for idx in range(len(nepoch_list), len(nepoch_list)-int(progress_epoch%nbits), -1):
+            nepoch_list[idx-1] += 1
+        e_idx = 0
+
     for epoch in range(start_epoch, args.epochs):
         if not args.dali and args.distributed:
             train_sampler.set_epoch(epoch)
@@ -684,8 +692,17 @@ def main_worker(gpu, ngpus_per_node, args):
                                 module.quant_func.bit.data.fill_(bit)
                                 changed_bit = 2+12/(1+np.exp(-bit))
                         print("Change the bit precision to {}".format(changed_bit))
+
         elif args.model_mode == 'pnq_pst':
-            if epoch == (args.epochs - (args.hw_epoch+args.ft_epoch)):
+            if epoch < progress_epoch:
+                if epoch == sum(nepoch_list[:e_idx]):
+                    prog_pbit = 8-e_idx
+                    for m in model.modules(): 
+                        if type(m).__name__ in ["TPsumQConv", "TPsumQLinear"]:
+                            m.setting_pquant_func(pbits=prog_pbit)
+                    print("Set to {}-bit for setting progressive pbits".format(prog_pbit))
+                    e_idx += 1
+            elif epoch == progress_epoch:
                 set_TNoise_injection(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
                                             noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink, deltaG=args.deltaG, retention=args.retention, reten_value=args.reten_val, reten_type=args.reten_type)
                 print("Add device noise at 'pnq_pst' method.")
@@ -714,37 +731,13 @@ def main_worker(gpu, ngpus_per_node, args):
 
         # steo firward the scheduler.
         scheduler.step()
-        
-        if debug:
-            if args.psum_mode == 'retrain':
-                for m in model.modules():
-                    if type(m).__name__ in ["TPsumQConv", "TPsumQLinear"]:
-                        if m.wbits != 32:
-                            import torch.nn.functional as F
-                            act_alpha = F.softplus(m.alpha)
-                            print('\n [Layer {}] alpha value {} {} / {}'.format(m.layer_idx, m.alpha, act_alpha, m.alpha.grad))
-                        if m.weight.grad is not None:
-                            print("PsumQuant {} {} \n weight: {}".format(m.layer_idx, m.weight.grad[0][0:5], m.weight[0][0:5]))
-            elif args.psum_mode == 'sigma':
-                for m in model.modules():
-                    # if type(m).__name__ in ["QConv"]:
-                    #     print("QConv {} \n weight: {}".format(m.weight.requires_grad, m.weight[0][0]))
-                    if type(m).__name__ in ["TPsumQConv"]:
-                        # print("PsumQuant {} {} \n weight: {}".format(m.layer_idx, m.weight.grad[0][0], m.weight[0][0]))
-                        if epoch != 0:
-                            index = torch.where(pre_weight[m.layer_idx] != m.weight.detach())
-                            print('PsumConv {} index size {}'.format(m.layer_idx, index[0].size()))
-                            pre_weight[m.layer_idx]=m.weight.detach().clone()
-                        else:
-                            pre_weight.append(m.weight.detach().clone())
-                    if type(m).__name__ in ["TPsumQLinear"]:
-                        # print("PsumLayer {} {} \n weight: {}".format(m.layer_idx, m.weight.grad[0][0:5], m.weight[0][0:5]))
-                        if epoch != 0:
-                            index = torch.where(pre_weight[m.layer_idx] != m.weight.detach())
-                            print('PsumLayer {} index size {}'.format(m.layer_idx, index[0].size()))
-                            pre_weight[m.layer_idx]=m.weight.detach().clone()
-                        else:
-                            pre_weight.append(m.weight.detach().clone())
+       
+        # setting test pbits for test
+        # if args.model_mode == 'pnq_pst':
+        #     if epoch < progress_epoch:
+        #         for m in model.modules(): 
+        #             if type(m).__name__ in ["TPsumQConv", "TPsumQLinear"]:
+        #                 m.setting_pquant_func(pbits=args.pbits)
 
         # Logging and saving
         if valid_loader is not None:
@@ -800,6 +793,40 @@ def main_worker(gpu, ngpus_per_node, args):
                     is_best_test_top1, checkpoint=args.checkpoint)
 
             print("Training end time per one epoch: {}s, {}s".format(str(datetime.timedelta(seconds=(time.time()-start_time))), time.time()-start_time))
+        
+        # Store LSQ-epoch checkpoint weight at pnq_pst
+        if epoch == (args.epochs-args.ft_epoch):
+            top1_LSQ = top1['valid']
+            logging.save_checkpoint(
+                    {
+                        'epoch': epoch + 1,
+                        'state_dict':               model.state_dict(),
+                        'top1':                     top1,
+                        'top5':                     top5,
+                        'optimizer':                optimizer.state_dict(),
+                        'amp':                      scaler.state_dict() if args.amp else None,
+                        'args_dict':                args_dict,
+                        'scheduler':                scheduler.state_dict(),
+                        'after_scheduler':          after_scheduler.state_dict(),
+                    },
+                    False, is_best_nipq=True, checkpoint=args.checkpoint)
+        elif epoch > (args.epochs-args.ft_epoch):
+            is_top1_LSQ = top1['valid'] > top1_LSQ
+            top1_LSQ = max(top1['valid'], top1_LSQ)
+            logging.save_checkpoint(
+                    {
+                        'epoch': epoch + 1,
+                        'state_dict':               model.state_dict(),
+                        'top1':                     top1,
+                        'top5':                     top5,
+                        'optimizer':                optimizer.state_dict(),
+                        'amp':                      scaler.state_dict() if args.amp else None,
+                        'args_dict':                args_dict,
+                        'scheduler':                scheduler.state_dict(),
+                        'after_scheduler':          after_scheduler.state_dict(),
+                    },
+                    False, is_best_nipq=is_top1_LSQ, checkpoint=args.checkpoint)
+
         # log test/valid loss and accuracy on tensorboard
         if loss['valid']:
             writer.log_scalars('valid', {'loss': loss['valid'], 'top1': top1['valid']}, epoch)

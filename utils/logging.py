@@ -10,12 +10,15 @@ import numpy as np
 
 __all__ = ['Logger', 'LoggerMonitor', 'savefig', 'save_checkpoint']
 
-def save_checkpoint(state, is_best, checkpoint='checkpoint', filename='checkpoint.pth.tar'):
+def save_checkpoint(state, is_best, is_best_nipq=False, checkpoint='checkpoint', filename='checkpoint.pth.tar'):
     filepath = os.path.join(checkpoint, filename)
     torch.save(state, filepath)
     if is_best:
         shutil.copyfile(
             filepath, os.path.join(checkpoint, 'model_best.pth.tar'))
+    if is_best_nipq:
+        shutil.copyfile(
+            filepath, os.path.join(checkpoint, 'model_best_LSQ.pth.tar'))
 
 def savefig(fname, dpi=None):
     dpi = 150 if dpi == None else dpi
