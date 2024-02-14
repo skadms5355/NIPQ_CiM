@@ -51,21 +51,22 @@ class Noise_cell(nn.Module):
         self.shrink = shrink
         self.retention = retention
         self.set_deltaG = set_deltaG
+        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
         self.init_state()
 
     def init_state(self):
         self.effective_clevel()
         if self.noise_type == 'meas':
-            self.G = torch.tensor([43.9e-6, 96.16e-6])
-            self.G_std = torch.tensor([5.02e-6, 9.52e-6]) #MRAM data
+            self.G = torch.tensor([43.9e-6, 96.16e-6], device=self.device)
+            self.G_std = torch.tensor([5.02e-6, 9.52e-6], device=self.device) #MRAM data
         if self.res_val == 'rel':
             self.std_offset = torch.Tensor(1).fill_((self.clevel - 1) / (self.ratio - 1))
             self.init_std(self.max_epoch)
         elif self.res_val == 'abs': 
             self.Gmax = self.ratio * self.Gmin
             self.delta_G = (self.Gmax-self.Gmin) / (self.clevel-1)
-            self.G = torch.tensor([self.Gmin + i*self.delta_G for i in range(self.clevel)])
+            self.G = torch.tensor([self.Gmin + i*self.delta_G for i in range(self.clevel)], device=self.device)
             if self.noise_type == 'static':
                 idx = int(torch.floor(torch.div(self.clevel, 2)).detach().cpu())
                 self.G_std = torch.Tensor(1).fill_(self.co_noise * self.G[idx])
@@ -74,8 +75,8 @@ class Noise_cell(nn.Module):
                 self.delta_G=10.0
                 if self.set_deltaG is not None:
                     self.delta_G = self.set_deltaG
-                self.G = torch.tensor([self.Gmin + i*self.delta_G for i in range(self.clevel)])
-                self.G_std = torch.tensor([self.co_noise * self.G[i] for i in range(self.clevel)])
+                self.G = torch.tensor([self.Gmin + i*self.delta_G for i in range(self.clevel)], device=self.device)
+                self.G_std = torch.tensor([self.co_noise * self.G[i] for i in range(self.clevel)], device=self.device)
             elif self.noise_type == 'meas':
                 self.delta_G = self.G[-1] - self.G[0]
             elif self.noise_type == 'interp':
@@ -86,7 +87,7 @@ class Noise_cell(nn.Module):
                 self.Gmin = 10.0 #uS
                 if self.set_deltaG is not None:
                     self.delta_G = self.set_deltaG
-                self.G = torch.tensor([self.Gmin + i*self.delta_G for i in range(self.clevel)])
+                self.G = torch.tensor([self.Gmin + i*self.delta_G for i in range(self.clevel)], device=self.device)
 
                 # for weight device non-linearity 
                 # nonlinear = torch.rand(self.clevel) + 0.5
@@ -98,7 +99,7 @@ class Noise_cell(nn.Module):
                 #         self.G[i] = self.G[i-1] + delta_G[i]
                 
                 # std generation
-                self.G_std = torch.tensor([self.rv[c].std() for c in range(self.clevel)])
+                self.G_std = torch.tensor([self.rv[c].std() for c in range(self.clevel)], device=self.device)
             else:
                 assert False, 'In the {} mode, the {} noise type is not supported, you have to choose static or prop'.format(self.res_val, self.noise_type)
         else:
@@ -332,7 +333,7 @@ class Noise_cell(nn.Module):
         # rel std initialization
         if self.noise_type == 'static':
             std = self.compute_std(torch.floor(torch.div(self.clevel, 2)))
-            self.G_std = torch.Tensor(1).fill_(std.item())
+            self.G_std = torch.Tensor(1).fill_(std.item()).to(self.device)
         elif self.noise_type == 'grad':
             if max_epoch != -1:
                 self.grad_epoch_list(max_epoch)
@@ -342,7 +343,7 @@ class Noise_cell(nn.Module):
                 assert False, "Please enter max_epoch in relative gradual mode"
             G = torch.arange(0, self.clevel)
             self.std_list = self.compute_std(G)
-            self.G_std = torch.Tensor(1).fill_(self.std_list[self.cell_idx])
+            self.G_std = torch.Tensor(1).fill_(self.std_list[self.cell_idx]).to(self.device)
         elif self.noise_type == 'prop':
             G = torch.arange(0, self.clevel)
             self.G_std = self.compute_std(G)
@@ -364,16 +365,16 @@ class Noise_cell(nn.Module):
             state_std = [self.rv[c].std() / self.delta_G for c in range(self.clevel)]
 
             if (self.mapping_mode == '2T2R') or (self.mapping_mode == 'PN'):
-                self.G_std = torch.tensor([np.sqrt(np.power(state_std[c], 2) + np.power(state_std[0], 2)) for c in range(self.clevel)])
-                self.G = torch.tensor([state_mean[c] - state_mean[0] for c in range(self.clevel)])
+                self.G_std = torch.tensor([np.sqrt(np.power(state_std[c], 2) + np.power(state_std[0], 2)) for c in range(self.clevel)], device=self.device)
+                self.G = torch.tensor([state_mean[c] - state_mean[0] for c in range(self.clevel)], device=self.device)
                 if self.retention:
-                    self.G = torch.tensor(self.G[c]*(1-self.reten_val) for c in range(self.clevel))
+                    self.G = torch.tensor((self.G[c]*(1-self.reten_val) for c in range(self.clevel)), device=self.device)
             elif 'ref' in self.mapping_mode:   
                 w_ref = int(self.clevel/2)
-                self.G_std = torch.tensor([np.sqrt(np.power(state_std[c], 2) + np.power(state_std[w_ref], 2)) for c in range(self.clevel)])
-                self.G = torch.tensor([state_mean[c] - state_mean[w_ref] for c in range(self.clevel)])
+                self.G_std = torch.tensor([np.sqrt(np.power(state_std[c], 2) + np.power(state_std[w_ref], 2)) for c in range(self.clevel)], device=self.device)
+                self.G = torch.tensor([state_mean[c] - state_mean[w_ref] for c in range(self.clevel)], device=self.device)
                 if self.retention:
-                    self.G = torch.tensor(self.G[c]*(1-self.reten_val) for c in range(self.clevel))
+                    self.G = torch.tensor((self.G[c]*(1-self.reten_val) for c in range(self.clevel)), device=self.device)
             else:
                 assert False, "Only support 2T2R mapping mode"
 

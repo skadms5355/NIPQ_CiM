@@ -32,7 +32,7 @@
 --abit-serial   y
 
 --psum_mode     sigma
---pbits         32
+--pbits         2
 --pclipmode     Layer
 --pclip         sigma
 --psigma        3
@@ -40,7 +40,7 @@
 # noise option
 --is_noise      y
 --nipq_noise    hwnoise
---co_noise      4
+--co_noise      2
 --noise_type    interp
 --res_val       abs
 

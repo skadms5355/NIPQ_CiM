@@ -215,6 +215,8 @@ def set_arguments():
                             help='reset accuracy test log for script')
     psum_group.add_argument('--class-split', default='False', type=str2bool, 
                             help='Class split of training dataset')
+    psum_group.add_argument('--prog_pbits', type=int, nargs="+",
+                            help='Progressive pbits')
     psum_group.add_argument('--pbits', type=float, default=32,
                             help='Bit resolution of partial sums. 32 is for full-precision.')
     psum_group.add_argument('--pclipmode', default='Layer', type=str,

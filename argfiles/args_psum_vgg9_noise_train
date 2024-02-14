@@ -18,7 +18,7 @@
 --T0            27
 
 # --pretrained    ./checkpoints/cifar10/lsq_vgg9/a:4_w:4/2022-Apr-01-18-57-49/model_best.pth.tar         
---pretrained    ./checkpoints/cifar10/quant/psum_lsq_vgg9/a:4_w:4/2T2R/128_c:4/2023-Nov-10-18-12-17/model_best.pth.tar
+--pretrained    ./checkpoints/cifar10/quant_pst/psum_lsq_vgg9/a:4_w:4/2T2R/128_c:4/2023-Nov-10-18-12-17/model_best.pth.tar
 
 --wbits         4
 --abits         4
@@ -52,6 +52,6 @@
 # for noise
 --is_noise      y
 --nipq_noise    hwnoise
---co_noise      4
+--co_noise      2
 --noise_type    hynix_std
 --res_val       rel

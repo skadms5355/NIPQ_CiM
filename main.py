@@ -258,6 +258,7 @@ def main_worker(gpu, ngpus_per_node, args):
             'QConv', 'QLinear', 'QuantConv', 'QuantLinear', \
             'PsumQConv', 'PsumQLinear']
     bn_modules_to_init = ['BatchNorm1d', 'BatchNorm2d']
+
     for m in model.modules():
         if type(m).__name__ in modules_to_init:
             initialize.init_weight(m, method=args.init_method, dist=args.init_dist, mode=args.init_fan)
@@ -406,12 +407,11 @@ def main_worker(gpu, ngpus_per_node, args):
         'Learning Rate', 'Train Loss', 'Valid Loss', 'Test Loss', 'Train Top1',
         'Train Top5', 'Valid Top1', 'Valid Top5', 'Test Top1', 'Test Top5'])
 
-    graph_path = None
+    # store accuracy report 
     if args.rank % ngpus_per_node == 0:
         # Resume and initializing logger
         if args.evaluate:
             report_path = os.path.join(str(pathlib.Path().resolve()), ((args.checkpoint.replace('checkpoints', 'report')).replace('eval/', '')).replace('/log_bitserial_info', ''))
-            graph_path = os.path.join(str(pathlib.Path().resolve()), 'graph', args.dataset, f'Psum_{args.arch}', args.mapping_mode, args.psum_mode, 'class_{}'.format(args.per_class))
             if not args.psum_comp:
                 report_path = '/'.join(report_path.split('/')[:-1]) # time folder remove
             if args.retention:
@@ -483,6 +483,7 @@ def main_worker(gpu, ngpus_per_node, args):
 
         if args.rank == 0:
             print('\nEvaluation only')
+            
         if not args.class_split:
             if valid_loader is not None:
                 loss['valid'], top1['valid'], top5['valid'] = eval.test(valid_loader, model, criterion, 0, args)
@@ -591,10 +592,11 @@ def main_worker(gpu, ngpus_per_node, args):
     elif 'quant' in args.model_mode:
         if args.psum_comp:
             if args.psum_mode == 'sigma':
-                checkpoint = os.path.join(str(pathlib.Path().resolve()), ((args.checkpoint.replace('{}'.format(args.model_mode), 'quant')).replace('{}'.format(args.arch), '{}/eval'.format(args.arch))))
+                checkpoint = os.path.join(str(pathlib.Path().resolve()), ((args.checkpoint.replace('{}'.format(args.arch), '{}/eval'.format(args.arch)))))
                 checkpoint = '/'.join(checkpoint.split('/')[:-1]) +'/log_bitserial_info' # time folder remove
             else:
                 checkpoint = args.checkpoint
+
             set_BitSerial_log(model, abit_serial=args.abit_serial, checkpoint=checkpoint, log_file=args.log_file,\
                     pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma)
         if args.is_noise and not args.evaluate:
@@ -656,14 +658,14 @@ def main_worker(gpu, ngpus_per_node, args):
 
     # Train and val
     start_time = time.time()
-    pre_weight = []
-    debug = False
-    if args.model_mode == "pnq_pst":
+
+    if args.model_mode == "pnq_pst" and (not args.is_noise):
         progress_epoch = args.epochs - (args.hw_epoch+args.ft_epoch) 
-        nbits = int(8- args.pbits + 1)
-        nepoch_list = [int(math.floor(progress_epoch/nbits)) for _ in range(nbits)]
-        for idx in range(len(nepoch_list), len(nepoch_list)-int(progress_epoch%nbits), -1):
-            nepoch_list[idx-1] += 1
+        nbits = len(args.prog_pbits)
+        nepoch_list = [int(math.floor(progress_epoch/(nbits+1))) for _ in range(nbits)]
+        nepoch_list[-1] += progress_epoch - sum(nepoch_list)
+        # for idx in range(len(nepoch_list), len(nepoch_list)-int(progress_epoch%nbits), -1):
+            # nepoch_list[idx-1] += 1
         e_idx = 0
 
     for epoch in range(start_epoch, args.epochs):
@@ -693,10 +695,10 @@ def main_worker(gpu, ngpus_per_node, args):
                                 changed_bit = 2+12/(1+np.exp(-bit))
                         print("Change the bit precision to {}".format(changed_bit))
 
-        elif args.model_mode == 'pnq_pst':
+        elif args.model_mode == 'pnq_pst' and (not args.is_noise):
             if epoch < progress_epoch:
                 if epoch == sum(nepoch_list[:e_idx]):
-                    prog_pbit = 8-e_idx
+                    prog_pbit = args.prog_pbits[e_idx]
                     for m in model.modules(): 
                         if type(m).__name__ in ["TPsumQConv", "TPsumQLinear"]:
                             m.setting_pquant_func(pbits=prog_pbit)
