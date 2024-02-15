@@ -161,11 +161,12 @@ class TPsumQConv(SplitConv):
         self.setting_pquant_func(pbits=pbits, center=center, pbound=pbound)
     
     def setting_alpha(self, pclipmode='Layer'):
-        self.register_buffer('init_state', torch.zeros(1))
+        device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        self.register_buffer('init_state', torch.zeros(1, device=device))
         if pclipmode == 'Layer':
-            self.alpha = nn.Parameter(torch.Tensor(1)[0])
+            self.alpha = nn.Parameter(torch.Tensor(1)[0].to(device))
         elif pclipmode == 'Array':
-            self.alpha = nn.Parameter(torch.zeros(self.split_groups, 1, 1, 1, 1))
+            self.alpha = nn.Parameter(torch.zeros((self.split_groups, 1, 1, 1, 1), device=device))
         else:
             assert False, "pclipmode check, this pclipmode is {}".format(pclipmode)
 
@@ -1056,12 +1057,13 @@ class TPsumQLinear(SplitLinear):
         self.setting_pquant_func(pbits=pbits, center=center, pbound=pbound)
 
     def setting_alpha(self, pclipmode='Layer'):
-        self.register_buffer('init_state', torch.zeros(1))
+        device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        self.register_buffer('init_state', torch.zeros(1, device=device))
         if pclipmode == 'Layer':
-            self.alpha = nn.Parameter(torch.Tensor(1)[0])
+            self.alpha = nn.Parameter(torch.Tensor(1)[0].to(device))
             # self.alpha = nn.Parameter(torch.zeros(1))
         elif pclipmode == 'Array':
-            self.alpha = nn.Parameter(torch.zeros(self.split_groups, 1, 1))
+            self.alpha = nn.Parameter(torch.zeros((self.split_groups, 1, 1), device=device))
         else:
             assert False, "pclipmode check, this pclipmode is {}".format(pclipmode)
     

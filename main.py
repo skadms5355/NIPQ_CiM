@@ -483,7 +483,7 @@ def main_worker(gpu, ngpus_per_node, args):
 
         if args.rank == 0:
             print('\nEvaluation only')
-            
+
         if not args.class_split:
             if valid_loader is not None:
                 loss['valid'], top1['valid'], top5['valid'] = eval.test(valid_loader, model, criterion, 0, args)
@@ -642,10 +642,11 @@ def main_worker(gpu, ngpus_per_node, args):
                     m.quan_w_fn.s.requires_grad = False
                 # m.weight.requires_grad = False
                 print('Weight parameters are fixed for partial-sum retraining============')
+            
             # if type(m).__name__ in ["Q_act"]:
-                # if m.bit != 32:
-                    # m.s.requires_grad = False
-                    # print('Activation parameters are fixed for partial-sum retraining============')
+            #     if m.bit != 32:
+            #         m.s.requires_grad = False
+            #         print('Activation parameters are fixed for partial-sum retraining============')
 
     #graph
     #dot -Tpng graph_detail.dot -o graph_detail.png
