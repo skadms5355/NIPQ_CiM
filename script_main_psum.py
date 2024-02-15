@@ -88,18 +88,34 @@ for pbit in pbits_list:
             per_class = 500
             if model_mode == 'quant': # Baseline
                 if args.tnoise:
-                    pretrained = './checkpoints/cifar10/quant/lsq_vgg9/a:4_w:4/2T2R/no_psum_c:4/hynix_std_rel_{}/2024-Jan-19-18-10-12/model_best.pth.tar'.format(args.tco_noise)
+                    if args.tco_noise == 2:
+                        pretrained = './checkpoints/cifar10/quant/lsq_vgg9/a:4_w:4/2T2R/no_psum_c:4/hynix_std_rel_2.0/2024-Feb-14-15-59-46/model_best.pth.tar'
+                    elif args.tco_noise == 4:
+                        pretrained = './checkpoints/cifar10/quant/lsq_vgg9/a:4_w:4/2T2R/no_psum_c:4/hynix_std_rel_4.0/2024-Jan-19-18-10-12/model_best.pth.tar'
+                    else:
+                        assert False, "No trained model at {} tco_noise".format(args.tco_noise)
                 else:
                     pretrained = './checkpoints/cifar10/quant/lsq_vgg9/a:4_w:4/2022-Apr-01-18-57-49/model_best.pth.tar'
             elif model_mode == 'quant_pst': #partial sum training without group operations 
                 if args.tnoise:
-                    pretrained = './checkpoints/cifar10/quant_pst/psum_lsq_vgg9/a:4_w:4/2T2R/128_c:4/hynix_std_type_{}/2024-Jan-04-17-09-19/model_best.pth.tar'.format(args.tco_noise)
+                    if args.tco_noise == 2:
+                        pretrained = './checkpoints/cifar10/quant_pst/psum_lsq_vgg9/a:4_w:4/2T2R/128_c:4/hynix_std_type_2.0/2024-Feb-14-16-44-32/model_best.pth.tar'
+                    elif args.tco_noise == 4:
+                        pretrained = './checkpoints/cifar10/quant_pst/psum_lsq_vgg9/a:4_w:4/2T2R/128_c:4/hynix_std_type_4.0/2024-Jan-04-17-09-19/model_best.pth.tar'
+                    else:
+                        assert False, "No trained model at {} tco_noise".format(args.tco_noise)
+
                 else:
                     pretrained = './checkpoints/cifar10/quant_pst/psum_lsq_vgg9/a:4_w:4/2T2R/128_c:4/2023-Nov-10-18-12-17/model_best.pth.tar'
             elif model_mode == 'lsq_pst':
                 if pbit == 2:
                     if args.tnoise:
-                        pretrained = './checkpoints/cifar10/lsq_pst/psum_lsq_vgg9_train/a:4_w:4/2T2R/128_c:4/hynix_std_type_{}/2024-Jan-16-18-06-38/model_best.pth.tar'.format(args.tco_noise)
+                        if args.tco_noise == 2:
+                            pretrained = './checkpoints/cifar10/lsq_pst/psum_lsq_vgg9_train/a:4_w:4/2T2R/128_c:4/hynix_std_type_2.0/2024-Feb-14-14-35-43/model_best.pth.tar'
+                        elif args.tco_noise == 4:
+                            pretrained = './checkpoints/cifar10/lsq_pst/psum_lsq_vgg9_train/a:4_w:4/2T2R/128_c:4/hynix_std_type_4.0/2024-Jan-16-18-06-38/model_best.pth.tar'
+                        else:
+                            assert False, "No trained model at {} tco_noise".format(args.tco_noise)
                     else:
                         pretrained = './checkpoints/cifar10/lsq_pst/psum_lsq_vgg9_train/a:4_w:4/2T2R/128_c:4/2023-Nov-10-18-13-38/model_best.pth.tar'
                 else:
@@ -107,7 +123,7 @@ for pbit in pbits_list:
             elif model_mode == 'pnq_pst':
                 if pbit == 2:
                     if args.tnoise:
-                        pretrained = './checkpoints/cifar10/pnq_pst/psum_lsq_vgg9_train/a:4_w:4/2T2R/128_c:4/hynix_std_type_{}/2024-Jan-30-10-56-00/model_best.pth.tar'.format(args.tco_noise)
+                        pretrained = './checkpoints/cifar10/pnq_pst/psum_lsq_vgg9_train/a:4_w:4/2T2R/128_c:4/hynix_std_type_{}/2024-Jan-30-10-56-00/model_best.pth.tar'
                     else:
                         pretrained = './checkpoints/cifar10/pnq_pst/psum_lsq_vgg9_train/a:4_w:4/2T2R/128_c:4/2023-Nov-15-19-47-39/model_best.pth.tar'
                 else:
