@@ -49,7 +49,7 @@
 
 --is_noise      y
 --nipq_noise    hwnoise
---co_noise      2
+--co_noise      4
 --noise_type    hynix_std
 --res_val       rel
 

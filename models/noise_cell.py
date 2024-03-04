@@ -7,6 +7,11 @@ import os
 import numpy as np
 import pandas as pd
 
+import warnings
+from scipy.integrate import IntegrationWarning
+
+warnings.filterwarnings("ignore", category=IntegrationWarning)
+
 # Define a discrete random variable using the PDF function
 class InterpolatedPDF(rv_continuous):
     def __init__(self, pdf_func, kind='linear', samples=1000, a=None, b=None, **kwargs):

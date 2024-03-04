@@ -660,14 +660,15 @@ def main_worker(gpu, ngpus_per_node, args):
     # Train and val
     start_time = time.time()
 
-    if args.model_mode == "pnq_pst" and (not args.is_noise):
+    if args.model_mode == "pnq_pst" :
         progress_epoch = args.epochs - (args.hw_epoch+args.ft_epoch) 
-        nbits = len(args.prog_pbits)
-        nepoch_list = [int(math.floor(progress_epoch/(nbits+1))) for _ in range(nbits)]
-        nepoch_list[-1] += progress_epoch - sum(nepoch_list)
-        # for idx in range(len(nepoch_list), len(nepoch_list)-int(progress_epoch%nbits), -1):
-            # nepoch_list[idx-1] += 1
-        e_idx = 0
+        if not args.is_noise:
+            nbits = len(args.prog_pbits)
+            nepoch_list = [int(math.floor(progress_epoch/(nbits+1))) for _ in range(nbits)]
+            nepoch_list[-1] += progress_epoch - sum(nepoch_list)
+            # for idx in range(len(nepoch_list), len(nepoch_list)-int(progress_epoch%nbits), -1):
+                # nepoch_list[idx-1] += 1
+            e_idx = 0
 
     for epoch in range(start_epoch, args.epochs):
         if not args.dali and args.distributed:
@@ -696,8 +697,8 @@ def main_worker(gpu, ngpus_per_node, args):
                                 changed_bit = 2+12/(1+np.exp(-bit))
                         print("Change the bit precision to {}".format(changed_bit))
 
-        elif args.model_mode == 'pnq_pst' and (not args.is_noise):
-            if epoch < progress_epoch:
+        elif args.model_mode == 'pnq_pst':
+            if (epoch < progress_epoch) and (not args.is_noise):
                 if epoch == sum(nepoch_list[:e_idx]):
                     prog_pbit = args.prog_pbits[e_idx]
                     for m in model.modules(): 
@@ -705,7 +706,8 @@ def main_worker(gpu, ngpus_per_node, args):
                             m.setting_pquant_func(pbits=prog_pbit)
                     print("Set to {}-bit for setting progressive pbits".format(prog_pbit))
                     e_idx += 1
-            elif epoch == progress_epoch:
+            
+            if epoch == progress_epoch:
                 set_TNoise_injection(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
                                             noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink, deltaG=args.deltaG, retention=args.retention, reten_value=args.reten_val, reten_type=args.reten_type)
                 print("Add device noise at 'pnq_pst' method.")

@@ -51,8 +51,8 @@
 # for noise
 # --is_noise      n
 
---is_noise      n
---nipq_noise    qnoise
+--is_noise      y
+--nipq_noise    hwnoise
 --co_noise      4
 --noise_type    hynix_std
 --res_val       rel

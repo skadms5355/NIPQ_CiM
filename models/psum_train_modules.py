@@ -256,10 +256,11 @@ class TPsumQConv(SplitConv):
         self.noise_cell_inf = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val='abs', shrink=shrink, retention=retention, set_deltaG=deltaG, w_format="state")
 
     def init_form(self, x, half_levels, psum_scale = 1):
-        if (self.mapping_mode == '2T2R') or (self.mapping_mode == 'PN'):
+        if (self.mapping_mode == '2T2R') or (self.mapping_mode == 'PN') or (self.mapping_mode == 'ref_a'):
             # self.alpha.data.fill_((x.detach().abs().mean())+x.detach().std())
             # alpha = ((x.detach().abs().mean() * 2 / (half_levels ** 0.5)))
             if self.pclipmode == 'Layer':
+                # alpha = ((x.detach().abs().mean() * 2 / (half_levels ** 0.5)))
                 alpha = (x.detach().abs().std() * 3 / (half_levels))
                 self.alpha.data.fill_(np.log(np.exp(alpha.item())-1))   # softplus initialization 
             else: 
@@ -271,7 +272,7 @@ class TPsumQConv(SplitConv):
                 print("{} alpha: {} {}".format(self.layer_idx, self.alpha.view(-1), real_alpha.view(-1)))
 
         else:
-            assert False, "{} mode is not considered in training clipping parameter"
+            assert False, "{} mode is not considered in training clipping parameter".format(self.mapping_mode)
 
 
     def _bitserial_log_forward(self, input, weight=None, short_path=None):
@@ -1151,11 +1152,12 @@ class TPsumQLinear(SplitLinear):
         self.noise_cell_inf = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val="abs", shrink=shrink, retention=retention, set_deltaG=deltaG, w_format="state")
     
     def init_form(self, x, half_levels, psum_scale=1):
-        if (self.mapping_mode == '2T2R') or (self.mapping_mode == 'PN'):
+        if (self.mapping_mode == '2T2R') or (self.mapping_mode == 'PN') or (self.mapping_mode == 'ref_a'):
             # self.alpha.data.fill_((x.detach().abs().std()*3).ceil())
             # alpha = ((x.detach().abs().mean() * 2 / (half_levels ** 0.5)))
             if self.pclipmode == 'Layer':
                 alpha = (x.abs().std() * 3 / (half_levels))
+                # alpha = ((x.detach().abs().mean() * 2 / (half_levels ** 0.5)))
                 self.alpha.data.fill_(np.log(np.exp(alpha.item())-1))
             else: 
                 alpha = x.detach().abs().std(dim=list(range(1, x.dim())), keepdim=True) * 3 / (half_levels)
