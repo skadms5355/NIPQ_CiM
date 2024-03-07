@@ -196,7 +196,7 @@ def set_arguments():
     psum_group.add_argument('-p', '--psum_comp', default='False', type=str2bool,
                         help='Psum computation model')
     psum_group.add_argument('--psum_mode', default='sigma', type=str,
-                             choices=['sigma', 'scan', 'retrain'],
+                             choices=['sigma', 'scan', 'retrain', 'fix'],
                              help='psum computation mode')
     psum_group.add_argument('--arraySize', type=int, default=0,
                              metavar='arraySize', help='row count of array for in-memory computing')

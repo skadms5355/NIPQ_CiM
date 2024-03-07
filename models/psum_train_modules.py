@@ -231,6 +231,16 @@ class TPsumQConv(SplitConv):
         out_round = output.round()
         return (out_round - output).detach() + output, split_num 
 
+    def setting_fix_range(self, clamp):
+        if (self.mapping_mode == '2T2R') or (self.mapping_mode == 'ref_a'):
+            minPsum = self.arraySize * 2 * (self.wbits-1)
+            minC = -(minPsum / clamp)
+            midC = 0
+        else:
+            assert False, "Not designed {} mode".format(self.mapping_mode)
+        
+        return minC, midC
+
     # store weight magnitude for in-mem computing mimic 
     ## Assume that cell bits are enough
     def _output_magnitude(self, abit, wbit, split_num):
@@ -586,6 +596,9 @@ class TPsumQConv(SplitConv):
 
                 if self.psum_mode == 'sigma':
                     minVal, _, midVal = self._ADC_clamp_value()
+                    self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
+                elif self.psum_mode == 'fix':
+                    minVal, midVal = self.setting_fix_range(clamp=2) # half range
                     self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
                 elif self.psum_mode == 'retrain':
                     # self.alpha.data = self.alpha.data.round()
@@ -1128,6 +1141,16 @@ class TPsumQLinear(SplitLinear):
 
         out_round = output.round()
         return (out_round - output).detach() + output, split_num 
+    
+    def setting_fix_range(self, clamp):
+        if (self.mapping_mode == '2T2R') or (self.mapping_mode == 'ref_a'):
+            minPsum = self.arraySize * 2 * (self.wbits-1)
+            minC = -(minPsum / clamp)
+            midC = 0
+        else:
+            assert False, "Not designed {} mode".format(self.mapping_mode)
+        
+        return minC, midC
 
     # store weight magnitude for in-mem computing mimic 
     ## Assume that cell bits are enough
@@ -1434,6 +1457,9 @@ class TPsumQLinear(SplitLinear):
                 if self.psum_mode == 'sigma':
                     minVal, maxVal, midVal = self._ADC_clamp_value()
                     self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
+                elif self.psum_mode == 'fix':
+                    minVal, midVal = self.setting_fix_range(clamp=64) # half range
+                    self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
                 elif self.psum_mode == 'retrain':
                     # self.alpha.data = self.alpha.data.round()
                     self.pstep = F.softplus(self.alpha) /psum_scale
@@ -1628,6 +1654,8 @@ class TPsumQLinear(SplitLinear):
         if self.psum_mode == 'sigma':
             minVal, _, midVal = self._ADC_clamp_value()
             self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
+        elif self.psum_mode == 'fix':
+            minVal, midVal = self.setting_fix_range(clamp=2) # 2 is half range (0.25 ~ 0.75V assumption)
         elif self.psum_mode == 'retrain':
             self.pstep = F.softplus(self.alpha) /psum_scale
         else:
