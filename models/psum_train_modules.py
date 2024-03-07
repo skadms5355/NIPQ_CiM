@@ -237,21 +237,13 @@ class TPsumQConv(SplitConv):
     def setting_fix_range(self, clamp):
         if (self.mapping_mode == '2T2R') or (self.mapping_mode == 'ref_a'):
             minPsum = self.arraySize * 2 * (self.wbits-1)
-<<<<<<< HEAD
-            minC = -(minPsum / clamp)
-=======
             minC = -(minPsum / clamp) # Actually, level of negative range is small then positive 
->>>>>>> e2b671f584bbc7853f81f7b6d03fa4495ea09597
             midC = 0
         else:
             assert False, "Not designed {} mode".format(self.mapping_mode)
         
         return minC, midC
-<<<<<<< HEAD
-
-=======
     
->>>>>>> e2b671f584bbc7853f81f7b6d03fa4495ea09597
     # store weight magnitude for in-mem computing mimic 
     ## Assume that cell bits are enough
     def _output_magnitude(self, abit, wbit, split_num):
@@ -1489,11 +1481,7 @@ class TPsumQLinear(SplitLinear):
                     minVal, maxVal, midVal = self._ADC_clamp_value()
                     self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
                 elif self.psum_mode == 'fix':
-<<<<<<< HEAD
-                    minVal, midVal = self.setting_fix_range(clamp=64) # half range
-=======
                     minVal, midVal = self.setting_fix_range(clamp=2) # half range
->>>>>>> e2b671f584bbc7853f81f7b6d03fa4495ea09597
                     self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
                 elif self.psum_mode == 'retrain':
                     # self.alpha.data = self.alpha.data.round()
@@ -1690,12 +1678,8 @@ class TPsumQLinear(SplitLinear):
             minVal, _, midVal = self._ADC_clamp_value()
             self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
         elif self.psum_mode == 'fix':
-<<<<<<< HEAD
-            minVal, midVal = self.setting_fix_range(clamp=2) # 2 is half range (0.25 ~ 0.75V assumption)
-=======
             minVal, midVal = self.setting_fix_range(clamp=2) # half range
             self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
->>>>>>> e2b671f584bbc7853f81f7b6d03fa4495ea09597
         elif self.psum_mode == 'retrain':
             self.pstep = F.softplus(self.alpha) /psum_scale
         else:
