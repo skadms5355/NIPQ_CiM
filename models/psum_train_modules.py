@@ -133,7 +133,10 @@ class TPsumQConv(SplitConv):
         if pbound is not None:
             self.pbound = pbound
             # get pquant step size
-            self.pstep = 2 * self.pbound / ((2.**self.pbits) - 1)
+            if (self.mapping_mode == '2T2R') or (self.mapping_mode == 'ref_a'):
+                self.pstep = self.pbound / ((2.**(self.pbits - 1)) - 1)
+            else:
+                self.pstep = 2 * self.pbound / ((2.**self.pbits) - 1)
 
         if (self.mapping_mode == 'two_com') or (self.mapping_mode == 'ref_d') or (self.mapping_mode == 'PN'):
             self.pzero = False
@@ -231,6 +234,16 @@ class TPsumQConv(SplitConv):
         out_round = output.round()
         return (out_round - output).detach() + output, split_num 
 
+    def setting_fix_range(self, clamp):
+        if (self.mapping_mode == '2T2R') or (self.mapping_mode == 'ref_a'):
+            minPsum = self.arraySize * 2 * (self.wbits-1)
+            minC = -(minPsum / clamp) # Actually, level of negative range is small then positive 
+            midC = 0
+        else:
+            assert False, "Not designed {} mode".format(self.mapping_mode)
+        
+        return minC, midC
+    
     # store weight magnitude for in-mem computing mimic 
     ## Assume that cell bits are enough
     def _output_magnitude(self, abit, wbit, split_num):
@@ -587,6 +600,9 @@ class TPsumQConv(SplitConv):
                 if self.psum_mode == 'sigma':
                     minVal, _, midVal = self._ADC_clamp_value()
                     self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
+                elif self.psum_mode == 'fix':
+                    minVal, midVal = self.setting_fix_range(clamp=2) # half range
+                    self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
                 elif self.psum_mode == 'retrain':
                     # self.alpha.data = self.alpha.data.round()
                     # self.pstep = self.alpha
@@ -707,6 +723,10 @@ class TPsumQConv(SplitConv):
             minVal, _, midVal = self._ADC_clamp_value()
             self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
             step_train = False
+        elif self.psum_mode == 'fix':
+            minVal, midVal = self.setting_fix_range(clamp=2) # half range
+            self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
+            step_train = False
         elif self.psum_mode == 'retrain':
             # if self.init_state == 1:
             self.pstep = F.softplus(self.alpha) /psum_scale
@@ -811,6 +831,9 @@ class TPsumQConv(SplitConv):
 
         if self.psum_mode == 'sigma':
             minVal, _, midVal = self._ADC_clamp_value()
+            self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
+        elif self.psum_mode == 'fix':
+            minVal, midVal = self.setting_fix_range(clamp=2) # half range
             self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
         elif self.psum_mode == 'retrain':
             self.pstep = F.softplus(self.alpha) /psum_scale
@@ -1023,14 +1046,17 @@ class TPsumQLinear(SplitLinear):
         self.checkpoint = None
         self.info_print = True
     
-    def setting_pquant_func(self, pbits=None, center=[], pbound=None):
+    def   setting_pquant_func(self, pbits=None, center=[], pbound=None):
         # setting options for pquant func
         if pbits is not None:
             self.pbits = pbits
         if pbound is not None:
             self.pbound = pbound
             # get pquant step size
-            self.pstep = 2 * self.pbound / ((2.**self.pbits) - 1)
+            if (self.mapping_mode == '2T2R') or (self.mapping_mode == 'ref_a'):
+                self.pstep = self.pbound / ((2.**(self.pbits - 1)) - 1)
+            else:
+                self.pstep = 2 * self.pbound / ((2.**self.pbits) - 1)
 
         if (self.mapping_mode == 'two_com') or (self.mapping_mode == 'ref_d') or (self.mapping_mode == 'PN'):
             self.pzero = False
@@ -1129,6 +1155,16 @@ class TPsumQLinear(SplitLinear):
         out_round = output.round()
         return (out_round - output).detach() + output, split_num 
 
+    def setting_fix_range(self, clamp):
+        if (self.mapping_mode == '2T2R') or (self.mapping_mode == 'ref_a'):
+            minPsum = self.arraySize * 2 * (self.wbits-1)
+            minC = -(minPsum / clamp) # Actually, level of negative range is small then positive 
+            midC = 0
+        else:
+            assert False, "Not designed {} mode".format(self.mapping_mode)
+        
+        return minC, midC
+    
     # store weight magnitude for in-mem computing mimic 
     ## Assume that cell bits are enough
     def _output_magnitude(self, abit, wbit, split_num):
@@ -1434,6 +1470,9 @@ class TPsumQLinear(SplitLinear):
                 if self.psum_mode == 'sigma':
                     minVal, maxVal, midVal = self._ADC_clamp_value()
                     self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
+                elif self.psum_mode == 'fix':
+                    minVal, midVal = self.setting_fix_range(clamp=2) # half range
+                    self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
                 elif self.psum_mode == 'retrain':
                     # self.alpha.data = self.alpha.data.round()
                     self.pstep = F.softplus(self.alpha) /psum_scale
@@ -1627,6 +1666,9 @@ class TPsumQLinear(SplitLinear):
 
         if self.psum_mode == 'sigma':
             minVal, _, midVal = self._ADC_clamp_value()
+            self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
+        elif self.psum_mode == 'fix':
+            minVal, midVal = self.setting_fix_range(clamp=2) # half range
             self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
         elif self.psum_mode == 'retrain':
             self.pstep = F.softplus(self.alpha) /psum_scale

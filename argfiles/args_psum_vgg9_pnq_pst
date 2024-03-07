@@ -5,7 +5,7 @@
 --dataset       cifar10
 --augment	    y  
 
---epochs        30
+--epochs        50
 --hw_epoch      0
 --ft_epoch      5
 --train-batch   256
@@ -17,7 +17,7 @@
 --warmup        3
 --warmup_start_multiplier 0.1
 --eta_min       1e-3
---T0            27
+--T0            47
 
 --pretrained    ./checkpoints/cifar10/quant/lsq_vgg9/a:4_w:4/2022-Apr-01-18-57-49/model_best.pth.tar         
 # --pretrained    ./checkpoints/cifar10/pnq_pst/psum_lsq_vgg9_train/a:4_w:4/2T2R/128_c:4/2023-Nov-15-19-47-39/model_best.pth.tar
@@ -39,8 +39,8 @@
 --wbit-serial   y
 
 --psum_comp     y
---psum_mode     retrain
---pbits         2
+--psum_mode     fix
+--pbits         4
 --pclipmode     Layer
 # quant range [max or sigma] in sigma mode
 --pclip         sigma
@@ -51,8 +51,8 @@
 # for noise
 # --is_noise      n
 
---is_noise      y
---nipq_noise    hwnoise
+--is_noise      n
+--nipq_noise    qnoise
 --co_noise      4
 --noise_type    hynix_std
 --res_val       rel

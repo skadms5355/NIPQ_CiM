@@ -243,6 +243,16 @@ class PsumQConv(SplitConv):
             split_num = 1
 
         return output.round_(), split_num 
+    
+    def setting_fix_range(self, clamp):
+        if (self.mapping_mode == '2T2R') or (self.mapping_mode == 'ref_a'):
+            minPsum = self.arraySize * 2 * (self.wbits-1)
+            minC = -(minPsum / clamp) # Actually, level of negative range is small then positive 
+            midC = 0
+        else:
+            assert False, "Not designed {} mode".format(self.mapping_mode)
+        
+        return minC, midC
 
     # store weight magnitude for in-mem computing mimic 
     ## Assume that cell bits are enough
@@ -603,6 +613,9 @@ class PsumQConv(SplitConv):
                 if self.psum_mode == 'sigma':
                     minVal, maxVal, midVal = self._ADC_clamp_value()
                     self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
+                elif self.psum_mode == 'fix':
+                    minVal, midVal = self.setting_fix_range(clamp=2) # half range
+                    self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
                 elif self.psum_mode == 'scan':
                     pass
                 else:
@@ -918,6 +931,16 @@ class PsumQLinear(SplitLinear):
 
         return output.round_(), split_num 
 
+    def setting_fix_range(self, clamp):
+        if (self.mapping_mode == '2T2R') or (self.mapping_mode == 'ref_a'):
+            minPsum = self.arraySize * 2 * (self.wbits-1)
+            minC = -(minPsum / clamp) # Actually, level of negative range is small then positive 
+            midC = 0
+        else:
+            assert False, "Not designed {} mode".format(self.mapping_mode)
+        
+        return minC, midC
+
     # store weight magnitude for in-mem computing mimic 
     ## Assume that cell bits are enough
     def _output_magnitude(self, abit, wbit, split_num):
@@ -1226,6 +1249,9 @@ class PsumQLinear(SplitLinear):
 
                 if self.psum_mode == 'sigma':
                     minVal, maxVal, midVal = self._ADC_clamp_value()
+                    self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
+                elif self.psum_mode == 'fix':
+                    minVal, midVal = self.setting_fix_range(clamp=2) # half range
                     self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
                 elif self.psum_mode == 'scan':
                     pass

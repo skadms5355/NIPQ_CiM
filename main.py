@@ -634,12 +634,16 @@ def main_worker(gpu, ngpus_per_node, args):
                     # m.quan_w_fn.s.requires_grad = False
                     # m.weight.requires_grad = False
                     print('Weight parameters of First & Last Layer are fixed for partial-sum retraining============')
+            elif args.psum_mode == 'fix':
+                pass
+                # if type(m).__name__ in ["QConv", "QLinear"]:
+                    # m.quan_w_fn.s.requires_grad = False
             else:
                 assert False, "Clipping range of {} mode is not supported".format(args.psum_mode)
 
             if type(m).__name__ in ["TPsumQConv", "TPsumQLinear"]:
-                if m.wbits != 32:
-                    m.quan_w_fn.s.requires_grad = False
+                # if m.wbits != 32:
+                    # m.quan_w_fn.s.requires_grad = False
                 # m.weight.requires_grad = False
                 print('Weight parameters are fixed for partial-sum retraining============')
             
