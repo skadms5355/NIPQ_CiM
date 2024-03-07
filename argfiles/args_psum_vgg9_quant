@@ -20,8 +20,8 @@
 --wbits         4
 --abits         4
 
-# --pretrained    ./checkpoints/cifar10/quant/lsq_vgg9/a:4_w:4/2022-Apr-01-18-57-49/model_best.pth.tar
---pretrained    ./checkpoints/cifar10/quant/lsq_vgg9/a:4_w:4/2T2R/no_psum_c:4/hynix_std_rel_4.0/2024-Jan-03-16-56-47/model_best.pth.tar
+--pretrained    ./checkpoints/cifar10/quant/lsq_vgg9/a:4_w:4/2022-Apr-01-18-57-49/model_best.pth.tar
+# --pretrained    ./checkpoints/cifar10/quant/lsq_vgg9/a:4_w:4/2T2R/no_psum_c:4/hynix_std_rel_4.0/2024-Jan-03-16-56-47/model_best.pth.tar
 
 # --pretrained    ./checkpoints/cifar10/a:32_w:32/2022-Apr-01-16-22-01/model_best.pth.tar
 
@@ -32,15 +32,15 @@
 --wbit-serial   y
 --abit-serial   y
 
---psum_mode     sigma
---pbits         2
+--psum_mode     fix
+--pbits         4
 --pclipmode     Layer
 --pclip         sigma
 --psigma        3
 
 # noise option
---is_noise      y
---nipq_noise    hwnoise
+--is_noise      n
+--nipq_noise    qnoise
 --co_noise      4
 --noise_type    hynix_std
 --res_val       abs
