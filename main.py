@@ -427,14 +427,14 @@ def main_worker(gpu, ngpus_per_node, args):
             if args.model_mode == 'nipq':
                 from models.nipq_hwnoise_psum_module import PsumQuantOps as PQ
                 PQ.psum_initialize(model, act=True, weight=True, fixed_bit=args.fixed_bit, cbits=args.cbits, arraySize=args.arraySize, mapping_mode=args.mapping_mode, \
-                                    psum_mode=args.psum_mode, wbit_serial=args.wbit_serial, pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma, \
+                                    psum_mode=args.psum_mode, wbit_serial=args.wbit_serial, pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, prange=args.prange, \
                                     checkpoint=args.checkpoint, log_file=args.log_file)
                 if args.is_noise and 'hwnoise' in args.nipq_noise:
                     PQ.hwnoise_initialize(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
                                         noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink)
             elif 'quant' in args.model_mode:
                 set_BitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, log_file=args.log_file,\
-                    pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma)
+                    pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, prange=args.prange)
                 if args.is_noise:
                     set_Noise_injection(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
                                         noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink,  deltaG=args.deltaG, retention=args.retention, reten_value=args.reten_val, reten_type=args.reten_type)
@@ -443,7 +443,7 @@ def main_worker(gpu, ngpus_per_node, args):
                     arch = '_'.join(args.arch.split('_')[:-1])
                     checkpoint = os.path.join(str(pathlib.Path().resolve()), ((args.checkpoint.replace('{}'.format(args.model_mode), 'quant')).replace('{}'.format(args.arch), '{}'.format(arch))))
                     set_TBitSerial_log(model, abit_serial=args.abit_serial, checkpoint=checkpoint, model_mode=args.model_mode, \
-                                    pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma)
+                                    pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, prange=args.prange)
                 else:
                     set_TBitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, pclipmode=args.pclipmode, model_mode=args.model_mode, pbits=args.pbits)
                 if args.is_noise:
@@ -527,6 +527,7 @@ def main_worker(gpu, ngpus_per_node, args):
                 "psum_mode":        args.psum_mode if args.psum_comp else "No_psum",
                 "pclipmode":        args.pclipmode if args.psum_comp else "No_psum",
                 "pclip":            args.pclip if args.psum_comp else "No_psum",
+                "prange":           args.prange if args.psum_comp else "No_psum",
                 "coefficient_noise":  args.co_noise if args.is_noise else "No_noise",
                 "res_val":          args.res_val if args.is_noise else "No_noise",
                 "coeffi_shrink":    args.shrink if args.shrink else "No_shrink",
@@ -598,7 +599,7 @@ def main_worker(gpu, ngpus_per_node, args):
                 checkpoint = args.checkpoint
 
             set_BitSerial_log(model, abit_serial=args.abit_serial, checkpoint=checkpoint, log_file=args.log_file,\
-                    pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma)
+                    pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, prange=args.prange)
         if args.is_noise and not args.evaluate:
             if 'pst' in args.model_mode:
                 set_Noise_injection(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
@@ -620,9 +621,9 @@ def main_worker(gpu, ngpus_per_node, args):
             if not args.evaluate:
                 checkpoint = '/'.join(checkpoint.split('/')[:-1]) +'/log_bitserial_info' # time folder remove
             set_TBitSerial_log(model, abit_serial=args.abit_serial, checkpoint=checkpoint, model_mode=args.model_mode, \
-                            pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma, noise_comb=args.noise_comb)
+                            pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, prange=args.prange, noise_comb=args.noise_comb)
         else:
-            set_TBitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, pclipmode=args.pclipmode, model_mode=args.model_mode, pbits=args.pbits, noise_comb=args.noise_comb)
+            set_TBitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, pclipmode=args.pclipmode, model_mode=args.model_mode, pbits=args.pbits, prange=args.prange, noise_comb=args.noise_comb)
         
         if args.is_noise and args.model_mode == 'lsq_pst':
             set_TNoise_injection(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
@@ -642,8 +643,8 @@ def main_worker(gpu, ngpus_per_node, args):
                 assert False, "Clipping range of {} mode is not supported".format(args.psum_mode)
 
             if type(m).__name__ in ["TPsumQConv", "TPsumQLinear"]:
-                # if m.wbits != 32:
-                    # m.quan_w_fn.s.requires_grad = False
+                if m.wbits != 32:
+                    m.quan_w_fn.s.requires_grad = False
                 # m.weight.requires_grad = False
                 print('Weight parameters are fixed for partial-sum retraining============')
             
@@ -718,7 +719,7 @@ def main_worker(gpu, ngpus_per_node, args):
             
             if epoch == (args.epochs - args.ft_epoch):
                 set_TBitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, model_mode='lsq_pst', \
-                        pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma, noise_comb=args.noise_comb)
+                        pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, prange=args.prange, noise_comb=args.noise_comb)
                 print("Change the psum training method to 'lsq_pst' method.")
 
 

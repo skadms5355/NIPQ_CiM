@@ -85,7 +85,7 @@ class Psum_QConv2d(SplitConv):
         self.pbound = None
         # for sigma version
         self.pclip = None
-        self.psigma = None
+        self.prange = None
 
         # for logging
         self.bitserial_log = False
@@ -385,8 +385,8 @@ class Psum_QConv2d(SplitConv):
                 maxVal = max
                 minVal = min
             else:
-                maxVal =  (abs(mean) + self.psigma*std).round() 
-                minVal = (abs(mean) - self.psigma*std).round()
+                maxVal =  (abs(mean) + self.prange*std).round() 
+                minVal = (abs(mean) - self.prange*std).round()
                 if (self.mapping_mode == 'two_com') or (self.mapping_mode =='ref_d') or (self.mapping_mode == 'PN'):
                     minVal = min if minVal < 0 else minVal
         
@@ -564,7 +564,7 @@ class Psum_QLinear(SplitLinear):
         self.pbound = None
         # for sigma version
         self.pclip = None
-        self.psigma = None
+        self.prange = None
 
         # for logging
         self.bitserial_log = False
@@ -840,8 +840,8 @@ class Psum_QLinear(SplitLinear):
                 maxVal = max
                 minVal = min
             else:
-                maxVal =  (abs(mean) + self.psigma*std).round() 
-                minVal = (abs(mean) - self.psigma*std).round() 
+                maxVal =  (abs(mean) + self.prange*std).round() 
+                minVal = (abs(mean) - self.prange*std).round() 
                 if (self.mapping_mode == 'two_com') or (self.mapping_mode == 'ref_d') or (self.mapping_mode == 'PN'):
                     minVal = min if minVal < 0 else minVal
         
@@ -988,7 +988,7 @@ def get_statistics_from_hist(df_hist):
     return [mean_val, std_val, min_val, max_val] 
 
 def psum_initialize(model, act=True, weight=True, fixed_bit=-1, cbits=4, arraySize=128, mapping_mode='2T2R', psum_mode='sigma',
-                    wbit_serial=False, pbits=32, pclipmode='layer', pclip='sigma', psigma=3, pbound=None, center=None,
+                    wbit_serial=False, pbits=32, pclipmode='layer', pclip='sigma', prange=3, pbound=None, center=None,
                     checkpoint=None, log_file=None):
     counter=0
     for name, module in model.named_modules():
@@ -1028,7 +1028,7 @@ def psum_initialize(model, act=True, weight=True, fixed_bit=-1, cbits=4, arraySi
             module.psum_mode = psum_mode
             if psum_mode == 'sigma':
                 module.pclip = pclip
-                module.psigma = psigma
+                module.prange = prange
             elif psum_mode == 'scan':
                 module.setting_pquant_func(pbits, center, pbound)
             else:

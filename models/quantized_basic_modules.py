@@ -706,20 +706,32 @@ class QuantPsumMergeTrain(torch.autograd.Function):
         """
         # ctx.mark_dirty(output)
         ctx.other = half_num_levels, groups, step_train, step
-        if step.ndim > 1:
-            step_list = step.squeeze().tolist()
-            input = list(torch.chunk(input, groups, 1))
+        if step_train:
+            if step.ndim > 1:
+                step_list = step.squeeze().tolist()
+                input = list(torch.chunk(input, groups, 1))
 
-            for g in range(groups):
-                input[g] = input[g]/step[g]
-        
-            ctx.save_for_backward(torch.cat(input, 1))
-
-            for g in range(groups):
-                input[g]=(input[g]*step[g]).contiguous()
+                for g in range(groups):
+                    input[g] = input[g]/step[g]
             
-            output = pquant_scale_group_merge_cuda.forward(output, input, pbits, step_list, half_num_levels, 1, center, groups, pzero)
-            output = output * weight
+                ctx.save_for_backward(torch.cat(input, 1))
+
+                for g in range(groups):
+                    input[g]=(input[g]*step[g]).contiguous()
+                
+                output = pquant_scale_group_merge_cuda.forward(output, input, pbits, step_list, half_num_levels, 1, center, groups, pzero)
+                output = output * weight
+            else:
+                input = input / (step)
+                ctx.save_for_backward(input)
+
+                input = list(torch.chunk(input, groups, 1))
+
+                for g in range(groups):
+                    input[g]=input[g].contiguous()
+
+                output = pquant_group_merge_cuda.forward(output, input, pbits, 1, half_num_levels, 1, center, groups, pzero) 
+                output = output * (step * weight)
         else:
             input = input / (step)
             ctx.save_for_backward(input)
@@ -731,6 +743,7 @@ class QuantPsumMergeTrain(torch.autograd.Function):
 
             output = pquant_group_merge_cuda.forward(output, input, pbits, 1, half_num_levels, 1, center, groups, pzero) 
             output = output * (step * weight)
+            
         ##return pquant_merge_cpp.forward(output, input, pbits, step, half_num_levels, weight, center, pzero) 
         return output 
 

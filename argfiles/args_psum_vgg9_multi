@@ -33,7 +33,7 @@
 --pclipmode     Layer
 # quant range [max or sigma] in sigma mode
 --pclip         sigma
---psigma        3
+--prange        3
 
 # for class_split
 --class-split   y

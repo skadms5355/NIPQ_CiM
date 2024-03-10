@@ -15,6 +15,8 @@ from .split_modules import *
 # custom kernel
 import conv_sweight_cuda
 
+ADC_R = 8
+
 # split convolution across input channel
 def split_conv(weight, nWL):
     nIC = weight.shape[1]
@@ -112,7 +114,7 @@ class PsumQConv(SplitConv):
         self.pbound = None
         # for sigma version
         self.pclip = 'sigma'
-        self.psigma = 3
+        self.prange = 3
         self.weight_chunk = None
 
         # for noise option
@@ -548,8 +550,8 @@ class PsumQConv(SplitConv):
                 maxVal = max
                 minVal = min
             else:
-                maxVal =  (abs(mean) + self.psigma*std).round() 
-                minVal = (abs(mean) - self.psigma*std).round()
+                maxVal =  (abs(mean) + self.prange*std).round() 
+                minVal = (abs(mean) - self.prange*std).round()
                 if (self.mapping_mode == 'two_com') or (self.mapping_mode =='ref_d') or (self.mapping_mode == 'PN'):
                     minVal = min if minVal < 0 else minVal
         
@@ -614,7 +616,7 @@ class PsumQConv(SplitConv):
                     minVal, maxVal, midVal = self._ADC_clamp_value()
                     self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
                 elif self.psum_mode == 'fix':
-                    minVal, midVal = self.setting_fix_range(clamp=2) # half range
+                    minVal, midVal = self.setting_fix_range(clamp=ADC_R) # half range
                     self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
                 elif self.psum_mode == 'scan':
                     pass
@@ -824,7 +826,7 @@ class PsumQLinear(SplitLinear):
         self.pbound = arraySize if arraySize > 0 else self.fan_in
         # for sigma version
         self.pclip = 'sigma'
-        self.psigma = 3
+        self.prange = 3
         self.weight_chunk = None
 
         # for noise option
@@ -1198,8 +1200,8 @@ class PsumQLinear(SplitLinear):
                 maxVal = max
                 minVal = min
             else:
-                maxVal =  (abs(mean) + self.psigma*std).round() 
-                minVal = (abs(mean) - self.psigma*std).round() 
+                maxVal =  (abs(mean) + self.prange*std).round() 
+                minVal = (abs(mean) - self.prange*std).round() 
                 if (self.mapping_mode == 'two_com') or (self.mapping_mode == 'ref_d') or (self.mapping_mode == 'PN'):
                     minVal = min if minVal < 0 else minVal
         
@@ -1251,7 +1253,7 @@ class PsumQLinear(SplitLinear):
                     minVal, maxVal, midVal = self._ADC_clamp_value()
                     self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
                 elif self.psum_mode == 'fix':
-                    minVal, midVal = self.setting_fix_range(clamp=2) # half range
+                    minVal, midVal = self.setting_fix_range(clamp=ADC_R) # half range
                     self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
                 elif self.psum_mode == 'scan':
                     pass
@@ -1378,7 +1380,7 @@ def get_statistics_from_hist(df_hist):
 
     return [mean_val, std_val, min_val, max_val] 
 
-def set_BitSerial_log(model, pbits, pclipmode, abit_serial=None, pclip=None, psigma=None, checkpoint=None, pquant_idx=None, pbound=None, center=None, log_file=False):
+def set_BitSerial_log(model, pbits, pclipmode, abit_serial=None, pclip=None, prange=None, checkpoint=None, pquant_idx=None, pbound=None, center=None, log_file=False):
     print("start setting Bitserial layers log bitplane info")
     counter = 0
     for m in model.modules():
@@ -1391,7 +1393,7 @@ def set_BitSerial_log(model, pbits, pclipmode, abit_serial=None, pclip=None, psi
                 m.abit_serial = abit_serial
                 m.setting_pquant_func(pbits, center, pbound)
                 m.pclip = pclip
-                m.psigma = psigma
+                m.prange = prange
                 print("finish setting {}, idx: {}".format(type(m).__name__, counter))
             else:
                 print(f"pass {m} with counter {counter}")

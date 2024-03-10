@@ -225,7 +225,7 @@ def set_arguments():
     psum_group.add_argument('--pclip', default='sigma', type=str,
                              choices=['sigma', 'max'],
                              help='Clipping range of psum quantization (default: sigma)')
-    psum_group.add_argument('--psigma', type=int, default=3,
+    psum_group.add_argument('--prange', type=int, default=3,
                             help='Sigma point of clipping range')                         
     psum_group.add_argument('--per_class', default=50, type=int,
                             help='How many watch image(batch) for searching psum distribution mean, std')

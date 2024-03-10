@@ -42,7 +42,7 @@
 --pclipmode     Layer
 # quant range [max or sigma] in sigma mode
 --pclip         sigma
---psigma        3
+--prange        3
 
 # for noise
 # --is_noise      n

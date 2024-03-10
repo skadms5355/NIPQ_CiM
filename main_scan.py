@@ -353,7 +353,7 @@ def main_worker(gpu, ngpus_per_node, args):
                     assert False, 'This file does not support arch {}'.format(args.arch)
 
                 set_BitSerial_log(model, checkpoint=args.checkpoint, log_file=args.log_file,
-                                pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma,
+                                pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, prange=args.prange,
                                 pquant_idx=idx)
 
             if args.class_split:
@@ -414,7 +414,7 @@ def main_worker(gpu, ngpus_per_node, args):
                 pbound_time=time.time()
                 print(f"pbound is {pbound}")
                 set_BitSerial_log(model, checkpoint=args.checkpoint,
-                                pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma,
+                                pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, prange=args.prange,
                                 pquant_idx=idx, pbound=pbound-center, center=center)
 
                 # do evaluation 
@@ -453,7 +453,7 @@ def main_worker(gpu, ngpus_per_node, args):
             # update best pbound and get accuracy
             # set QuantPsum with given pbits and best pbound for next iteration
             set_BitSerial_log(model, checkpoint=args.checkpoint,
-                                pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, psigma=args.psigma,
+                                pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, prange=args.prange,
                                 pquant_idx=idx, pbound=best_pbound-center, center=center)
             
             # evaluate

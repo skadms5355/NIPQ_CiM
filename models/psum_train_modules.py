@@ -107,7 +107,7 @@ class TPsumQConv(SplitConv):
         self.pbound = None
         # for sigma version
         self.pclip = 'sigma'
-        self.psigma = 3
+        self.prange = 3
         self.weight_chunk = None
         # for pseudo-nosie training
         if psum_mode == 'retrain':
@@ -234,11 +234,15 @@ class TPsumQConv(SplitConv):
         out_round = output.round()
         return (out_round - output).detach() + output, split_num 
 
-    def setting_fix_range(self, clamp):
+    def setting_fix_range(self):
         if (self.mapping_mode == '2T2R') or (self.mapping_mode == 'ref_a'):
             minPsum = self.arraySize * 2 * (self.wbits-1)
-            minC = -(minPsum / clamp) # Actually, level of negative range is small then positive 
+            minC = -(minPsum / self.prange) # Actually, level of negative range is small then positive 
             midC = 0
+        elif (self.mapping_mode == 'ref_d'):
+            midPsum = self.arraySize * 2 * (self.wbits-1)
+            minC = 0
+            midC = midPsum/self.prange
         else:
             assert False, "Not designed {} mode".format(self.mapping_mode)
         
@@ -545,8 +549,8 @@ class TPsumQConv(SplitConv):
                 maxVal = max
                 minVal = min
             else:
-                maxVal =  (abs(mean) + self.psigma*std).round() 
-                minVal = (abs(mean) - self.psigma*std).round()
+                maxVal =  (abs(mean) + self.prange*std).round() 
+                minVal = (abs(mean) - self.prange*std).round()
                 if (self.mapping_mode == 'two_com') or (self.mapping_mode =='ref_d') or (self.mapping_mode == 'PN'):
                     minVal = min if minVal < 0 else minVal
         
@@ -601,7 +605,7 @@ class TPsumQConv(SplitConv):
                     minVal, _, midVal = self._ADC_clamp_value()
                     self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
                 elif self.psum_mode == 'fix':
-                    minVal, midVal = self.setting_fix_range(clamp=2) # half range
+                    minVal, midVal = self.setting_fix_range() # half range
                     self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
                 elif self.psum_mode == 'retrain':
                     # self.alpha.data = self.alpha.data.round()
@@ -724,7 +728,7 @@ class TPsumQConv(SplitConv):
             self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
             step_train = False
         elif self.psum_mode == 'fix':
-            minVal, midVal = self.setting_fix_range(clamp=2) # half range
+            minVal, midVal = self.setting_fix_range() # half range
             self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
             step_train = False
         elif self.psum_mode == 'retrain':
@@ -833,7 +837,7 @@ class TPsumQConv(SplitConv):
             minVal, _, midVal = self._ADC_clamp_value()
             self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
         elif self.psum_mode == 'fix':
-            minVal, midVal = self.setting_fix_range(clamp=2) # half range
+            minVal, midVal = self.setting_fix_range() # half range
             self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
         elif self.psum_mode == 'retrain':
             self.pstep = F.softplus(self.alpha) /psum_scale
@@ -1027,7 +1031,7 @@ class TPsumQLinear(SplitLinear):
         self.pbound = arraySize if arraySize > 0 else self.fan_in
         # for sigma version
         self.pclip = 'sigma'
-        self.psigma = 3
+        self.prange = 3
         self.weight_chunk = None
         # for retrain version
         self.model_mode = None
@@ -1155,21 +1159,15 @@ class TPsumQLinear(SplitLinear):
         out_round = output.round()
         return (out_round - output).detach() + output, split_num 
     
-    def setting_fix_range(self, clamp):
+    def setting_fix_range(self):
         if (self.mapping_mode == '2T2R') or (self.mapping_mode == 'ref_a'):
             minPsum = self.arraySize * 2 * (self.wbits-1)
-            minC = -(minPsum / clamp)
+            minC = -(minPsum / self.prange)
             midC = 0
-        else:
-            assert False, "Not designed {} mode".format(self.mapping_mode)
-        
-        return minC, midC
-
-    def setting_fix_range(self, clamp):
-        if (self.mapping_mode == '2T2R') or (self.mapping_mode == 'ref_a'):
-            minPsum = self.arraySize * 2 * (self.wbits-1)
-            minC = -(minPsum / clamp) # Actually, level of negative range is small then positive 
-            midC = 0
+        elif (self.mapping_mode == 'ref_d'):
+            midPsum = self.arraySize * 2 * (self.wbits-1)
+            minC = 0
+            midC = midPsum/self.prange
         else:
             assert False, "Not designed {} mode".format(self.mapping_mode)
         
@@ -1433,8 +1431,8 @@ class TPsumQLinear(SplitLinear):
                 maxVal = max
                 minVal = min
             else:
-                maxVal =  (abs(mean) + self.psigma*std).round() 
-                minVal = (abs(mean) - self.psigma*std).round() 
+                maxVal =  (abs(mean) + self.prange*std).round() 
+                minVal = (abs(mean) - self.prange*std).round() 
                 if (self.mapping_mode == 'two_com') or (self.mapping_mode == 'ref_d') or (self.mapping_mode == 'PN'):
                     minVal = min if minVal < 0 else minVal
         
@@ -1481,7 +1479,7 @@ class TPsumQLinear(SplitLinear):
                     minVal, maxVal, midVal = self._ADC_clamp_value()
                     self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
                 elif self.psum_mode == 'fix':
-                    minVal, midVal = self.setting_fix_range(clamp=2) # half range
+                    minVal, midVal = self.setting_fix_range() # half range
                     self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
                 elif self.psum_mode == 'retrain':
                     # self.alpha.data = self.alpha.data.round()
@@ -1584,6 +1582,10 @@ class TPsumQLinear(SplitLinear):
             minVal, maxVal, midVal = self._ADC_clamp_value()
             self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
             step_train = False
+        elif self.psum_mode == 'fix':
+            minVal, midVal = self.setting_fix_range() # half range
+            self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
+            step_train = False
         elif self.psum_mode == 'retrain':
             if self.init_state == 1:
                 self.pstep = F.softplus(self.alpha) /psum_scale
@@ -1678,7 +1680,7 @@ class TPsumQLinear(SplitLinear):
             minVal, _, midVal = self._ADC_clamp_value()
             self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
         elif self.psum_mode == 'fix':
-            minVal, midVal = self.setting_fix_range(clamp=2) # half range
+            minVal, midVal = self.setting_fix_range() # half range
             self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
         elif self.psum_mode == 'retrain':
             self.pstep = F.softplus(self.alpha) /psum_scale
@@ -1845,7 +1847,7 @@ def get_statistics_from_hist(df_hist):
 
     return [mean_val, std_val, min_val, max_val] 
 
-def set_TBitSerial_log(model, pbits, pclipmode, model_mode, abit_serial=None, pclip=None, psigma=None, checkpoint=None, pquant_idx=None, pbound=None, center=None, noise_comb=False, log_file=False):
+def set_TBitSerial_log(model, pbits, pclipmode, model_mode, abit_serial=None, pclip=None, prange=None, checkpoint=None, pquant_idx=None, pbound=None, center=None, noise_comb=False, log_file=False):
     print("start setting Bitserial layers log bitplane info")
     counter = 0
     for m in model.modules():
@@ -1859,7 +1861,7 @@ def set_TBitSerial_log(model, pbits, pclipmode, model_mode, abit_serial=None, pc
                 m.abit_serial = abit_serial
                 m.setting_pquant_func(pbits, center, pbound)
                 m.pclip = pclip
-                m.psigma = psigma
+                m.prange = prange
                 if model_mode == 'pnq_pst':
                     m.noise_comb = noise_comb
                 print("finish setting {}, idx: {}".format(type(m).__name__, counter))
