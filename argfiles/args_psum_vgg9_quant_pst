@@ -31,15 +31,15 @@
 --wbit-serial   y
 --abit-serial   y
 
---psum_mode     sigma
---pbits         2
+--psum_mode     fix
+--pbits         4
 --pclipmode     Layer
 --pclip         sigma
 --prange        3
 
 # noise option
---is_noise      y
---nipq_noise    hwnoise
+--is_noise      n
+--nipq_noise    qnoise
 --co_noise      4
 --noise_type    hynix_std
 --res_val       abs

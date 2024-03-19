@@ -15,8 +15,6 @@ from .split_modules import *
 # custom kernel
 import conv_sweight_cuda
 
-ADC_R = 8
-
 # split convolution across input channel
 def split_conv(weight, nWL):
     nIC = weight.shape[1]
@@ -246,14 +244,18 @@ class PsumQConv(SplitConv):
 
         return output.round_(), split_num 
     
-    def setting_fix_range(self, clamp):
+    def setting_fix_range(self):
         if (self.mapping_mode == '2T2R') or (self.mapping_mode == 'ref_a'):
             minPsum = self.arraySize * 2 * (self.wbits-1)
-            minC = -(minPsum / clamp) # Actually, level of negative range is small then positive 
+            minC = -(minPsum / self.prange) # Actually, level of negative range is small then positive 
             midC = 0
         else:
             assert False, "Not designed {} mode".format(self.mapping_mode)
-        
+
+        if self.info_print:
+            print(f'Layer{self.layer_idx} information | pbits {self.pbits} | prange {self.prange} | Clip Min: {minC} | Mid: {midC} |')
+            self.info_print = False
+
         return minC, midC
 
     # store weight magnitude for in-mem computing mimic 
@@ -616,7 +618,7 @@ class PsumQConv(SplitConv):
                     minVal, maxVal, midVal = self._ADC_clamp_value()
                     self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
                 elif self.psum_mode == 'fix':
-                    minVal, midVal = self.setting_fix_range(clamp=ADC_R) # half range
+                    minVal, midVal = self.setting_fix_range() # half range
                     self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
                 elif self.psum_mode == 'scan':
                     pass
@@ -933,14 +935,25 @@ class PsumQLinear(SplitLinear):
 
         return output.round_(), split_num 
 
-    def setting_fix_range(self, clamp):
+    def setting_fix_range(self):
+
+        if self.layer_idx == 6:
+            ADC_R = 16
+        else:
+            ADC_R = self.prange
+            
         if (self.mapping_mode == '2T2R') or (self.mapping_mode == 'ref_a'):
             minPsum = self.arraySize * 2 * (self.wbits-1)
-            minC = -(minPsum / clamp) # Actually, level of negative range is small then positive 
+            minC = -(minPsum / ADC_R) # Actually, level of negative range is small then positive 
             midC = 0
         else:
             assert False, "Not designed {} mode".format(self.mapping_mode)
         
+        if self.info_print:
+            print(f'Layer{self.layer_idx} information | pbits {self.pbits} | prange {ADC_R} | Clip Min: {minC} | Mid: {midC} |')
+            # print(f'Layer{self.layer_idx} information | pbits {self.pbits} | prange {self.prange} | Clip Min: {minC} | Mid: {midC} |')
+            self.info_print = False
+
         return minC, midC
 
     # store weight magnitude for in-mem computing mimic 
@@ -1253,7 +1266,7 @@ class PsumQLinear(SplitLinear):
                     minVal, maxVal, midVal = self._ADC_clamp_value()
                     self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
                 elif self.psum_mode == 'fix':
-                    minVal, midVal = self.setting_fix_range(clamp=ADC_R) # half range
+                    minVal, midVal = self.setting_fix_range() # half range
                     self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
                 elif self.psum_mode == 'scan':
                     pass

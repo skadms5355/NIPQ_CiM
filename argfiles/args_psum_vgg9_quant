@@ -36,7 +36,7 @@
 --pbits         4
 --pclipmode     Layer
 --pclip         sigma
---prange        3
+--prange        4
 
 # noise option
 --is_noise      n

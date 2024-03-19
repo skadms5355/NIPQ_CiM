@@ -246,6 +246,10 @@ class TPsumQConv(SplitConv):
         else:
             assert False, "Not designed {} mode".format(self.mapping_mode)
         
+        if self.info_print:
+            print(f'Layer{self.layer_idx} information | pbits {self.pbits} | prange {self.prange} | Clip Min: {minC} | Mid: {midC} |')
+            self.info_print = False
+
         return minC, midC
     
     # store weight magnitude for in-mem computing mimic 
@@ -920,12 +924,13 @@ class TPsumQConv(SplitConv):
                         Qp = (2**(abits)-1) * Qp
                         Qn = (2**(abits)-1) * Qn
                         # self.pstep  = (2**(abits)-1) * self.pstep
-
+                
                 out_tmp = out_tmp / self.pstep
-
+                
                 c1 = out_tmp >= Qp
                 c2 = out_tmp <= Qn
 
+                # out_tmp = torch.where(c1, Qp, torch.where(c2, Qn, out_tmp+noise))
                 out_tmp = torch.where(c1, Qp, torch.where(c2, Qn, out_tmp+noise))*self.pstep
 
                 if wbit == 0:
@@ -1160,9 +1165,16 @@ class TPsumQLinear(SplitLinear):
         return (out_round - output).detach() + output, split_num 
     
     def setting_fix_range(self):
+
+        if self.layer_idx == 6:
+            ADC_R = 16
+        else:
+            ADC_R = self.prange
+
         if (self.mapping_mode == '2T2R') or (self.mapping_mode == 'ref_a'):
             minPsum = self.arraySize * 2 * (self.wbits-1)
-            minC = -(minPsum / self.prange)
+            minC = -(minPsum / ADC_R)
+            # minC = -(minPsum / self.prange)
             midC = 0
         elif (self.mapping_mode == 'ref_d'):
             midPsum = self.arraySize * 2 * (self.wbits-1)
@@ -1171,6 +1183,11 @@ class TPsumQLinear(SplitLinear):
         else:
             assert False, "Not designed {} mode".format(self.mapping_mode)
         
+        if self.info_print:
+            print(f'Layer{self.layer_idx} information | pbits {self.pbits} | prange {ADC_R} | Clip Min: {minC} | Mid: {midC} |')
+            # print(f'Layer{self.layer_idx} information | pbits {self.pbits} | prange {self.prange} | Clip Min: {minC} | Mid: {midC} |')
+            self.info_print = False
+
         return minC, midC
     
     # store weight magnitude for in-mem computing mimic 

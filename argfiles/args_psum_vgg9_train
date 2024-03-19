@@ -18,6 +18,10 @@
 --eta_min       1e-3
 --T0            47
 
+# --init-method	kaiming
+# --init-dist	    normal
+# --init-fan	    fan_both
+
 --pretrained    ./checkpoints/cifar10/quant/lsq_vgg9/a:4_w:4/2022-Apr-01-18-57-49/model_best.pth.tar         
 
 --wbits         4
@@ -37,12 +41,12 @@
 --wbit-serial   y
 
 --psum_comp     y
---psum_mode     sigma
---pbits         2
---pclipmode     Layer
+--psum_mode     fix
+--pbits         4
+--pclipmode     Network
 # quant range [max or sigma] in sigma mode
 --pclip         sigma
---prange        3
+--prange        4
 
 # --noise_comb    y
 

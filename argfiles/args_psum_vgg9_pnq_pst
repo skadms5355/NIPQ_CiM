@@ -45,7 +45,7 @@
 # quant range [max or sigma] in sigma mode
 --pclip         sigma
 # sigma value in 3sigma or shrink value of max MAC at fix
---prange        4
+--prange        2
 --noise_comb    n
 
 # for noise

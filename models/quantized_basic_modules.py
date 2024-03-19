@@ -732,6 +732,7 @@ class QuantPsumMergeTrain(torch.autograd.Function):
 
                 output = pquant_group_merge_cuda.forward(output, input, pbits, 1, half_num_levels, 1, center, groups, pzero) 
                 output = output * (step * weight)
+                
         else:
             input = input / (step)
             ctx.save_for_backward(input)
