@@ -39,8 +39,8 @@
 --wbit-serial   y
 
 --psum_comp     y
---psum_mode     fix
---pbits         4
+--psum_mode     retrain
+--pbits         2
 --pclipmode     Layer
 # quant range [max or sigma] in sigma mode
 --pclip         sigma

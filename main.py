@@ -442,10 +442,11 @@ def main_worker(gpu, ngpus_per_node, args):
                 if args.psum_mode == 'sigma':
                     arch = '_'.join(args.arch.split('_')[:-1])
                     checkpoint = os.path.join(str(pathlib.Path().resolve()), ((args.checkpoint.replace('{}'.format(args.model_mode), 'quant')).replace('{}'.format(args.arch), '{}'.format(arch))))
-                    set_TBitSerial_log(model, abit_serial=args.abit_serial, checkpoint=checkpoint, model_mode=args.model_mode, \
+                    set_TBitSerial_log(model, abit_serial=args.abit_serial, checkpoint=checkpoint, model_mode=args.model_mode, FC_binary=False,\
                                     pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, prange=args.prange)
                 else:
-                    set_TBitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, pclipmode=args.pclipmode, model_mode=args.model_mode, pbits=args.pbits)
+                    set_TBitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, pclipmode=args.pclipmode, FC_binary=True, \
+                                       model_mode=args.model_mode, pbits=args.pbits)
                 if args.is_noise:
                     set_TNoise_injection(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
                                         noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink, deltaG=args.deltaG, retention=args.retention, reten_value=args.reten_val, reten_type=args.reten_type)
@@ -620,10 +621,11 @@ def main_worker(gpu, ngpus_per_node, args):
             checkpoint = os.path.join(str(pathlib.Path().resolve()), ((args.checkpoint.replace('{}'.format(args.model_mode), 'quant')).replace('{}'.format(args.arch), '{}/eval'.format(arch))))
             if not args.evaluate:
                 checkpoint = '/'.join(checkpoint.split('/')[:-1]) +'/log_bitserial_info' # time folder remove
-            set_TBitSerial_log(model, abit_serial=args.abit_serial, checkpoint=checkpoint, model_mode=args.model_mode, \
+            set_TBitSerial_log(model, abit_serial=args.abit_serial, checkpoint=checkpoint, model_mode=args.model_mode, FC_binary = False, \
                             pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, prange=args.prange, noise_comb=args.noise_comb)
         else:
-            set_TBitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, pclipmode=args.pclipmode, model_mode=args.model_mode, pbits=args.pbits, prange=args.prange, noise_comb=args.noise_comb)
+            set_TBitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, pclipmode=args.pclipmode, FC_binary = True, \
+                               model_mode=args.model_mode, pbits=args.pbits, prange=args.prange, noise_comb=args.noise_comb)
         
         if args.is_noise and args.model_mode == 'lsq_pst':
             set_TNoise_injection(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
@@ -707,18 +709,22 @@ def main_worker(gpu, ngpus_per_node, args):
                 if epoch == sum(nepoch_list[:e_idx]):
                     prog_pbit = args.prog_pbits[e_idx]
                     for m in model.modules(): 
-                        if type(m).__name__ in ["TPsumQConv", "TPsumQLinear"]:
-                            m.setting_pquant_func(pbits=prog_pbit)
+                        if args.dataset == 'cifar10':
+                            if type(m).__name__ in ["TPsumQConv"]:
+                                m.setting_pquant_func(pbits=prog_pbit)
+                        else:
+                            if type(m).__name__ in ["TPsumQConv", "TPsumQLinear"]:
+                                m.setting_pquant_func(pbits=prog_pbit)
                     print("Set to {}-bit for setting progressive pbits".format(prog_pbit))
                     e_idx += 1
             
-            if epoch == progress_epoch:
+            if (epoch == progress_epoch) and (args.is_noise):
                 set_TNoise_injection(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
                                             noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink, deltaG=args.deltaG, retention=args.retention, reten_value=args.reten_val, reten_type=args.reten_type)
                 print("Add device noise at 'pnq_pst' method.")
             
             if epoch == (args.epochs - args.ft_epoch):
-                set_TBitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, model_mode='lsq_pst', \
+                set_TBitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, model_mode='lsq_pst', FC_binary=True, \
                         pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, prange=args.prange, noise_comb=args.noise_comb)
                 print("Change the psum training method to 'lsq_pst' method.")
 
@@ -856,6 +862,11 @@ def main_worker(gpu, ngpus_per_node, args):
             if type(m).__name__ in ["TPsumQConv", "TPsumQLinear"]:
                 if m.wbits != 32:
                     print('\n [Layer {}] alpha value {} step {}'.format(m.layer_idx, m.alpha.view(-1), m.pstep.view(-1)))
+    elif args.psum_mode == 'fix':
+        for m in model.modules():
+            if type(m).__name__ in ["TPsumQConv", "TPsumQLinear"]:
+                if m.wbits != 32:
+                    print("[Layer {}] trained alpha parameter value {} and 1/alpha {}".format(m.layer_idx, m.alpha, 1/m.alpha))
 
 
     writer.close() # closing the tensorboard summarywriter.

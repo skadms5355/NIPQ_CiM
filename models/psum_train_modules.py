@@ -236,11 +236,11 @@ class TPsumQConv(SplitConv):
 
     def setting_fix_range(self):
         if (self.mapping_mode == '2T2R') or (self.mapping_mode == 'ref_a'):
-            minPsum = self.arraySize * 2 * (self.wbits-1)
+            minPsum = self.arraySize * (2 ** (self.wbits-1))
             minC = -(minPsum / self.prange) # Actually, level of negative range is small then positive 
             midC = 0
         elif (self.mapping_mode == 'ref_d'):
-            midPsum = self.arraySize * 2 * (self.wbits-1)
+            midPsum = self.arraySize * (2 ** (self.wbits-1))
             minC = 0
             midC = midPsum/self.prange
         else:
@@ -290,7 +290,7 @@ class TPsumQConv(SplitConv):
 
             with torch.no_grad():
                 real_alpha = F.softplus(self.alpha) / psum_scale
-                print("{} alpha: {} {}".format(self.layer_idx, self.alpha.view(-1), real_alpha.view(-1)))
+                print("[Layer {}] mode: {} pbits: {} alpha: {} {}".format(self.layer_idx, self.model_mode, self.pbits, self.alpha.view(-1), real_alpha.view(-1)))
 
         else:
             assert False, "{} mode is not considered in training clipping parameter".format(self.mapping_mode)
@@ -612,11 +612,15 @@ class TPsumQConv(SplitConv):
                     minVal, midVal = self.setting_fix_range() # half range
                     self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
                     self.fix_alpha = F.softplus(self.alpha)
-                    self.pstep = self.fix_alpha * self.pstep
+                    self.pstep = self.alpha * self.pstep
                 elif self.psum_mode == 'retrain':
                     # self.alpha.data = self.alpha.data.round()
                     # self.pstep = self.alpha
                     self.pstep = F.softplus(self.alpha) /psum_scale
+                    if self.info_print:
+                        print('[Layer {}] pbits {} alpha value {} step {}'.format(self.layer_idx, self.pbits, self.alpha, self.pstep))
+                        self.info_print=False 
+
 
                 else:
                     assert False, 'This script does not support {self.psum_mode}'
@@ -737,7 +741,6 @@ class TPsumQConv(SplitConv):
             minVal, midVal = self.setting_fix_range() # half range
             self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
             step_train = True 
-            self.fix_alpha = F.softplus(self.alpha)
         elif self.psum_mode == 'retrain':
             # if self.init_state == 1:
             self.pstep = F.softplus(self.alpha) /psum_scale
@@ -788,7 +791,7 @@ class TPsumQConv(SplitConv):
                 out_mag, multi_scale = self._output_magnitude(abit, wbit, wsplit_num)
                 if self.psum_mode == 'fix':
                     out_adc =  psum_quant_merge_train(out_adc, out_tmp / self.pstep,
-                                                    pbits=self.pbits, step=self.fix_alpha, 
+                                                    pbits=self.pbits, step=self.alpha, 
                                                     half_num_levels=self.phalf_num_levels, 
                                                     center=self.center, weight=out_mag/multi_scale,
                                                     groups=self.split_groups, pzero=self.pzero, step_train=step_train) * self.pstep
@@ -917,11 +920,12 @@ class TPsumQConv(SplitConv):
                     self.init_state.fill_(1)
                     self.pstep = F.softplus(self.alpha) / psum_scale
                 elif (self.psum_mode == 'fix') and (self.init_state == 0):
-                    alpha = 1 / (abs(minVal)/(3*out_tmp.std()))
-                    self.alpha.data.fill_(np.log(np.exp(alpha.item())-1)) 
-                    self.fix_alpha = F.softplus(self.alpha)
+                    alpha = 1 / (abs(minVal)/(3*out_tmp.detach().std())).cuda()
+                    # self.alpha.data.fill_(np.log(np.exp(alpha.item())-1)) 
+                    self.alpha.data.fill_(alpha.item()) 
+                    # fix_alpha = F.softplus(self.alpha)
                     self.init_state.fill_(1)
-                    print("[Layer {}] Set fix alpha parameter {}, softplus{}".format(self.layer_idx, 1/alpha, self.fix_alpha))
+                    print("[Layer {}] Set fix alpha parameter {}, 1/alpha {}".format(self.layer_idx, alpha, 1/alpha))
 
                 # pseudo-noise generation 
                 with torch.no_grad():
@@ -941,7 +945,7 @@ class TPsumQConv(SplitConv):
                         Qn = (2**(abits)-1) * Qn
                         # self.pstep  = (2**(abits)-1) * self.pstep
                 if self.psum_mode == 'fix':
-                    out_tmp /= self.fix_alpha
+                    out_tmp = out_tmp / self.alpha
                 
                 out_tmp = out_tmp / self.pstep
                 
@@ -952,7 +956,7 @@ class TPsumQConv(SplitConv):
                 out_tmp = torch.where(c1, Qp, torch.where(c2, Qn, out_tmp+noise))*self.pstep
                 
                 if self.psum_mode == 'fix':
-                    out_tmp *= self.fix_alpha
+                    out_tmp = out_tmp * self.alpha
 
                 if wbit == 0:
                     out_wsum = out_tmp.sum(dim=0)
@@ -1188,12 +1192,12 @@ class TPsumQLinear(SplitLinear):
     def setting_fix_range(self):
 
         if (self.mapping_mode == '2T2R') or (self.mapping_mode == 'ref_a'):
-            minPsum = self.arraySize * 2 * (self.wbits-1)
+            minPsum = self.arraySize * (2 ** (self.wbits-1))
             minC = -(minPsum / self.prange)
             # minC = -(minPsum / self.prange)
             midC = 0
         elif (self.mapping_mode == 'ref_d'):
-            midPsum = self.arraySize * 2 * (self.wbits-1)
+            midPsum = self.arraySize * (2 ** (self.wbits-1))
             minC = 0
             midC = midPsum/self.prange
         else:
@@ -1242,7 +1246,7 @@ class TPsumQLinear(SplitLinear):
             
             with torch.no_grad():
                 real_alpha = F.softplus(self.alpha) / psum_scale
-                print("{} alpha: {} {}".format(self.layer_idx, self.alpha.view(-1), real_alpha.view(-1)))
+                print("[Layer {}] mode: {} pbits:{} alpha: {} {}".format(self.layer_idx, self.model_mode, self.pbits, self.alpha.view(-1), real_alpha.view(-1)))
         else:
             assert False, "{} mode is not considered in training clipping parameter"
 
@@ -1515,11 +1519,13 @@ class TPsumQLinear(SplitLinear):
                     minVal, midVal = self.setting_fix_range() # half range
                     self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
                     self.fix_alpha = F.softplus(self.alpha)
-                    self.pstep = self.fix_alpha * self.pstep
+                    self.pstep = self.alpha * self.pstep
                 elif self.psum_mode == 'retrain':
                     # self.alpha.data = self.alpha.data.round()
                     self.pstep = F.softplus(self.alpha) /psum_scale
-                    # self.pstep = self.alpha
+                    if self.info_print:
+                        print('[Layer {}] pbits {} alpha value {} step {}'.format(self.layer_idx, self.pbits, self.alpha, self.pstep))
+                        self.info_print=False 
                 elif self.psum_mode == 'scan':
                     pass
                 else:
@@ -1621,7 +1627,6 @@ class TPsumQLinear(SplitLinear):
             minVal, midVal = self.setting_fix_range() # half range
             self.setting_pquant_func(pbits=self.pbits, center=minVal, pbound=midVal-minVal)
             step_train = True 
-            self.fix_alpha = F.softplus(self.alpha)
         elif self.psum_mode == 'retrain':
             self.pstep = F.softplus(self.alpha) /psum_scale
             step_train = True
@@ -1666,7 +1671,7 @@ class TPsumQLinear(SplitLinear):
 
                 if self.psum_mode == 'fix':
                     out_adc =  psum_quant_merge_train(out_adc, out_tmp / self.pstep,
-                                                    pbits=self.pbits, step=self.fix_alpha, 
+                                                    pbits=self.pbits, step=self.alpha, 
                                                     half_num_levels=self.phalf_num_levels, 
                                                     center=self.center, weight=out_mag/multi_scale,
                                                     groups=self.split_groups, pzero=self.pzero, step_train=step_train) * self.pstep
@@ -1784,16 +1789,21 @@ class TPsumQLinear(SplitLinear):
                     self.init_state.fill_(1)
                     self.pstep = F.softplus(self.alpha) /psum_scale
                 elif (self.psum_mode == 'fix') and (self.init_state == 0):
-                    alpha = 1 / (abs(minVal)/(3*out_tmp.std()))
-                    self.alpha.data.fill_(np.log(np.exp(alpha.item())-1)) 
-                    self.fix_alpha = F.softplus(self.alpha)
+                    alpha = 1 / (abs(minVal)/(3*out_tmp.detach().std())).cuda()
+                    self.alpha.data.fill_(alpha.item()) 
+                    # self.alpha.data.fill_(np.log(np.exp(alpha.item())-1)) 
+                    # fix_alpha = F.softplus(self.alpha)
                     self.init_state.fill_(1)
-                    print("[Layer {}] Set fix alpha parameter {}, softplus{}".format(self.layer_idx, 1/alpha, self.fix_alpha))
+                    print("[Layer {}] Set fix alpha parameter {}, 1/alpha {}".format(self.layer_idx, alpha, 1/alpha))
 
                 # pseudo-noise generation
                 with torch.no_grad():
-                    Qp = self.phalf_num_levels
-                    Qn = 1 - self.phalf_num_levels
+                    if self.pbits < 2:
+                        Qp = 1
+                        Qn = -1
+                    else:
+                        Qp = self.phalf_num_levels
+                        Qn = 1 - self.phalf_num_levels
 
                     if not self.noise_comb:
                         noise = torch.rand_like(out_tmp) - 0.5
@@ -1806,9 +1816,12 @@ class TPsumQLinear(SplitLinear):
                         Qp = (2**(abits)-1) * Qp
                         Qn = (2**(abits)-1) * Qn
                         # self.pstep  = (2**(abits)-1) * self.pstep
+
+                    if self.pbits == 1:
+                        noise = 2 * noise
                 
                 if self.psum_mode == 'fix':
-                    out_tmp /= self.fix_alpha
+                    out_tmp = out_tmp / self.alpha
 
                 out_tmp = out_tmp / self.pstep
 
@@ -1819,7 +1832,7 @@ class TPsumQLinear(SplitLinear):
                 # out_tmp = torch.where(c1, self.pstep, torch.where(c2, -self.pstep, out_tmp+noise*delta))
                 
                 if self.psum_mode == 'fix':
-                    out_tmp *= self.fix_alpha
+                    out_tmp = out_tmp * self.alpha
 
                 if wbit == 0:
                     out_wsum = out_tmp.sum(dim=0)
@@ -1899,11 +1912,12 @@ def get_statistics_from_hist(df_hist):
 
     return [mean_val, std_val, min_val, max_val] 
 
-def set_TBitSerial_log(model, pbits, pclipmode, model_mode, abit_serial=None, pclip=None, prange=None, checkpoint=None, pquant_idx=None, pbound=None, center=None, noise_comb=False, log_file=False):
+def set_TBitSerial_log(model, pbits, pclipmode, model_mode, abit_serial=None, pclip=None, prange=None, checkpoint=None, pquant_idx=None, pbound=None, center=None, noise_comb=False, FC_binary=False, log_file=False):
     print("start setting Bitserial layers log bitplane info")
     counter = 0
+
     for m in model.modules():
-        if type(m).__name__ in ['TPsumQConv' , 'TPsumQLinear']:
+        if type(m).__name__ in ['TPsumQConv']:
             m.layer_idx = counter
             if (pquant_idx is None) or (counter == pquant_idx):
                 m.bitserial_log = log_file
@@ -1915,6 +1929,31 @@ def set_TBitSerial_log(model, pbits, pclipmode, model_mode, abit_serial=None, pc
                 m.pclip = pclip
                 m.prange = prange
                 if model_mode == 'pnq_pst':
+                    m.noise_comb = noise_comb
+                print("finish setting {}, idx: {}".format(type(m).__name__, counter))
+            else:
+                print(f"pass {m} with counter {counter}")
+            counter += 1
+
+        elif type(m).__name__ in ['TPsumQLinear']:
+            m.layer_idx = counter
+            if FC_binary and (counter==6):
+                FC_pbit = 1
+                FC_mode = 'lsq_pst'
+            else:
+                FC_pbit = pbits 
+                FC_mode = model_mode
+
+            if (pquant_idx is None) or (counter == pquant_idx):
+                m.bitserial_log = log_file
+                m.checkpoint = checkpoint
+                m.model_mode = FC_mode
+                m.pclipmode = pclipmode
+                m.abit_serial = abit_serial
+                m.setting_pquant_func(FC_pbit, center, pbound)
+                m.pclip = pclip
+                m.prange = prange
+                if FC_mode == 'pnq_pst':
                     m.noise_comb = noise_comb
                 print("finish setting {}, idx: {}".format(type(m).__name__, counter))
             else:
