@@ -9,9 +9,10 @@ import pandas as pd
 from .noise_cell import Noise_cell
 import utils.padding as Pad
 from .quantized_lsq_modules import *
-from .quantized_basic_modules import psum_quant_merge, psum_quant
+from .quantized_basic_modules import psum_quant_merge, psum_quant, psum_merge 
 from .bitserial_modules import *
 from .split_modules import *
+from .nonlinear_quantized_module import *
 
 # split convolution across input channel
 def split_conv(weight, nWL):
@@ -119,6 +120,8 @@ class TPsumQConv(SplitConv):
         self.co_noise = 0
         self.ratio = 100
         self.w_format = 'weight'
+        self.ADC_noise = False
+        self.ADC_std = 0
 
         # for logging
         self.bitserial_log = False
@@ -664,11 +667,18 @@ class TPsumQConv(SplitConv):
                                                 weight_is_split=True, infer_only=True, channel=True)
 
                         out_mag, multi_scale = self._output_magnitude(abit, wbit, wsplit_num)
-                        out_adc = psum_quant_merge(out_adc, out_tmp,
-                                                    pbits=self.pbits, step=self.pstep, 
-                                                    half_num_levels=self.phalf_num_levels, 
-                                                    pbound=self.pbound, center=self.center, weight=out_mag/multi_scale,
-                                                    groups=self.split_groups, pzero=self.pzero, psum_mode=self.psum_mode)
+                        if not self.ADC_noise:
+
+                            out_adc = psum_quant_merge(out_adc, out_tmp,
+                                                        pbits=self.pbits, step=self.pstep, 
+                                                        half_num_levels=self.phalf_num_levels, 
+                                                        pbound=self.pbound, center=self.center, weight=out_mag/multi_scale,
+                                                        groups=self.split_groups, pzero=self.pzero, psum_mode=self.psum_mode)
+                        else:
+                            out_psum = NonlinearQuant.apply(out_tmp, self.pstep, out_mag/multi_scale, self.pbits, self.split_groups, 
+                                                            self.phalf_num_levels, self.ADC_std)
+
+                            out_adc = psum_merge(out_adc, out_psum, groups=self.split_groups)
 
                         # weight output summation
                         if self.mapping_mode == 'two_com':
@@ -1073,6 +1083,8 @@ class TPsumQLinear(SplitLinear):
         # for noise option
         self.is_noise = False
         self.w_format = 'weight'
+        self.ADC_noise = False
+        self.ADC_std = 0
 
         # for logging
         self.bitserial_log = False
@@ -1231,7 +1243,7 @@ class TPsumQLinear(SplitLinear):
             self.noise_cell_log = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val=res_val, shrink=shrink, retention=False, w_format=self.w_format)
         self.noise_cell = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val=res_val, shrink=shrink, retention=retention, set_deltaG=deltaG, w_format=self.w_format)
         self.noise_cell_inf = Noise_cell(self.wbits, cbits, mapping_mode, co_noise, noise_type, res_val="abs", shrink=shrink, retention=retention, set_deltaG=deltaG, w_format="state")
-    
+
     def init_form(self, x, half_levels, psum_scale=1):
         if (self.mapping_mode == '2T2R') or (self.mapping_mode == 'PN') or (self.mapping_mode == 'ref_a'):
             # self.alpha.data.fill_((x.detach().abs().std()*3).ceil())
@@ -1562,11 +1574,18 @@ class TPsumQLinear(SplitLinear):
 
                         out_mag, multi_scale = self._output_magnitude(abit, wbit, wsplit_num)
 
-                        out_adc = psum_quant_merge(out_adc, out_tmp,
-                                                    pbits=self.pbits, step=self.pstep, 
-                                                    half_num_levels=self.phalf_num_levels, 
-                                                    pbound=self.pbound, center=self.center, weight=out_mag/multi_scale,
-                                                    groups=self.split_groups, pzero=self.pzero, psum_mode=self.psum_mode)
+                        if not self.ADC_noise:
+                            out_adc = psum_quant_merge(out_adc, out_tmp,
+                                                        pbits=self.pbits, step=self.pstep, 
+                                                        half_num_levels=self.phalf_num_levels, 
+                                                        pbound=self.pbound, center=self.center, weight=out_mag/multi_scale,
+                                                        groups=self.split_groups, pzero=self.pzero, psum_mode=self.psum_mode)
+                        else:
+                            # std = 1.0691 # HSPICE 6.7mV (0.45 ~ 0.55V)
+                            out_psum = NonlinearQuant.apply(out_tmp, self.pstep, out_mag/multi_scale, self.pbits, self.split_groups, 
+                                                            self.phalf_num_levels, self.ADC_std)
+                            
+                            out_adc = psum_merge(out_adc, out_psum, groups=self.split_groups)
 
                         # weight output summation
                         if self.mapping_mode == 'two_com':
@@ -1980,8 +1999,8 @@ def set_tbitserial_layer(model, pquant_idx, wbit_serial=None, pbits=32, center=[
             counter += 1
     print("finish setting conv/fc bitserial layer ")
 
-def set_TNoise_injection(model, weight=False, hwnoise=True, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', shrink=None, max_epoch=-1,
-                        deltaG=None, retention=False, reten_kind='linear', reten_type='percent', reten_value=0):
+def set_TNoise_injection(model, weight=False, hwnoise=True, ADC_noise=False, cbits=4, mapping_mode=None, co_noise=0.01, noise_type='prop', res_val='rel', shrink=None, max_epoch=-1,
+                        deltaG=None, retention=False, reten_kind='linear', reten_type='percent', reten_value=0, ADC_std=0):
     for name, module in model.named_modules():
         if isinstance(module, (TPsumQConv, TPsumQLinear)) and weight and hwnoise:
             if module.wbits != 32:
@@ -1989,7 +2008,12 @@ def set_TNoise_injection(model, weight=False, hwnoise=True, cbits=4, mapping_mod
 
                 if noise_type == 'grad':
                     assert max_epoch != -1, "Enter max_epoch in hwnoise_initialize function"
-                if hwnoise:
-                    module._cell_noise_init(cbits=cbits, mapping_mode=mapping_mode, co_noise=co_noise, noise_type=noise_type, res_val=res_val, shrink=shrink, retention=retention, deltaG=deltaG, max_epoch=max_epoch)
-                    if retention:
-                        module.noise_cell.retention_init(kind=reten_kind, type=reten_type, value=reten_value)
+
+                module._cell_noise_init(cbits=cbits, mapping_mode=mapping_mode, co_noise=co_noise, noise_type=noise_type, res_val=res_val, shrink=shrink, retention=retention, deltaG=deltaG, max_epoch=max_epoch)
+                if retention:
+                    module.noise_cell.retention_init(kind=reten_kind, type=reten_type, value=reten_value)
+
+                if ADC_noise and (module.pbits != 1):
+                    module.ADC_noise = True
+                    module.ADC_std = ADC_std
+                

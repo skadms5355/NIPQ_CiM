@@ -12,6 +12,7 @@
 
 --pretrained    ./checkpoints/cifar10/pnq_pst/psum_lsq_vgg9_train/a:4_w:4/2T2R/128_c:4/2023-Nov-15-19-47-39/model_best.pth.tar
 # --pretrained    ./checkpoints/cifar10/pnq_pst/psum_lsq_vgg9_train/a:4_w:4/2T2R/128_c:4/2023-Nov-29-15-45-03/model_best.pth.tar
+# --pretrained    ./checkpoints/cifar10/pnq_pst/psum_lsq_vgg9_train/a:4_w:4/2T2R/128_c:4/2024-Mar-26-16-57-18/model_best.pth.tar
 
 --evaluate      y
 
@@ -30,7 +31,7 @@
 
 --psum_comp     y
 --psum_mode     retrain
---pbits         3
+--pbits         2
 --pclipmode     Layer
 # quant range [max or sigma] in sigma mode
 --pclip         sigma

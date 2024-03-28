@@ -30,7 +30,7 @@ from utils import data_loader, initialize, logging, misc, tensorboard, eval
 from utils.schedule_train import set_optimizer, set_scheduler
 
 from models.psum_modules import set_BitSerial_log, set_Noise_injection, unset_BitSerial_log
-from models.psum_train_modules import set_TBitSerial_log, set_TNoise_injection, unset_TBitSerial_log
+from models.psum_train_modules import set_TBitSerial_log, set_TNoise_injection
 from models.nipq_quantization_module import bops_cal
 
 warnings.simplefilter("ignore", category=FutureWarning)
@@ -134,6 +134,10 @@ def main():
 
                 if args.deltaG is not None:
                     type = '{}_deltaG_{}'.format(type, args.deltaG)
+                
+                if args.is_ADCn:
+                    type = '{}_ADC_{}'.format(type, args.ADC_std)
+
 
                 if args.tn_file is not None:
                     prefix = os.path.join(prefix, '{}_{}_{}').format(args.tn_file, args.noise_type, type)
@@ -436,8 +440,8 @@ def main_worker(gpu, ngpus_per_node, args):
                 set_BitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, log_file=args.log_file,\
                     pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, prange=args.prange)
                 if args.is_noise:
-                    set_Noise_injection(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
-                                        noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink,  deltaG=args.deltaG, retention=args.retention, reten_value=args.reten_val, reten_type=args.reten_type)
+                    set_Noise_injection(model, weight=True, hwnoise=True, ADC_noise=args.is_ADCn, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
+                                        noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink,  deltaG=args.deltaG, retention=args.retention, reten_value=args.reten_val, reten_type=args.reten_type, ADC_std=args.ADC_std)
             elif 'pst' in args.model_mode:
                 if args.psum_mode == 'sigma':
                     arch = '_'.join(args.arch.split('_')[:-1])
@@ -445,11 +449,11 @@ def main_worker(gpu, ngpus_per_node, args):
                     set_TBitSerial_log(model, abit_serial=args.abit_serial, checkpoint=checkpoint, model_mode=args.model_mode, FC_binary=False,\
                                     pbits=args.pbits, pclipmode=args.pclipmode, pclip=args.pclip, prange=args.prange)
                 else:
-                    set_TBitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, pclipmode=args.pclipmode, FC_binary=True, \
+                    set_TBitSerial_log(model, abit_serial=args.abit_serial, checkpoint=args.checkpoint, pclipmode=args.pclipmode, FC_binary=False, \
                                        model_mode=args.model_mode, pbits=args.pbits)
                 if args.is_noise:
-                    set_TNoise_injection(model, weight=True, hwnoise=True, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
-                                        noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink, deltaG=args.deltaG, retention=args.retention, reten_value=args.reten_val, reten_type=args.reten_type)
+                    set_TNoise_injection(model, weight=True, hwnoise=True, ADC_noise=args.is_ADCn, cbits=args.cbits, mapping_mode=args.mapping_mode, co_noise=args.co_noise, \
+                                        noise_type=args.noise_type, res_val=args.res_val, shrink=args.shrink, deltaG=args.deltaG, retention=args.retention, reten_value=args.reten_val, reten_type=args.reten_type, ADC_std=args.ADC_std)
             else:
                 assert False, "This mode is not supported psum computation"
 

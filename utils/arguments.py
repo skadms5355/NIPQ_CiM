@@ -271,6 +271,10 @@ def set_arguments():
                             help='How do this conductance value decrease (default: percent (proportional to conduc))).')               
     noise_group.add_argument('--reten_val', type=float, default=0,
                             help='rentention decreasing value (static(int) or percentage(float))')               
+    noise_group.add_argument('--is_ADCn', default='False', type=str2bool,
+                            help='ADC nonlineartiy noise effect consideration')
+    noise_group.add_argument('--ADC_std', type=float, default=0,
+                            help='ADC threshold variation during inference.')
 
     # Transfer Learning
     transfer_group.add_argument('--transfer-mode', default=0, type=int, choices=[0,1,2,3, 4],

@@ -17,6 +17,7 @@ import utils.padding as Pad
 import pquant_group_merge_cuda
 import pquant_scale_group_merge_cuda
 import pquant_cuda
+import group_merge_cuda
 
 class QuantActFunc(torch.autograd.Function):
     """ Quantized activation functions with torch.autograd extension."""
@@ -560,6 +561,28 @@ def psum_quant(output, input, pbits=32, step=1, half_num_levels=1, pbound=None, 
 
     return QuantPsum.apply(output, input, pbits, step, half_num_levels, pbound, 
                             weight, center, groups, pzero)
+
+
+class PsumMerge(torch.autograd.Function):
+    """ Quantized partial sum function merge with torch.autograd extension."""
+    @staticmethod
+    @torch.cuda.amp.custom_fwd
+    def forward(ctx, output, input, groups=1):
+
+        ctx.mark_dirty(output)
+        return group_merge_cuda.forward(output, input, groups) 
+
+    @staticmethod
+    @torch.cuda.amp.custom_bwd
+    def backward(ctx, grad_output):
+        return grad_output, grad_output, None
+    
+def psum_merge(output, input, groups=1):
+    if output is None:
+        output = torch.zeros_like(input[0])
+
+    return PsumMerge.apply(output, input, groups)
+
 
 class QuantPsumMerge(torch.autograd.Function):
     """ Quantized partial sum functionsi & merge group with torch.autograd extension."""

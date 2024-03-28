@@ -1,0 +1,19 @@
+# ninja log v5
+0	14973	1699322192000000000	/home/nameunkang/Project/NIPQ_CiM/extension/pquant_group_merge/cuda/build/temp.linux-x86_64-cpython-39/pquant_group_merge_cuda.o	7461d0eb0e0efe19
+0	59581	1699322237000000000	/home/nameunkang/Project/NIPQ_CiM/extension/pquant_group_merge/cuda/build/temp.linux-x86_64-cpython-39/pquant_group_merge_cuda_kernel.o	a4a2d92e354e127a
+567	51069	1700011571000000000	/home/nameunkang/Project/NIPQ_CiM/extension/pquant_group_merge/cuda/build/temp.linux-x86_64-cpython-39/pquant_group_merge_cuda_kernel.o	a4a2d92e354e127a
+40	47792	1700012065000000000	/home/nameunkang/Project/NIPQ_CiM/extension/pquant_group_merge/cuda/build/temp.linux-x86_64-cpython-39/pquant_group_merge_cuda_kernel.o	a4a2d92e354e127a
+518	51191	1700027390000000000	/home/nameunkang/Project/NIPQ_CiM/extension/pquant_group_merge/cuda/build/temp.linux-x86_64-cpython-39/pquant_group_merge_cuda_kernel.o	a4a2d92e354e127a
+38	47427	1700028526000000000	/home/nameunkang/Project/NIPQ_CiM/extension/pquant_group_merge/cuda/build/temp.linux-x86_64-cpython-39/pquant_group_merge_cuda_kernel.o	a4a2d92e354e127a
+0	11180	1709543826551690485	/mnt/nfs-vlsi/nameunkang/Project/NIPQ_CiM/extension/pquant_group_merge/cuda/build/temp.linux-x86_64-cpython-39/pquant_group_merge_cuda.o	345d4e4ee1a0b3b3
+0	38858	1709543854230121709	/mnt/nfs-vlsi/nameunkang/Project/NIPQ_CiM/extension/pquant_group_merge/cuda/build/temp.linux-x86_64-cpython-39/pquant_group_merge_cuda_kernel.o	91cce5adb6edf1e0
+1	12922	1711507913840416378	/mnt/nfs-vlsi/nameunkang/Project/NIPQ_CiM/extension/group_merge/cuda/build/temp.linux-x86_64-cpython-39/group_merge_cuda.o	4951fbe5f1ab4286
+2	40314	1711507941230817643	/mnt/nfs-vlsi/nameunkang/Project/NIPQ_CiM/extension/group_merge/cuda/build/temp.linux-x86_64-cpython-39/group_merge_cuda_kernel.o	5479696acf82dc27
+9	11592	1711523288770310344	/mnt/nfs-vlsi/nameunkang/Project/NIPQ_CiM/extension/group_merge/cuda/build/temp.linux-x86_64-cpython-39/group_merge_cuda.o	4951fbe5f1ab4286
+9	39224	1711523316407719619	/mnt/nfs-vlsi/nameunkang/Project/NIPQ_CiM/extension/group_merge/cuda/build/temp.linux-x86_64-cpython-39/group_merge_cuda_kernel.o	5479696acf82dc27
+4	11801	1711593902041591567	/mnt/nfs-vlsi/nameunkang/Project/NIPQ_CiM/extension/group_merge/cuda/build/temp.linux-x86_64-cpython-39/group_merge_cuda.o	4514c2b573711d40
+4	37231	1711593927470948651	/mnt/nfs-vlsi/nameunkang/Project/NIPQ_CiM/extension/group_merge/cuda/build/temp.linux-x86_64-cpython-39/group_merge_cuda_kernel.o	7132f4cb4d0ce198
+7	38341	1711600209584650741	/mnt/nfs-vlsi/nameunkang/Project/NIPQ_CiM/extension/group_merge/cuda/build/temp.linux-x86_64-cpython-39/group_merge_cuda_kernel.o	7132f4cb4d0ce198
+8	37800	1711600816016767075	/mnt/nfs-vlsi/nameunkang/Project/NIPQ_CiM/extension/group_merge/cuda/build/temp.linux-x86_64-cpython-39/group_merge_cuda_kernel.o	7132f4cb4d0ce198
+5	11400	1711601659924169851	/mnt/nfs-vlsi/nameunkang/Project/NIPQ_CiM/extension/group_merge/cuda/build/temp.linux-x86_64-cpython-39/group_merge_cuda.o	4951fbe5f1ab4286
+5	38735	1711601687258565602	/mnt/nfs-vlsi/nameunkang/Project/NIPQ_CiM/extension/group_merge/cuda/build/temp.linux-x86_64-cpython-39/group_merge_cuda_kernel.o	5479696acf82dc27

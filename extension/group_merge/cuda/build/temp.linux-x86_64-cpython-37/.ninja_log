@@ -1,0 +1,4 @@
+# ninja log v5
+30	15967	1668616869481474511	/mnt/nfs/nameunkang/Project/QNN_CIM/extension/pquant_group_merge/cuda/build/temp.linux-x86_64-cpython-37/pquant_group_merge_cuda.o	b78a43c64ae5fa67
+225	18507	1669812453947716106	/mnt/nfs/nameunkang/Project/QNN_CIM/extension/pquant_group_merge/cuda/build/temp.linux-x86_64-cpython-37/pquant_group_merge_cuda.o	cc59877b0862bb5a
+226	39129	1669812475289422623	/mnt/nfs/nameunkang/Project/QNN_CIM/extension/pquant_group_merge/cuda/build/temp.linux-x86_64-cpython-37/pquant_group_merge_cuda_kernel.o	4a1e9d7dec525ddd

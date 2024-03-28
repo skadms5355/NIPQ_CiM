@@ -37,12 +37,16 @@ parser.add_argument('--iter', default=1, type=int,
 parser.add_argument('--tnoise', action='store_true')
 parser.add_argument('--tco_noise', type=float, default=0)
 parser.add_argument('--tdeltaG', type=float, default=None)
+parser.add_argument('--is_ADCn', action='store_true')
+parser.add_argument('--ADC_std', type=float, nargs='+', default=[0])
+
 args = parser.parse_args()
 
 pbits_list = args.pbits
 mapping_mode_list = args.mapping_mode
 arraySize = args.arraySize
 co_noise_list = args.co_noise
+ADC_std_list = args.ADC_std
 
 if "vgg9" in args.argfile:
     model = 'vgg9'
@@ -232,81 +236,112 @@ for pbit in pbits_list:
                     assert False, "No pretrained model at {model_mode}"
 
             for a_size in arraySize:
-                testlog=args.testlog
-                if "sigma" in args.psum_mode:
-                    noise_name = 'type_{}'.format(co_noise)
-                    if args.shrink is not None:
-                        noise_name = '{}_shrink_{}'.format(noise_name, args.shrink)
-                    if args.deltaG is not None:
-                        noise_name = '{}_deltaG_{}'.format(noise_name, args.deltaG)
+                for ADC_std in ADC_std_list:
+                    testlog=args.testlog
+                    if "sigma" in args.psum_mode:
+                        noise_name = 'type_{}'.format(co_noise)
+                        if args.shrink is not None:
+                            noise_name = '{}_shrink_{}'.format(noise_name, args.shrink)
+                        if args.deltaG is not None:
+                            noise_name = '{}_deltaG_{}'.format(noise_name, args.deltaG)
+                        if args.is_ADCn:
+                            noise_name = '{}_ADC_{}'.format(noise_name, ADC_std)
 
-                    if args.is_noise:
+                        if args.is_noise:
+                            if args.tnoise:
+                                tn_file = 'tnoise_{}'.format(args.tco_noise)
+                                if args.tdeltaG is not None:
+                                    tn_file = 'tnoise_{}_G_{}'.format(args.tco_noise, args.tdeltaG)
+                                log_path = os.path.join("checkpoints", args.dataset, model_mode, arch, "eval/a:4_w:4", mapping_mode, "{}_c:4/{}_{}_{}/log_bitserial_info/hist".format(a_size, tn_file, args.noise_type, noise_name), check_file)
+                            else:
+                                log_path = os.path.join("checkpoints", args.dataset, model_mode, arch, "eval/a:4_w:4", mapping_mode, "{}_c:4/{}_{}/log_bitserial_info/hist".format(a_size, args.noise_type, noise_name), check_file)
+                        else:
+                            log_path = os.path.join("checkpoints", args.dataset, model_mode, arch, "eval/a:4_w:4", mapping_mode, "{}_c:4/log_bitserial_info/hist".format(a_size), check_file)
+                        
+                        if os.path.isfile(log_path):
+                            log_file=False
+                        else:
+                            log_file=True
+                    else:
                         if args.tnoise:
                             tn_file = 'tnoise_{}'.format(args.tco_noise)
                             if args.tdeltaG is not None:
                                 tn_file = 'tnoise_{}_G_{}'.format(args.tco_noise, args.tdeltaG)
-                            log_path = os.path.join("checkpoints", args.dataset, model_mode, arch, "eval/a:4_w:4", mapping_mode, "{}_c:4/{}_{}_{}/log_bitserial_info/hist".format(a_size, tn_file, args.noise_type, noise_name), check_file)
-                        else:
-                            log_path = os.path.join("checkpoints", args.dataset, model_mode, arch, "eval/a:4_w:4", mapping_mode, "{}_c:4/{}_{}/log_bitserial_info/hist".format(a_size, args.noise_type, noise_name), check_file)
-                    else:
-                        log_path = os.path.join("checkpoints", args.dataset, model_mode, arch, "eval/a:4_w:4", mapping_mode, "{}_c:4/log_bitserial_info/hist".format(a_size), check_file)
-                    
-                    if os.path.isfile(log_path):
                         log_file=False
-                    else:
-                        log_file=True
-                else:
-                    if args.tnoise:
-                        tn_file = 'tnoise_{}'.format(args.tco_noise)
-                        if args.tdeltaG is not None:
-                            tn_file = 'tnoise_{}_G_{}'.format(args.tco_noise, args.tdeltaG)
-                    log_file=False
 
-                if args.is_noise:
-                    for i in range(args.iter):
-                        print(f'this operation is iter {i+1} co_noise {co_noise} pbit {pbit}, arraySize {a_size}, model_mode {model_mode} log_file {log_file} noise_type {args.noise_type}')
-                        if args.shrink is None:
-                            if args.deltaG is None:
-                                if args.tnoise:
-                                    os.system('python main.py  --argfile {} --gpu-id {} --arraySize {} --mapping_mode {} \
-                                                --pbits {} --per_class {} --psum_mode {} --testlog_reset {} --log_file {} --pretrained {} \
-                                                --is_noise y --co_noise {} --noise_type {} --tn_file {} --retention {} --reten_type {} --reten_val {}'
-                                                .format(args.argfile, args.gpu_id, a_size, mapping_mode, pbit, per_class, args.psum_mode, testlog, log_file, pretrained, co_noise, args.noise_type, tn_file, args.retention, args.reten_type, args.reten_val))
-                                else:
-                                    os.system('python main.py  --argfile {} --gpu-id {} --arraySize {} --mapping_mode {} \
-                                                --pbits {} --per_class {} --psum_mode {} --testlog_reset {} --log_file {} --pretrained {} \
-                                                --is_noise y --co_noise {} --noise_type {} --retention {} --reten_type {} --reten_val {}'
-                                                .format(args.argfile, args.gpu_id, a_size, mapping_mode, pbit, per_class, args.psum_mode, testlog, log_file, pretrained, co_noise, args.noise_type, args.retention, args.reten_type, args.reten_val))
-                            else: 
-                                if args.tnoise:
-                                    os.system('python main.py  --argfile {} --gpu-id {} --arraySize {} --mapping_mode {} \
-                                                --pbits {} --per_class {} --psum_mode {} --testlog_reset {} --log_file {} --pretrained {} \
-                                                --is_noise y --co_noise {} --noise_type {} --tn_file {} --deltaG {} --retention {} --reten_type {} --reten_val {}'
-                                                .format(args.argfile, args.gpu_id, a_size, mapping_mode, pbit, per_class, args.psum_mode, testlog, log_file, pretrained, co_noise, args.noise_type, tn_file, args.deltaG, args.retention, args.reten_type, args.reten_val))
-                                else:
-                                    os.system('python main.py  --argfile {} --gpu-id {} --arraySize {} --mapping_mode {} \
-                                                --pbits {} --per_class {} --psum_mode {} --testlog_reset {} --log_file {} --pretrained {} \
-                                                --is_noise y --co_noise {} --noise_type {} --deltaG {} --retention {} --reten_type {} --reten_val {}'
-                                                .format(args.argfile, args.gpu_id, a_size, mapping_mode, pbit, per_class, args.psum_mode, testlog, log_file, pretrained, co_noise, args.noise_type, args.deltaG, args.retention, args.reten_type, args.reten_val))
-                        else:
-                            if args.tnoise:
-                                os.system('python main.py  --argfile {} --gpu-id {} --arraySize {} --mapping_mode {} \
-                                            --pbits {} --per_class {} --psum_mode {} --testlog_reset {} --log_file {} --pretrained {} \
-                                            --is_noise y --co_noise {} --noise_type {} --tn_file {} --shrink {} --retention {} --reten_type {} --reten_val {}'
-                                            .format(args.argfile, args.gpu_id, a_size, mapping_mode, pbit, per_class, args.psum_mode, testlog, log_file, pretrained, co_noise, args.noise_type, tn_file, args.shrink, args.retention, args.reten_type, args.reten_val))
+                    if args.is_noise:
+                        for i in range(args.iter):
+                            print(f'this operation is iter {i+1} co_noise {co_noise} ADC_std {ADC_std} pbit {pbit}, arraySize {a_size}, model_mode {model_mode} log_file {log_file} noise_type {args.noise_type}')
+                            if args.shrink is None:
+                                if args.deltaG is None:
+                                    if args.tnoise:
+                                        if not args.is_ADCn:
+                                            os.system('python main.py  --argfile {} --gpu-id {} --arraySize {} --mapping_mode {} \
+                                                        --pbits {} --per_class {} --psum_mode {} --testlog_reset {} --log_file {} --pretrained {} \
+                                                        --is_noise y --co_noise {} --noise_type {} --tn_file {} --retention {} --reten_type {} --reten_val {}'
+                                                        .format(args.argfile, args.gpu_id, a_size, mapping_mode, pbit, per_class, args.psum_mode, testlog, log_file, pretrained, co_noise, args.noise_type, tn_file, args.retention, args.reten_type, args.reten_val))
+                                        else:
+                                            os.system('python main.py  --argfile {} --gpu-id {} --arraySize {} --mapping_mode {} \
+                                                        --pbits {} --per_class {} --psum_mode {} --testlog_reset {} --log_file {} --pretrained {} \
+                                                        --is_noise y --co_noise {} --noise_type {} --tn_file {} --retention {} --reten_type {} --reten_val {} \
+                                                        --is_ADCn y --ADC_std {}'
+                                                        .format(args.argfile, args.gpu_id, a_size, mapping_mode, pbit, per_class, args.psum_mode, testlog, log_file, pretrained, co_noise, args.noise_type, tn_file, args.retention, args.reten_type, args.reten_val, ADC_std))
+                                    else:
+                                        if not args.is_ADCn:
+                                            os.system('python main.py  --argfile {} --gpu-id {} --arraySize {} --mapping_mode {} \
+                                                        --pbits {} --per_class {} --psum_mode {} --testlog_reset {} --log_file {} --pretrained {} \
+                                                        --is_noise y --co_noise {} --noise_type {} --retention {} --reten_type {} --reten_val {}'
+                                                        .format(args.argfile, args.gpu_id, a_size, mapping_mode, pbit, per_class, args.psum_mode, testlog, log_file, pretrained, co_noise, args.noise_type, args.retention, args.reten_type, args.reten_val))
+                                        else:
+                                            os.system('python main.py  --argfile {} --gpu-id {} --arraySize {} --mapping_mode {} \
+                                                        --pbits {} --per_class {} --psum_mode {} --testlog_reset {} --log_file {} --pretrained {} \
+                                                        --is_noise y --co_noise {} --noise_type {} --retention {} --reten_type {} --reten_val {} \
+                                                        --is_ADCn y --ADC_std {}'
+                                                        .format(args.argfile, args.gpu_id, a_size, mapping_mode, pbit, per_class, args.psum_mode, testlog, log_file, pretrained, co_noise, args.noise_type, args.retention, args.reten_type, args.reten_val, ADC_std))
+                                else: 
+                                    if args.tnoise:
+                                        if not args.is_ADCn:
+                                            os.system('python main.py  --argfile {} --gpu-id {} --arraySize {} --mapping_mode {} \
+                                                        --pbits {} --per_class {} --psum_mode {} --testlog_reset {} --log_file {} --pretrained {} \
+                                                        --is_noise y --co_noise {} --noise_type {} --tn_file {} --deltaG {} --retention {} --reten_type {} --reten_val {}'
+                                                        .format(args.argfile, args.gpu_id, a_size, mapping_mode, pbit, per_class, args.psum_mode, testlog, log_file, pretrained, co_noise, args.noise_type, tn_file, args.deltaG, args.retention, args.reten_type, args.reten_val))
+                                        else:
+                                            os.system('python main.py  --argfile {} --gpu-id {} --arraySize {} --mapping_mode {} \
+                                                        --pbits {} --per_class {} --psum_mode {} --testlog_reset {} --log_file {} --pretrained {} \
+                                                        --is_noise y --co_noise {} --noise_type {} --tn_file {} --deltaG {} --retention {} --reten_type {} --reten_val {} \
+                                                        --is_ADCn y --ADC_std {}'
+                                                        .format(args.argfile, args.gpu_id, a_size, mapping_mode, pbit, per_class, args.psum_mode, testlog, log_file, pretrained, co_noise, args.noise_type, tn_file, args.deltaG, args.retention, args.reten_type, args.reten_val, ADC_std))
+                                    else:
+                                        if not args.is_ADCn:
+                                            os.system('python main.py  --argfile {} --gpu-id {} --arraySize {} --mapping_mode {} \
+                                                        --pbits {} --per_class {} --psum_mode {} --testlog_reset {} --log_file {} --pretrained {} \
+                                                        --is_noise y --co_noise {} --noise_type {} --deltaG {} --retention {} --reten_type {} --reten_val {}'
+                                                        .format(args.argfile, args.gpu_id, a_size, mapping_mode, pbit, per_class, args.psum_mode, testlog, log_file, pretrained, co_noise, args.noise_type, args.deltaG, args.retention, args.reten_type, args.reten_val))
+                                        else:
+                                            os.system('python main.py  --argfile {} --gpu-id {} --arraySize {} --mapping_mode {} \
+                                                        --pbits {} --per_class {} --psum_mode {} --testlog_reset {} --log_file {} --pretrained {} \
+                                                        --is_noise y --co_noise {} --noise_type {} --deltaG {} --retention {} --reten_type {} --reten_val {} \
+                                                        --is_ADCn y --ADC_std {}'
+                                                        .format(args.argfile, args.gpu_id, a_size, mapping_mode, pbit, per_class, args.psum_mode, testlog, log_file, pretrained, co_noise, args.noise_type, args.deltaG, args.retention, args.reten_type, args.reten_val, ADC_std))
                             else:
-                                os.system('python main.py  --argfile {} --gpu-id {} --arraySize {} --mapping_mode {} \
-                                            --pbits {} --per_class {} --psum_mode {} --testlog_reset {} --log_file {} --pretrained {} \
-                                            --is_noise y --co_noise {} --noise_type {} --shrink {} --retention {} --reten_type {} --reten_val {}'
-                                            .format(args.argfile, args.gpu_id, a_size, mapping_mode, pbit, per_class, args.psum_mode, testlog, log_file, pretrained, co_noise, args.noise_type, args.shrink, args.retention, args.reten_type, args.reten_val))
+                                if args.tnoise:
+                                    os.system('python main.py  --argfile {} --gpu-id {} --arraySize {} --mapping_mode {} \
+                                                --pbits {} --per_class {} --psum_mode {} --testlog_reset {} --log_file {} --pretrained {} \
+                                                --is_noise y --co_noise {} --noise_type {} --tn_file {} --shrink {} --retention {} --reten_type {} --reten_val {}'
+                                                .format(args.argfile, args.gpu_id, a_size, mapping_mode, pbit, per_class, args.psum_mode, testlog, log_file, pretrained, co_noise, args.noise_type, tn_file, args.shrink, args.retention, args.reten_type, args.reten_val))
+                                else:
+                                    os.system('python main.py  --argfile {} --gpu-id {} --arraySize {} --mapping_mode {} \
+                                                --pbits {} --per_class {} --psum_mode {} --testlog_reset {} --log_file {} --pretrained {} \
+                                                --is_noise y --co_noise {} --noise_type {} --shrink {} --retention {} --reten_type {} --reten_val {}'
+                                                .format(args.argfile, args.gpu_id, a_size, mapping_mode, pbit, per_class, args.psum_mode, testlog, log_file, pretrained, co_noise, args.noise_type, args.shrink, args.retention, args.reten_type, args.reten_val))
+                            testlog=False
+                            log_file=False
+                    else:
+                        print(f'this operation is pbit {pbit}, arraySize {a_size}, per_class {per_class}, testlog_reset {testlog} log_file {log_file}')
+                        os.system('python main.py --argfile {} --gpu-id {} --arraySize {} --mapping_mode {} \
+                                    --pbits {} --per_class {} --psum_mode {} --testlog_reset {} --log_file {} --pretrained {} --is_noise n --nipq_noise qnoise'
+                                    .format(args.argfile, args.gpu_id, a_size, mapping_mode, pbit, per_class, args.psum_mode, testlog, log_file, pretrained))
                         testlog=False
                         log_file=False
-                else:
-                    print(f'this operation is pbit {pbit}, arraySize {a_size}, per_class {per_class}, testlog_reset {testlog} log_file {log_file}')
-                    os.system('python main.py --argfile {} --gpu-id {} --arraySize {} --mapping_mode {} \
-                                --pbits {} --per_class {} --psum_mode {} --testlog_reset {} --log_file {} --pretrained {} --is_noise n --nipq_noise qnoise'
-                                .format(args.argfile, args.gpu_id, a_size, mapping_mode, pbit, per_class, args.psum_mode, testlog, log_file, pretrained))
-                    testlog=False
-                    log_file=False
 
 
